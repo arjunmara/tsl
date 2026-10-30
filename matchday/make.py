@@ -23,6 +23,11 @@ here = pathlib.Path(__file__).resolve().parent
 if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
     sys.exit(__doc__)
 
+try:  # use the phone maker's latest results/fixtures/groups (public read; skipped when offline)
+    sys.path.insert(0, str(here.parent)); import sync; sync.pull()
+except Exception as e:
+    print('(offline: using local files)', e)
+
 kind, params = sys.argv[1], {'type': sys.argv[1]}
 for arg in sys.argv[2:]:
     k, sep, v = arg.partition('=')
