@@ -439,11 +439,16 @@
       await htmlToImage.toBlob(doc.documentElement, opts);
       const blob = await htmlToImage.toBlob(doc.documentElement, opts);
       const name = `tsl-${kind}-${Date.now()}.png`, file = new File([blob], name, { type: 'image/png' }), url = URL.createObjectURL(blob);
-      $('png').innerHTML = `<div style="display:flex;gap:8px;margin-top:10px">
-          ${navigator.canShare?.({ files: [file] }) ? '<button class="primary" id="share">Share / Save to Photos</button>' : ''}
+      $('png').innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          ${navigator.canShare?.({ files: [file] }) ? '<button class="primary" id="share">Share to Facebook</button>' : ''}
+          <button type="button" id="copycap">Copy caption</button>
           <a class="btn" href="${url}" download="${name}">Download</a></div>
+        <label style="margin-top:10px">Caption (copied when you share — paste it in Facebook)<textarea id="cap" style="min-height:110px">${esc(caption())}</textarea></label>
         <img src="${url}" alt="">`;
-      if ($('share')) $('share').onclick = () => navigator.share({ files: [file] }).catch(() => {});
+      const copy = () => navigator.clipboard?.writeText($('cap').value).catch(() => {});
+      // Facebook won't take pre-filled text from other apps, so copy the caption and open the share sheet in the same tap.
+      if ($('share')) $('share').onclick = () => { copy(); navigator.share({ files: [file] }).catch(() => {}); msg.textContent = 'Caption copied ✓ Pick Facebook, then tap the text box → Paste.'; };
+      $('copycap').onclick = () => { copy(); msg.textContent = 'Caption copied ✓'; };
       msg.textContent = 'Done ✓  Tip: you can also long-press the image to save it.';
       if (kind === 'goal') logEntry('goals');
       if (kind === 'event') logEntry('events');
@@ -456,6 +461,26 @@
   };
 
   // Saved goal graphics are remembered per match: they feed the next goal's score, the final score and top scorers.
+  // Ready-to-post caption for the graphic on screen.
+  function caption() {
+    const v = val, min = v('minute') ? ` (${v('minute')}')` : '', lines = k => v(k) ? v(k).split('|').join(', ') : '';
+    const c = {
+      goal: `⚽ GOAL! ${v('scorer')}${min} for ${v('team')}!\n${v('home')} ${v('score')} ${v('away')}`,
+      score: `🏁 ${v('label')}: ${v('home')} ${v('score')} ${v('away')}${lines('homeScorers') ? `\n⚽ ${v('home')}: ${lines('homeScorers')}` : ''}${lines('awayScorers') ? `\n⚽ ${v('away')}: ${lines('awayScorers')}` : ''}`,
+      event: `${EVENTS[v('event')] || ''} ${v('event')}: ${v('name')}${min} — ${v('team')}${v('score') ? `\n${v('home')} ${v('score')} ${v('away')}` : ''}`,
+      fixture: `📅 ${v('label')}: ${v('home')} vs ${v('away')}\n🕖 ${[v('time'), v('date')].filter(Boolean).join(' · ')}\n📍 ${v('venue')}`,
+      table: `📊 TSL points table${v('subtitle') ? ` — ${v('subtitle')}` : ''}. Top ${v('qualify')} from each group reach the ${v('next')}!`,
+      results: `📋 ${v('title')}${v('subtitle') ? ` — ${v('subtitle')}` : ''}`,
+      motm: `🌟 Man of the Match: ${v('name')} (${v('team')})${v('match') ? `\n${v('match')}` : ''}`,
+      scorers: `🥇 ${v('title')} so far in the Tamghas Super League`,
+      fixtures: `📅 ${v('title')}\n${v('subtitle')}\n📍 Tamghas Futsal`,
+      format: `🏆 TSL ${v('label')}: 13 teams, 4 groups — top 2 from each group go to the quarter-finals.`,
+      notice: `📢 ${v('title')}${v('body') ? `\n\n${v('body')}` : ''}${v('qr') ? `\n\n👉 ${v('qr')}` : ''}`,
+      teams: `👥 ${v('title')} of the Tamghas Super League`, champions: `🏆 ${v('team')} — ${v('label')}!`, squad: `👥 ${v('team')} — official squad`,
+    }[kind] || '';
+    return `${c}\n\n#TSL #TamghasSuperLeague #Futsal #Gulmi`.trim();
+  }
+
   // Adds the goal/event in the form, or replaces the one being edited.
   function logEntry(key) {
     const L = LOG[key], msg = $('msg'), base = { n: val('pick'), team: val('team'), name: val(L.who), min: val('minute') };
