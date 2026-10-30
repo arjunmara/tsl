@@ -35,7 +35,16 @@
 </style>
 </head>
 <body>
-<header><img src="logo.jpg" alt=""><h1>TSL Graphics</h1></header>
+<header><img src="logo.jpg" alt=""><h1>TSL Graphics</h1><button id="sync" style="margin-left:auto;padding:6px 10px;font-size:13px">This phone only</button></header>
+<dialog id="login" style="background:var(--card);color:#fff;border:1px solid var(--line);border-radius:12px;width:min(340px,90vw)">
+  <form method="dialog" id="loginform">
+    <h2 style="margin-top:0">Organiser sign-in</h2>
+    <label>Email<input name="email" type="email" autocomplete="username" required></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+    <div class="msg err" id="loginmsg"></div>
+    <button class="primary" value="ok">Sign in</button> <button value="cancel" formnovalidate>Cancel</button>
+  </form>
+</dialog>
 <main>
   <div class="kinds" id="kinds"></div>
   <div class="cols" style="margin-top:14px">
@@ -67,10 +76,18 @@
 
 <script src="matchday/league.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
   const $ = id => document.getElementById(id);
-  const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  // Firebase project config (Project settings → Your apps). null = no sharing, everything stays on this phone.
+  const FIREBASE = null;
+  // results, goals and squads are shared through Firebase when signed in; localStorage is the offline copy.
+  const SHARED = ['results', 'goals', 'squads'], sync = { db: null, user: null };
+  const local = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
                   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+  const store = { get: local.get, set: (k, v) => { local.set(k, v); if (sync.user && SHARED.includes(k)) sync.db.child(k).set(v); } };
   const text = f => fetch(`${f}?t=${Date.now()}`).then(r => r.ok ? r.text() : '');
 
   // Fields per graphic. Markers: * required, ~ textarea, @ team dropdown, # player dropdown (from the match's two teams),
@@ -305,6 +322,7 @@
   $('rm').onchange = fillResultMatch;
   // One result per match: a corrected score replaces the old line instead of counting twice.
   function setResult(h, sc, a, pens = false) {
+    if (sync.db && !sync.user) { $('rmsg').className = 'msg err'; return $('rmsg').textContent = 'View only: tap "Sign in" at the top to change scores.'; }
     const same = l => { try { const [r] = parseResults(l); return r && r.pens === pens && [r.home.name, r.away.name].sort() + '' === [h, a].sort() + ''; } catch { return false; } };
     $('results').value = $('results').value.split('\n').filter(l => !same(l)).join('\n').replace(/\n*$/, '\n') + `${h} ${sc} ${a}${pens ? ' (pens)' : ''}\n`;
     saveResults(); store.set('pick', nextMatch()); refreshResultMatches();
@@ -323,7 +341,38 @@
     $('rh').innerHTML = $('ra').innerHTML = teamOptions;
     refreshResultMatches();
     pick('goal');
+    startSync();
   });
+
+  // ---- Live sharing: every phone sees the same results/goals/squads; only the signed-in organiser can change them ----
+  function startSync() {
+    if (!FIREBASE || !window.firebase) return;
+    firebase.initializeApp(FIREBASE);
+    sync.db = firebase.database().ref('tsl');
+    const auth = firebase.auth(), status = t => $('sync').textContent = t;
+    let remote = {};
+    const label = () => sync.user ? 'Live · organiser ✓' : 'Live · view only — Sign in';
+    const seed = () => sync.user && SHARED.forEach(k => remote[k] == null && local.get(k) != null && sync.db.child(k).set(local.get(k)));
+    auth.onAuthStateChanged(u => { sync.user = u; status(label()); seed(); });
+    sync.db.on('value', snap => {
+      remote = snap.val() || {};
+      seed();
+      SHARED.forEach(k => remote[k] != null && local.set(k, remote[k]));
+      if (document.activeElement !== $('results')) $('results').value = local.get('results') ?? files.results;
+      refreshResultMatches();
+      if ($('glog')) fillPlayers();
+      if (['table', 'results', 'scorers'].includes(kind)) render();
+    });
+    firebase.database().ref('.info/connected').on('value', c => status(c.val() ? label() : 'Offline — will sync when back'));
+    $('sync').onclick = () => sync.user ? confirm('Sign out of organiser mode on this phone?') && auth.signOut() : $('login').showModal();
+    $('loginform').onsubmit = e => {
+      if (e.submitter?.value !== 'ok') return;
+      e.preventDefault();
+      const f = e.target.elements;
+      auth.signInWithEmailAndPassword(f.email.value.trim(), f.password.value)
+        .then(() => $('login').close()).catch(err => $('loginmsg').textContent = err.message);
+    };
+  }
 </script>
 </body>
 </html>
