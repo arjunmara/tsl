@@ -1,3 +1,4 @@
+// Bump ?v= in the pages' <script src="live.js?v=N"> when this changes: GitHub Pages lets phones cache it for 10 min.
 // Live scoreboard state in Firebase (tsl/live), shared by overlay, control, screen and the hub.
 // Anyone can read it (so PRISM/OBS can show it from anywhere); writing needs the organiser sign-in.
 firebase.initializeApp(FIREBASE);
