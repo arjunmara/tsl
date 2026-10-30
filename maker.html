@@ -32,6 +32,9 @@
   .row3 { display: grid; grid-template-columns: 1fr 70px 1fr; gap: 6px; align-items: end; }
   .msg { margin-top: 8px; font-weight: 700; color: var(--muted); }
   .err { color: #ff6b6b; }
+  .rrow { display: flex; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .rrow button { padding: 6px 9px; } .rrow select, .rrow input { width: auto; margin: 0; padding: 8px 6px; }
+  .danger { color: #ff6b6b; }
 </style>
 </head>
 <body>
@@ -67,10 +70,12 @@
     </div>
     <label style="display:flex;gap:8px;align-items:center;text-transform:none"><input type="checkbox" id="rp" style="width:auto;margin:0"> This is a group tie-break shootout score (add the draw too)</label>
     <button class="primary" id="radd">Add result</button>
+    <button id="rcancel" hidden>Cancel edit</button>
     <button id="rtable">Show points table</button>
-    <label style="margin-top:14px">All results (one per line, edit freely)<textarea id="results"></textarea></label>
     <div class="msg" id="rmsg"></div>
-    <button id="rreset" style="margin-top:8px">Reset to published results</button>
+    <textarea id="results" hidden></textarea>
+    <div id="rlist" style="margin-top:10px"></div>
+    <button id="rreset" class="danger" style="margin-top:12px">Clear all results</button>
   </div>
 </main>
 
@@ -166,13 +171,14 @@
         : f.includes('@') ? `<select name="${name}">${teamOptions}</select>`
         : f.includes('#') ? `<select name="${name}" data-players></select>`
         : opts ? `<select name="${name}">${opts.map(o => `<option>${esc(o)}</option>`).join('')}</select>`
+        : k === 'squad' && name === 'players' ? `<textarea name="players" hidden></textarea><div id="sqlist"></div>`
         : f.includes('~') ? `<textarea name="${name}">${esc(def)}</textarea>`
         : `<input name="${name}" value="${esc(def)}" placeholder="${HINTS[name] || ''}" ${['minute', 'score'].includes(name) ? 'inputmode="numeric"' : ''}>`;
       return `<label>${lbl}${input}</label>`;
     }).join('') || '<p class="msg">No fields — just save it.</p>';
-    if (k === 'squad') $('fields').insertAdjacentHTML('beforeend', '<button type="button" id="keep">Remember this squad on this phone</button>');
     if (['goal', 'score'].includes(k)) $('fields').insertAdjacentHTML('beforeend', '<div id="glog"></div>');
     if (F().pick) { F().pick.value = store.get('pick') ?? nextMatch(); applyMatch(); }
+    renderSquad();
     render();
   }
 
@@ -220,7 +226,13 @@
         set('score', `${hs + (t === val('home'))}-${as + (t === val('away'))}`);
       }
     }
-    if (kind === 'squad' && n === 'team') set('players', (squads()[e.target.value] || '').split('|').join('\n'));
+    if (kind === 'squad' && n === 'team') { set('players', (squads()[e.target.value] || '').split('|').join('\n')); renderSquad(); }
+    if (e.target.dataset.role) {
+      let ps = squadList(), i = +e.target.dataset.role;
+      if (e.target.value.includes('(C)')) ps = ps.map(p => p.replace(/\s*\(C\)/i, ''));  // one captain per team
+      ps[i] = `${ps[i].replace(/\(.*?\)/g, '').trim()} ${e.target.value}`.trim();
+      return setSquad(ps);
+    }
     render();
   };
   $('form').oninput = e => { if (e.target.tagName !== 'SELECT') { clearTimeout(render.t); render.t = setTimeout(render, 400); } };
@@ -230,12 +242,35 @@
       store.set('goals', JSON.stringify(goals().filter(g => JSON.stringify(g) !== d)));
       return applyMatch(), fillResultMatch(), render();
     }
-    if (e.target.id !== 'keep') return;
-    const all = squads();
-    all[val('team').trim()] = val('players').split(/\n|\|/).map(s => s.trim()).filter(Boolean).join('|');
-    store.set('squads', Object.entries(all).map(([t, p]) => `${t}: ${p}`).join('\n'));
-    e.target.textContent = 'Remembered ✓';
+    // Squad editor buttons
+    const d = e.target.dataset, ps = squadList();
+    if (d.pdel) { if (confirm(`Remove ${ps[d.pdel].replace(/\(.*?\)/g, '').trim()}?`)) { ps.splice(d.pdel, 1); setSquad(ps); } }
+    if (d.pedit) {
+      const role = (ps[d.pedit].match(/\(.*\)/) || [''])[0], name = prompt('Player name', ps[d.pedit].replace(/\(.*?\)/g, '').trim());
+      if (name?.trim()) { ps[d.pedit] = `${name.trim()} ${role}`.trim(); setSquad(ps); }
+    }
+    if (d.up && +d.up > 0) { ps.splice(d.up - 1, 0, ps.splice(d.up, 1)[0]); setSquad(ps); }
+    if (e.target.id === 'addp' && $('newp').value.trim()) { ps.push($('newp').value.trim()); setSquad(ps); $('newp').focus(); }
   };
+
+  // ---- Squad editor: rows with role, edit, move up, remove; every change is saved (and shared when signed in) ----
+  const ROLES = [['', 'Player'], ['(C)', 'C'], ['(GK)', 'GK'], ['(C) (GK)', 'C + GK'], ['(Coach)', 'Coach'], ['(Manager)', 'Mgr']];
+  const squadList = () => val('players').split('\n').map(s => s.trim()).filter(Boolean);
+  function setSquad(ps) {
+    set('players', ps.join('\n'));
+    if (val('team')) { const all = squads(); all[val('team')] = ps.join('|'); store.set('squads', Object.entries(all).map(([t, p]) => `${t}: ${p}`).join('\n')); }
+    renderSquad(); render();
+  }
+  function renderSquad() {
+    if (!$('sqlist')) return;
+    $('sqlist').innerHTML = squadList().map((p, i) => {
+      const role = (p.match(/\(.*\)/) || [''])[0].replace(/\s+/g, ' ').toLowerCase();
+      return `<div class="rrow"><span style="width:22px;color:var(--orange);font-weight:700">${i + 1}</span>
+        <span style="flex:1;color:#fff;text-transform:none;letter-spacing:0;font-size:15px">${esc(p.replace(/\(.*?\)/g, '').trim())}</span>
+        <select data-role="${i}">${ROLES.map(([v, l]) => `<option value="${v}" ${v.toLowerCase() === role ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <button type="button" data-pedit="${i}" aria-label="Rename">✎</button><button type="button" data-up="${i}" aria-label="Move up">↑</button><button type="button" class="danger" data-pdel="${i}" aria-label="Remove">✕</button></div>`;
+    }).join('') + `<div class="rrow"><input id="newp" placeholder="New player name" style="flex:1"><button type="button" class="primary" id="addp">Add</button></div>`;
+  }
 
   function params() {
     const p = { type: kind, ...Object.fromEntries(new FormData($('form'))) };
@@ -308,12 +343,37 @@
 
   // ---- Results: kept on this phone; the table preview updates as you type ----
   const saveResults = () => {
-    try { parseResults($('results').value); $('rmsg').className = 'msg'; $('rmsg').textContent = 'Saved on this phone ✓'; }
+    try { parseResults($('results').value); $('rmsg').className = 'msg'; $('rmsg').textContent = sync.user ? 'Saved & shared ✓' : 'Saved on this phone ✓'; }
     catch (e) { $('rmsg').className = 'msg err'; $('rmsg').textContent = e.message; }
     store.set('results', $('results').value);
     if (kind === 'table') render();
   };
-  $('results').oninput = () => { clearTimeout(saveResults.t); saveResults.t = setTimeout(saveResults, 500); };
+  const canEdit = () => !(sync.db && !sync.user) || ($('rmsg').className = 'msg err', $('rmsg').textContent = 'View only: tap "Sign in" at the top to change scores.', false);
+  const resultLines = () => $('results').value.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  const removeLine = l => $('results').value = resultLines().filter(x => x !== l).join('\n') + '\n';
+  let editing = null;  // the result line being edited
+  const endEdit = () => { editing = null; $('radd').textContent = 'Add result'; $('rcancel').hidden = true; };
+  function renderResults() {
+    const ls = resultLines();
+    $('rlist').innerHTML = ls.length ? ls.map(l => {
+      let r; try { [r] = parseResults(l); } catch {}
+      const txt = r ? `${esc(r.home.name)} <b style="color:var(--orange)">${r.hg}-${r.ag}</b> ${esc(r.away.name)}${r.pens ? ' <i>(shootout)</i>' : ''}` : `<span class="err">${esc(l)}</span>`;
+      return `<div class="rrow"><span style="flex:1">${txt}</span><button data-edit="${esc(l)}">Edit</button><button class="danger" data-rdel="${esc(l)}">Delete</button></div>`;
+    }).join('') : '<p class="msg">No results yet.</p>';
+  }
+  $('rlist').onclick = e => {
+    const { edit, rdel } = e.target.dataset;
+    if (rdel && canEdit() && confirm(`Delete this result?\n${rdel}`)) { removeLine(rdel); endEdit(); saveResults(); refreshResultMatches(); }
+    if (edit) {
+      const [r] = parseResults(edit), pair = [r.home.name, r.away.name].sort() + '';
+      editing = edit;
+      $('rm').value = fixtures().find(m => [m.home, m.away].sort() + '' === pair)?.n || '';
+      $('rh').value = r.home.name; $('ra').value = r.away.name; $('rs').value = `${r.hg}-${r.ag}`; $('rp').checked = r.pens;
+      $('radd').textContent = 'Update result'; $('rcancel').hidden = false;
+      $('rm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+  $('rcancel').onclick = () => { endEdit(); refreshResultMatches(); };
   const fillResultMatch = () => {
     const m = fixtures()[$('rm').value - 1];
     if (!m) return;
@@ -323,12 +383,14 @@
   };
   const refreshResultMatches = () => {
     $('rm').innerHTML = matchOptions() + '<option value="">Other / knockout (pick teams below)</option>';
-    $('rm').value = nextMatch(); fillResultMatch();
+    if (!editing) { $('rm').value = nextMatch(); fillResultMatch(); }  // don't wipe a half-done edit when another phone syncs
+    renderResults();
   };
   $('rm').onchange = fillResultMatch;
   // One result per match: a corrected score replaces the old line instead of counting twice.
   function setResult(h, sc, a, pens = false) {
-    if (sync.db && !sync.user) { $('rmsg').className = 'msg err'; return $('rmsg').textContent = 'View only: tap "Sign in" at the top to change scores.'; }
+    if (!canEdit()) return;
+    if (editing) { removeLine(editing); endEdit(); }
     const same = l => { try { const [r] = parseResults(l); return r && r.pens === pens && [r.home.name, r.away.name].sort() + '' === [h, a].sort() + ''; } catch { return false; } };
     $('results').value = $('results').value.split('\n').filter(l => !same(l)).join('\n').replace(/\n*$/, '\n') + `${h} ${sc} ${a}${pens ? ' (pens)' : ''}\n`;
     saveResults(); store.set('pick', nextMatch()); refreshResultMatches();
@@ -339,7 +401,7 @@
     setResult(h, s, a, $('rp').checked); $('rp').checked = false;
   };
   $('rtable').onclick = () => { pick('table'); scrollTo({ top: 0, behavior: 'smooth' }); };
-  $('rreset').onclick = () => { if (confirm('Replace the results on this phone with the published results.txt?')) { $('results').value = files.results; saveResults(); } };
+  $('rreset').onclick = () => { if (canEdit() && confirm('Delete ALL results? This cannot be undone.')) { $('results').value = ''; endEdit(); saveResults(); refreshResultMatches(); } };
 
   Promise.all(['matchday/groups.txt', 'matchday/fixtures.txt', 'matchday/results.txt', 'teamlist/squads.txt'].map(text)).then(([g, f, r, sq]) => {
     Object.assign(files, { groups: g, fixtures: f, results: r, squads: sq });
@@ -352,7 +414,7 @@
 
   // ---- Live sharing: every phone sees the same results/goals/squads; only the signed-in organiser can change them ----
   function startSync() {
-    if (!FIREBASE || !window.firebase) return;
+    if (!FIREBASE || !window.firebase || location.search.includes('nosync')) return;  // ?nosync = local test without touching live data
     firebase.initializeApp(FIREBASE);
     sync.db = firebase.database().ref('tsl');
     const auth = firebase.auth(), status = t => $('sync').textContent = t;
