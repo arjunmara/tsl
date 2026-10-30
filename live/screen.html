@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TSL Live Screen</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  /* Full-screen OBS scenes, 1920x1080. ?mode=soon (Starting Soon) or ?mode=break (Half Time / Full Time).
+     Both show the current match from the scorekeeper's control page, so they never need editing. */
+  :root { --navy: #0a1a3f; --navy-2: #12285c; --orange: #f58220; --muted: #9fb0d6; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; }
+  body {
+    font-family: 'Barlow', sans-serif; color: #fff; position: relative; text-align: center;
+    background:
+      radial-gradient(1200px 700px at 50% -10%, rgba(245,130,32,.18), transparent 60%),
+      linear-gradient(180deg, var(--navy-2) 0%, var(--navy) 60%);
+  }
+  .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .stripe { position: absolute; left: 0; right: 0; height: 10px; background: var(--orange); }
+  .stripe.top { top: 0; } .stripe.bottom { bottom: 0; }
+  .wrap { position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; padding-top: 64px; }
+  .logo { width: 150px; height: 150px; border-radius: 50%; background: #fff; padding: 3px;
+    box-shadow: 0 0 0 6px var(--orange), 0 16px 40px rgba(0,0,0,.45); }
+  .logo img { width: 100%; height: 100%; border-radius: 50%; display: block; }
+  .league { margin-top: 28px; font-weight: 700; font-size: 24px; letter-spacing: 12px; color: var(--orange); }
+  .bebas { font-family: 'Bebas Neue', sans-serif; font-weight: 400; line-height: .95; letter-spacing: 3px; }
+  h1 { margin-top: 26px; font-size: 170px; }
+  .sub { margin-top: 10px; font-weight: 600; font-size: 26px; letter-spacing: 10px; color: var(--muted); text-transform: uppercase; }
+
+  .matchup { margin-top: 56px; display: flex; align-items: flex-start; justify-content: center; gap: 60px; }
+  .side { width: 460px; display: flex; flex-direction: column; align-items: center; gap: 26px; }
+  .crest { width: 200px; height: 200px; border-radius: 50%; background: radial-gradient(circle at 50% 30%, #1d3a7c, var(--navy));
+    box-shadow: 0 0 0 7px var(--orange), 0 16px 40px rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; line-height: 1; }
+  .tname { font-size: 50px; line-height: 1; text-wrap: balance; text-transform: uppercase; }
+  .mid { width: 260px; height: 200px; display: flex; align-items: center; justify-content: center; }
+  .score { padding: 14px 30px 6px; border-radius: 8px; background: var(--orange); color: var(--navy); font-size: 110px; }
+  .vs { font-size: 90px; color: var(--orange); }
+  footer { position: absolute; bottom: 48px; left: 0; right: 0; font-weight: 600; font-size: 22px; letter-spacing: 8px; color: var(--muted); }
+  footer b { color: var(--orange); font-weight: 700; }
+</style>
+</head>
+<body>
+  <svg class="bg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="glow"><stop offset="0" stop-color="#3b6fd8" stop-opacity=".45"/><stop offset="1" stop-color="#3b6fd8" stop-opacity="0"/></radialGradient>
+      <linearGradient id="fade" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".6" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+      <path id="star" d="M0,-1 L.2245,-.309 L.951,-.309 L.363,.118 L.588,.809 L0,.382 L-.588,.809 L-.363,.118 L-.951,-.309 L-.2245,-.309Z"/>
+    </defs>
+    <circle cx="1780" cy="180" r="620" fill="url(#glow)"/>
+    <circle cx="120" cy="1000" r="640" fill="url(#glow)"/>
+    <g id="swoosh" fill="none" stroke="url(#fade)"></g>
+    <g id="stars" fill="#fff"></g>
+  </svg>
+  <div class="stripe top"></div>
+  <div class="wrap">
+    <div class="logo"><img src="../logo.jpg" alt=""></div>
+    <div class="league">TAMGHAS SUPER LEAGUE</div>
+    <h1 class="bebas" id="head"></h1>
+    <div class="sub" id="sub"></div>
+    <div class="matchup">
+      <div class="side"><div class="crest bebas" id="hc"></div><div class="tname bebas" id="hn"></div></div>
+      <div class="mid bebas" id="mid"></div>
+      <div class="side"><div class="crest bebas" id="ac"></div><div class="tname bebas" id="an"></div></div>
+    </div>
+  </div>
+  <footer><b>TSL</b> &nbsp;·&nbsp; LIVE FROM TAMGHAS, GULMI</footer>
+  <div class="stripe bottom"></div>
+
+<script src="../matchday/league.js"></script>
+<script>
+  // Background: the team-list swooshes and edge stars, stretched to 16:9.
+  const NS = 'http://www.w3.org/2000/svg', $ = id => document.getElementById(id);
+  for (let i = 0; i < 26; i++) {
+    const p = document.createElementNS(NS, 'path'), o = i * 34;
+    p.setAttribute('d', `M${-300 + o},1080 C${300 + o},${760 - o * .5} ${900 + o},${420 - o * .5} 2100,${-60 + o * 1.1}`);
+    p.setAttribute('stroke-width', i % 4 ? 1 : 2);
+    $('swoosh').append(p);
+  }
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 120; i++) {
+    const x = rnd() * 1920, y = rnd() * 1080;
+    if (Math.min(x, 1920 - x) >= 220) continue;
+    const u = document.createElementNS(NS, 'use'), r = 4 + rnd() * 20;
+    u.setAttribute('href', '#star');
+    u.setAttribute('transform', `translate(${x} ${y}) scale(${r}) rotate(${rnd() * 72})`);
+    u.setAttribute('opacity', (.06 + rnd() * .22).toFixed(2));
+    $('stars').append(u);
+  }
+
+  const mode = new URLSearchParams(location.search).get('mode') || 'soon';
+  const find = name => { try { return team(name); } catch { return { name, code: name }; } };
+  const crest = (el, t) => { el.textContent = t.code; el.style.fontSize = `${80 * Math.min(1, 3.4 / t.code.length)}px`; };
+
+  function render(s) {
+    const h = find(s.home), a = find(s.away);
+    crest($('hc'), h); crest($('ac'), a);
+    $('hn').textContent = h.name; $('an').textContent = a.name;
+    if (mode === 'soon') {
+      $('head').textContent = 'Starting Soon';
+      $('sub').textContent = 'Next match';
+      $('mid').innerHTML = '<span class="vs">VS</span>';
+    } else {
+      const ft = s.period === 'Full Time';
+      $('head').textContent = ft ? 'Full Time' : 'Half Time';
+      $('sub').textContent = ft ? 'Thanks for watching' : 'Second half coming up';
+      $('mid').innerHTML = `<span class="score">${s.hs} - ${s.as}</span>`;
+    }
+  }
+  const poll = () => fetch('/state').then(r => r.json()).then(render).catch(() => {});
+  poll();
+  setInterval(poll, 1000);
+</script>
+</body>
+</html>

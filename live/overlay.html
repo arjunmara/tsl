@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TSL Live Overlay</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  /* OBS browser source: 1920x1080, transparent background. Everything sits in the top-left corner. */
+  :root { --navy: #0a1a3f; --navy-2: #12285c; --orange: #f58220; --muted: #9fb0d6; }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { width: 1920px; height: 1080px; font-family: 'Barlow', sans-serif; color: #fff; }
+  .wrap { position: absolute; top: 48px; left: 64px; transition: opacity .4s, transform .4s; }
+  .wrap.hidden { opacity: 0; transform: translateY(-20px); }
+
+  .bug { display: flex; align-items: stretch; height: 72px; filter: drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
+  .logo { width: 92px; height: 92px; margin: -10px -22px 0 0; border-radius: 50%; border: 4px solid var(--orange);
+    box-sizing: border-box; background: var(--navy); position: relative; z-index: 2; overflow: hidden; }
+  .logo img { width: 100%; height: 100%; display: block; }
+  .bebas { font-family: 'Bebas Neue', sans-serif; line-height: 1; letter-spacing: 2px; display: flex; align-items: center; justify-content: center; }
+  .team { width: 150px; padding-top: 4px; font-size: 46px; background: var(--navy); }
+  .team.home { padding-left: 22px; border-radius: 6px 0 0 6px; }
+  .score { width: 160px; padding-top: 4px; font-size: 56px; background: var(--orange); color: var(--navy); gap: 14px; }
+  .score i { font-style: normal; font-size: 36px; opacity: .6; }
+  .clock { flex-direction: column; width: 150px; background: var(--navy-2); border-radius: 0 6px 6px 0; }
+  .clock b { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 44px; line-height: .9; padding-top: 4px; font-variant-numeric: tabular-nums; }
+  .clock span { font-weight: 700; font-size: 14px; letter-spacing: 3px; color: var(--orange); text-transform: uppercase; }
+  .clock.stopped b { color: var(--muted); }
+
+  /* Goal flash, slides out under the bug for a few seconds when a score goes up. */
+  .goal { margin: 10px 0 0 70px; height: 0; overflow: hidden; display: flex; align-items: stretch; transition: height .35s; }
+  .goal.on { height: 58px; }
+  .goal .tag { padding: 6px 22px 0; font-size: 40px; background: var(--orange); color: var(--navy); border-radius: 6px 0 0 6px; }
+  .goal .who { padding: 0 26px; font-weight: 700; font-size: 26px; letter-spacing: 4px; text-transform: uppercase;
+    background: var(--navy); border-radius: 0 6px 6px 0; display: flex; align-items: center; }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="bug">
+    <div class="logo"><img src="../logo.jpg" alt=""></div>
+    <div class="team home bebas" id="home"></div>
+    <div class="score bebas"><span id="hs"></span><i>-</i><span id="as"></span></div>
+    <div class="team bebas" id="away"></div>
+    <div class="clock bebas" id="clock"><b id="time"></b><span id="period"></span></div>
+  </div>
+  <div class="goal" id="goal"><div class="tag bebas">Goal</div><div class="who" id="who"></div></div>
+</div>
+<script src="../matchday/league.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const code = name => { try { return team(name).code; } catch { return name; } };
+  let last, goalTimer;
+
+  function render(s) {
+    $('wrap').classList.toggle('hidden', !s.show);
+    $('home').textContent = code(s.home);
+    $('away').textContent = code(s.away);
+    $('hs').textContent = s.hs;
+    $('as').textContent = s.as;
+    const t = Math.floor(s.clock);
+    $('time').textContent = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+    $('clock').classList.toggle('stopped', !s.running);
+    $('period').textContent = s.period;
+    // Only flash for a +1 in the same match, not when teams are switched or a score is corrected down.
+    if (last && last.home === s.home && last.away === s.away) {
+      if (s.hs > last.hs) goal(s.home);
+      else if (s.as > last.as) goal(s.away);
+    }
+    last = s;
+  }
+
+  function goal(name) {
+    $('who').textContent = name;
+    $('goal').classList.add('on');
+    clearTimeout(goalTimer);
+    goalTimer = setTimeout(() => $('goal').classList.remove('on'), 7000);
+  }
+
+  // Poll the laptop's server. If it is briefly down, the last frame just stays on screen.
+  setInterval(() => fetch('/state').then(r => r.json()).then(render).catch(() => {}), 250);
+</script>
+</body>
+</html>

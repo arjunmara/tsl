@@ -1,0 +1,5 @@
+# One result per line, e.g.:  Da Boys 2-1 Real Tamghas
+# Full names or short codes both work. Then run: ./make.py table
+
+# Group-stage tie still level after head-to-head? Record the shootout with (pens):
+#   Da Boys 4-3 Real Tamghas (pens)

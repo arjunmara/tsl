@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TSL Facebook Cover</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Facebook cover, 1640x624. Mobile crops the sides, so all content stays in the centre ~1100px. */
+  :root { --navy: #0a1a3f; --navy-2: #12285c; --orange: #f58220; --muted: #9fb0d6; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1640px; height: 624px; background: var(--navy); }
+  body {
+    font-family: 'Barlow', sans-serif; color: #fff; position: relative; overflow: hidden;
+    background: linear-gradient(160deg, var(--navy-2) 0%, var(--navy) 65%);
+  }
+  .bg { position: absolute; inset: 0; }
+  .stripe { position: absolute; left: 0; right: 0; height: 10px; background: var(--orange); }
+  .stripe.top { top: 0; } .stripe.bottom { bottom: 0; }
+
+  main {
+    position: relative; height: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 56px;
+  }
+  .logo {
+    width: 300px; height: 300px; border-radius: 50%; background: #fff; padding: 5px; flex: none;
+    box-shadow: 0 0 0 8px var(--orange), 0 24px 60px rgba(0,0,0,.5);
+  }
+  .logo img { width: 100%; height: 100%; border-radius: 50%; display: block; }
+  .divider { width: 3px; height: 260px; background: linear-gradient(transparent, var(--orange), transparent); }
+  .kicker { font-weight: 700; font-size: 28px; letter-spacing: 12px; color: var(--orange); }
+  h1 {
+    font-family: 'Bebas Neue', sans-serif; font-weight: 400;
+    font-size: 150px; line-height: .9; letter-spacing: 4px; margin-top: 10px;
+  }
+  h1 span { display: block; }
+  .tag {
+    display: flex; align-items: center; gap: 18px; margin-top: 22px;
+    font-weight: 600; font-size: 24px; letter-spacing: 8px; color: var(--muted);
+  }
+  .tag::before { content: ''; width: 60px; height: 2px; background: var(--orange); }
+</style>
+</head>
+<body>
+  <svg class="bg" viewBox="0 0 1640 624" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="glow"><stop offset="0" stop-color="#3b6fd8" stop-opacity=".45"/><stop offset="1" stop-color="#3b6fd8" stop-opacity="0"/></radialGradient>
+      <radialGradient id="glowO"><stop offset="0" stop-color="#f58220" stop-opacity=".14"/><stop offset="1" stop-color="#f58220" stop-opacity="0"/></radialGradient>
+      <linearGradient id="fade" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".2"/><stop offset=".6" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+      <path id="star" d="M0,-1 L.2245,-.309 L.951,-.309 L.363,.118 L.588,.809 L0,.382 L-.588,.809 L-.363,.118 L-.951,-.309 L-.2245,-.309Z"/>
+    </defs>
+    <circle cx="1500" cy="80" r="520" fill="url(#glow)"/>
+    <circle cx="120" cy="600" r="480" fill="url(#glow)"/>
+    <circle cx="560" cy="312" r="360" fill="url(#glowO)"/>
+    <g id="swoosh" fill="none" stroke="url(#fade)"></g>
+    <g id="stars" fill="#fff"></g>
+  </svg>
+  <div class="stripe top"></div>
+
+  <main>
+    <div class="logo"><img src="../logo.jpg" alt=""></div>
+    <div class="divider"></div>
+    <div>
+      <div class="kicker">TAMGHAS, GULMI</div>
+      <h1><span>Tamghas</span><span>Super League</span></h1>
+      <div class="tag">FUTSAL TOURNAMENT</div>
+    </div>
+  </main>
+
+  <div class="stripe bottom"></div>
+  <script>
+    // Same pattern as the team lists: light curves sweeping across, stars on the outer edges.
+    const NS = 'http://www.w3.org/2000/svg', swoosh = document.getElementById('swoosh'), stars = document.getElementById('stars');
+    for (let i = 0; i < 26; i++) {
+      const path = document.createElementNS(NS, 'path'), o = i * 22;
+      path.setAttribute('d', `M-100,${700 - o * .4} C${400 + o},${560 - o} ${1000 + o},${300 - o * .5} 1740,${-80 + o * 1.2}`);
+      path.setAttribute('stroke-width', i % 4 ? 1 : 2);
+      swoosh.append(path);
+    }
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 120; i++) {
+      const x = rnd() * 1640, y = rnd() * 624;
+      if (x > 260 && x < 1380) continue;  // keep the centre clear for the logo and title
+      const u = document.createElementNS(NS, 'use'), r = 4 + rnd() * 16;
+      u.setAttribute('href', '#star');
+      u.setAttribute('transform', `translate(${x} ${y}) scale(${r}) rotate(${rnd() * 72})`);
+      u.setAttribute('opacity', (.06 + rnd() * .22).toFixed(2));
+      stars.append(u);
+    }
+  </script>
+</body>
+</html>

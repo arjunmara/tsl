@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TSL Overlay</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@700&display=swap" rel="stylesheet">
+<style>
+  /* Transparent 1080x1920 text overlay for reels. ?t1=white line&t2=orange line&logo=1
+     Render with --default-background-color=00000000 to keep the background transparent. */
+  :root { --orange: #f58220; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; background: transparent; }
+  body { font-family: 'Barlow', sans-serif; color: #fff; text-align: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 520px; }
+  .bebas { font-family: 'Bebas Neue', sans-serif; line-height: .9; letter-spacing: 5px; text-transform: uppercase;
+    text-shadow: 0 6px 30px rgba(0,0,0,.75), 0 2px 6px rgba(0,0,0,.6); }
+  .bar { width: 160px; height: 10px; background: var(--orange); margin: 26px 0; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  .logo { width: 170px; height: 170px; border-radius: 50%; background: #fff; padding: 3px; margin-bottom: 30px;
+    box-shadow: 0 0 0 6px var(--orange), 0 12px 40px rgba(0,0,0,.6); }
+  .logo img { width: 100%; height: 100%; border-radius: 50%; display: block; }
+</style>
+</head>
+<body>
+<script>
+  const q = new URLSearchParams(location.search), esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+  document.body.innerHTML = `
+    ${q.get('logo') ? '<div class="logo"><img src="../logo.jpg" alt=""></div>' : ''}
+    <div class="bebas" style="font-size:230px">${esc(q.get('t1') || '')}</div>
+    <div class="bar"></div>
+    ${q.get('t2') ? `<div class="bebas" style="font-size:150px;color:var(--orange)">${esc(q.get('t2'))}</div>` : ''}`;
+</script>
+</body>
+</html>

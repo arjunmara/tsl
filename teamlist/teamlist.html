@@ -1,0 +1,193 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TSL Team List</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0a1a3f;
+    --navy-2: #12285c;
+    --orange: #f58220;
+    --white: #ffffff;
+    --muted: #9fb0d6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1350px; background: var(--navy); }
+  body {
+    font-family: 'Barlow', sans-serif;
+    color: var(--white);
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(900px 600px at 50% -10%, rgba(245,130,32,.18), transparent 60%),
+      linear-gradient(180deg, var(--navy-2) 0%, var(--navy) 55%);
+  }
+  /* background pattern: sweeping light lines + star field */
+  .bg { position: absolute; inset: 0; }
+  header, ol { position: relative; } /* paint above .bg */
+  .stripe { position: absolute; left: 0; right: 0; height: 10px; background: var(--orange); }
+  .stripe.top { top: 0; }
+  .stripe.bottom { bottom: 0; }
+
+  header { text-align: center; padding-top: 70px; }
+  .logo {
+    width: 190px; height: 190px; border-radius: 50%; margin: 0 auto;
+    background: #fff; padding: 4px;
+    box-shadow: 0 0 0 6px var(--orange), 0 20px 50px rgba(0,0,0,.45);
+  }
+  .logo img { width: 100%; height: 100%; border-radius: 50%; display: block; }
+  .league {
+    margin-top: 34px; font-weight: 700; letter-spacing: 10px; font-size: 24px;
+    color: var(--orange); text-transform: uppercase;
+  }
+  .team {
+    font-family: 'Bebas Neue', sans-serif; font-size: 112px; line-height: 1;
+    letter-spacing: 3px; margin-top: 10px; text-transform: uppercase;
+  }
+  .label {
+    display: inline-flex; align-items: center; gap: 18px; margin-top: 18px;
+    font-weight: 600; font-size: 22px; letter-spacing: 8px; color: var(--muted);
+  }
+  .label::before, .label::after { content: ''; width: 70px; height: 2px; background: var(--orange); }
+
+  ol { list-style: none; width: 800px; margin: 54px auto 0; }
+  li {
+    display: flex; align-items: center; height: var(--h, 82px); margin-bottom: calc(var(--h, 82px) * .17);
+    background: rgba(14,32,78,.82);
+    backdrop-filter: blur(2px);
+    border-left: 6px solid var(--orange);
+    border-radius: 4px;
+  }
+  .num {
+    font-family: 'Bebas Neue', sans-serif; font-size: calc(var(--h, 82px) * .54); color: var(--orange);
+    width: 100px; text-align: center;
+  }
+  .name {
+    flex: 1; font-weight: 700; font-size: calc(var(--h, 82px) * .44); letter-spacing: 2px; text-transform: uppercase;
+  }
+  .cap {
+    margin-right: 26px; min-width: calc(var(--h, 82px) * .58); height: calc(var(--h, 82px) * .58); border-radius: 999px;
+    background: var(--orange); color: var(--navy);
+    font-family: 'Bebas Neue', sans-serif; font-size: calc(var(--h, 82px) * .39);
+    display: flex; align-items: center; justify-content: center; padding: 3px 0 0;
+  }
+  .cap.gk { background: transparent; color: var(--orange); box-shadow: inset 0 0 0 2px var(--orange); padding: 3px 12px 0; }
+  .cap + .cap { margin-left: -14px; }
+  footer {
+    position: absolute;
+    bottom: 44px; left: 0; right: 0; text-align: center;
+    font-weight: 600; font-size: 20px; letter-spacing: 8px; color: var(--muted);
+  }
+  footer b { color: var(--orange); font-weight: 700; }
+  .note {
+    position: relative; text-align: center; margin-top: 18px;
+    font-weight: 600; font-size: 20px; letter-spacing: 4px; text-transform: uppercase; color: var(--muted);
+  }
+  .staff {
+    position: relative; display: flex; justify-content: center; gap: 56px; margin-top: 22px;
+    font-weight: 700; font-size: 26px; letter-spacing: 2px; text-transform: uppercase;
+  }
+  .staff span { color: var(--orange); font-weight: 600; font-size: 18px; letter-spacing: 5px; margin-right: 14px; }
+</style>
+</head>
+<body>
+  <!-- ===== EDIT PER TEAM ===== -->
+  <script>
+    const TEAM = 'Junior Ballers Tamghas';
+    const PLAYERS = `
+NABIN HITANG
+RILESH SHREES (C)
+AMIT SHREES
+UMESH SHREES
+PUJAN BHANDARI
+BIPIN GHARTI
+NISHAN PUN
+NAIZAL SHRESTHA
+`;
+  </script>
+  <!-- ========================= -->
+
+  <svg class="bg" viewBox="0 0 1080 1350" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="glow"><stop offset="0" stop-color="#3b6fd8" stop-opacity=".45"/><stop offset="1" stop-color="#3b6fd8" stop-opacity="0"/></radialGradient>
+      <radialGradient id="glowO"><stop offset="0" stop-color="#f58220" stop-opacity=".1"/><stop offset="1" stop-color="#f58220" stop-opacity="0"/></radialGradient>
+      <linearGradient id="fade" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".6" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+      <path id="star" d="M0,-1 L.2245,-.309 L.951,-.309 L.363,.118 L.588,.809 L0,.382 L-.588,.809 L-.363,.118 L-.951,-.309 L-.2245,-.309Z"/>
+    </defs>
+    <circle cx="1000" cy="250" r="520" fill="url(#glow)"/>
+    <circle cx="60" cy="1150" r="560" fill="url(#glow)"/>
+    <circle cx="540" cy="160" r="420" fill="url(#glowO)"/>
+    <g id="swoosh" fill="none" stroke="url(#fade)"></g>
+    <g id="stars" fill="#fff"></g>
+  </svg>
+  <div class="stripe top"></div>
+  <header>
+    <div class="logo"><img src="../logo.jpg" alt=""></div>
+    <div class="league">Tamghas Super League</div>
+    <div class="team" id="team"></div>
+    <div class="label">OFFICIAL SQUAD</div>
+  </header>
+  <ol id="list"></ol>
+  <div class="staff" id="staff"></div>
+  <div class="note" id="note" hidden>* Player to be announced</div>
+  <footer><b>TSL</b> &nbsp;·&nbsp; FUTSAL</footer>
+  <div class="stripe bottom"></div>
+
+  <script>
+    // Background pattern, deterministic so every team's graphic looks identical.
+    const NS = 'http://www.w3.org/2000/svg', swoosh = document.getElementById('swoosh'), stars = document.getElementById('stars');
+    for (let i = 0; i < 22; i++) {             // fanned curves sweeping from the bottom-left to the top-right
+      const path = document.createElementNS(NS, 'path'), o = i * 26;
+      path.setAttribute('d', `M${-200 + o},1350 C${150 + o},${900 - o} ${500 + o},${500 - o * .6} ${1300},${-50 + o * 1.6}`);
+      path.setAttribute('stroke-width', i % 4 ? 1 : 2);
+      swoosh.append(path);
+    }
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 90; i++) {             // scattered stars along the side edges
+      const x = rnd() * 1080, y = rnd() * 1350, edge = Math.min(x, 1080 - x) < 150;
+      if (!edge) continue;  // keep the centre clear for text
+      const u = document.createElementNS(NS, 'use'), r = 4 + rnd() * (edge ? 18 : 8);
+      u.setAttribute('href', '#star');
+      u.setAttribute('transform', `translate(${x} ${y}) scale(${r}) rotate(${rnd() * 72})`);
+      u.setAttribute('opacity', (.06 + rnd() * .22).toFixed(2));
+      stars.append(u);
+    }
+
+    // Query params override the defaults above: ?team=X&players=A|B (C)|C
+    const q = new URLSearchParams(location.search);
+    const entries = (q.get('players') ?? PLAYERS).split(/[|\n]/).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    // (Coach) / (Manager) entries are staff: shown on one line under the squad, not numbered.
+    const STAFF = /\(\s*(coach|manager)\s*\)/i;
+    const players = entries.filter(e => !STAFF.test(e));
+    const staff = document.getElementById('staff');
+    entries.filter(e => STAFF.test(e)).forEach(e => {
+      const div = document.createElement('div'), role = document.createElement('span');
+      role.textContent = e.match(STAFF)[1].toLowerCase() === 'coach' ? 'Head Coach' : 'Manager';
+      div.append(role, e.replace(STAFF, '').trim());
+      staff.append(div);
+    });
+    const title = document.getElementById('team'), span = document.createElement('span');
+    span.textContent = q.get('team') ?? TEAM;
+    title.append(span);
+    document.fonts.ready.then(() => {               // shrink long names to fit 900px, once Bebas has loaded
+      for (let size = 112; span.offsetWidth > 900 && size > 40; size -= 2) title.style.fontSize = size + 'px';
+    });
+    const list = document.getElementById('list');
+    const hasNote = players.some(p => p.includes('*'));  // explain a * placeholder
+    document.getElementById('note').hidden = !hasNote;
+    // Rows shrink so up to ~14 players fit above the footer (700px of list space, less for staff/note lines).
+    const space = 700 - (staff.children.length ? 70 : 0) - (hasNote ? 50 : 0);
+    list.style.setProperty('--h', Math.min(82, space / players.length / 1.17) + 'px');
+    players.forEach((p, i) => {
+      // Role tags anywhere in the name: (C) captain, (GK) goalkeeper.
+      const tags = [...p.matchAll(/\((C|GK)\)/gi)].map(m => m[1].toUpperCase());
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="num">${String(i + 1).padStart(2, '0')}</span><span class="name"></span>`
+        + tags.map(t => `<span class="cap ${t === 'GK' ? 'gk' : ''}">${t}</span>`).join('');
+      li.querySelector('.name').textContent = p.replace(/\((C|GK)\)/gi, '').replace(/\s+/g, ' ').trim();
+      list.append(li);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>TSL Scoreboard Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --navy: #0a1a3f; --navy-2: #12285c; --orange: #f58220; --muted: #9fb0d6; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; padding: 16px; background: var(--navy); color: #fff; font-family: 'Barlow', sans-serif; }
+  h2 { margin: 22px 0 8px; font-size: 13px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; }
+  button, select { font: inherit; font-weight: 700; color: #fff; background: var(--navy-2); border: 0; border-radius: 10px; padding: 14px; }
+  button:active { filter: brightness(1.4); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; min-width: 0; }
+  .bebas { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
+
+  .live { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-radius: 12px;
+    background: var(--navy-2); border-left: 4px solid var(--orange); }
+  .live .sc { font-size: 44px; }
+  .live .tm { text-align: right; }
+  .live .tm b { display: block; font-size: 32px; font-weight: 400; }
+  .live .tm span { font-size: 12px; letter-spacing: 2px; color: var(--orange); text-transform: uppercase; }
+  .off { color: var(--muted); }
+
+  .side { text-align: center; }
+  .side .name { min-height: 40px; font-weight: 700; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; }
+  .plus { width: 100%; height: 110px; font-size: 64px; background: var(--orange); color: var(--navy); }
+  .minus { width: 100%; margin-top: 8px; padding: 8px; font-size: 14px; color: var(--muted); }
+  .start { background: #1e8e3e; }
+  .start.running { background: #b00020; }
+  .on { background: var(--orange); color: var(--navy); }
+  select { width: 100%; }
+  .err { display: none; margin-bottom: 12px; padding: 10px; border-radius: 8px; background: #b00020; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="err" id="err">Can't reach the laptop. Check the Wi-Fi.</div>
+
+<div class="live">
+  <div class="sc bebas" id="sc"></div>
+  <div class="tm"><b class="bebas" id="time"></b><span id="per"></span></div>
+</div>
+
+<h2>Score</h2>
+<div class="row">
+  <div class="side"><div class="name" id="hn"></div><button class="plus bebas" onclick="add('hs', 1)">+1</button><button class="minus" onclick="add('hs', -1)">Undo −1</button></div>
+  <div class="side"><div class="name" id="an"></div><button class="plus bebas" onclick="add('as', 1)">+1</button><button class="minus" onclick="add('as', -1)">Undo −1</button></div>
+</div>
+
+<h2>Clock</h2>
+<div class="row"><button class="start" id="start" onclick="send({clock: s.running ? 'stop' : 'start'})">Start</button></div>
+<div class="row" style="margin-top:8px">
+  <button onclick="send({clock: s.clock - 10})">−10s</button>
+  <button onclick="send({clock: s.clock + 10})">+10s</button>
+  <button onclick="confirm('Reset clock to 00:00?') && send({clock: 'reset'})">Reset</button>
+</div>
+
+<h2>Period</h2>
+<div class="row" id="periods"></div>
+
+<h2>Scoreboard</h2>
+<div class="row"><button id="show" onclick="send({show: !s.show})"></button></div>
+
+<h2>New match</h2>
+<div class="row"><select id="home"></select><select id="away"></select></div>
+<div class="row" style="margin-top:8px"><button onclick="newMatch()">Start new match (0-0, clock 00:00)</button></div>
+
+<script src="../matchday/league.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const PERIODS = ['1st Half', 'Half Time', '2nd Half', 'Full Time', 'Penalties'];
+  let s = {};
+
+  $('periods').style.flexWrap = 'wrap';
+  $('periods').innerHTML = PERIODS.map(p => `<button style="flex-basis:30%" onclick="send({period: '${p}'})">${p}</button>`).join('');
+  const opts = TEAMS.map(t => `<option>${t.name}</option>`).join('');
+  $('home').innerHTML = $('away').innerHTML = opts;
+
+  function render(next) {
+    s = next;
+    const t = Math.floor(s.clock);
+    $('sc').textContent = `${team(s.home).code} ${s.hs} - ${s.as} ${team(s.away).code}`;
+    $('time').textContent = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+    $('time').classList.toggle('off', !s.running);
+    $('per').textContent = s.period;
+    $('hn').textContent = s.home;
+    $('an').textContent = s.away;
+    $('start').textContent = s.running ? 'Stop clock' : 'Start clock';
+    $('start').classList.toggle('running', s.running);
+    $('show').textContent = s.show ? 'Showing — tap to hide' : 'Hidden — tap to show';
+    $('show').classList.toggle('on', s.show);
+    [...$('periods').children].forEach(b => b.classList.toggle('on', b.textContent === s.period));
+    $('err').style.display = 'none';
+  }
+
+  function send(patch) {
+    return fetch('/state', { method: 'POST', body: JSON.stringify(patch) }).then(r => r.json()).then(render)
+      .catch(() => $('err').style.display = 'block');
+  }
+  const add = (k, n) => send({ [k]: s[k] + n });
+
+  function newMatch() {
+    const home = $('home').value, away = $('away').value;
+    if (home === away) return alert('Pick two different teams.');
+    if (confirm(`New match: ${home} vs ${away}?\nScore and clock go back to zero.`))
+      send({ home, away, hs: 0, as: 0, clock: 'reset', period: '1st Half' });
+  }
+
+  const poll = () => fetch('/state').then(r => r.json()).then(render).catch(() => $('err').style.display = 'block');
+  poll();
+  setInterval(poll, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSL Graphics</title>
+<link rel="apple-touch-icon" href="logo.jpg">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Phone graphics maker: no laptop needed. Templates render in an iframe; the PNG is made in the browser.
+     Results and squad edits are kept on this phone (localStorage). */
+  :root { --navy: #0a1a3f; --navy-2: #12285c; --card: #102352; --orange: #f58220; --muted: #9fb0d6; --line: rgba(255,255,255,.1); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--navy); color: #fff; font-family: 'Barlow', sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--navy-2); border-bottom: 4px solid var(--orange); position: sticky; top: 0; z-index: 5; }
+  header img { width: 40px; height: 40px; border-radius: 50%; box-shadow: 0 0 0 2px var(--orange); }
+  header h1 { margin: 0; font: 400 28px 'Bebas Neue', sans-serif; letter-spacing: 2px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 12px 16px 60px; }
+  h2 { margin: 22px 0 8px; font: 400 28px 'Bebas Neue', sans-serif; letter-spacing: 2px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+  .kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+  button, .btn { font: inherit; font-weight: 700; color: #fff; background: var(--navy-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .on, .primary { background: var(--orange); color: var(--navy); border-color: var(--orange); }
+  label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
+  input, select, textarea { width: 100%; margin-top: 4px; font: 500 16px 'Barlow', sans-serif; color: #fff; background: var(--navy); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  textarea { min-height: 120px; font-family: ui-monospace, monospace; font-size: 14px; }
+  .cols { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+  .preview { position: relative; overflow: hidden; border-radius: 8px; background: var(--navy-2); }
+  .preview iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
+  #png img { width: 100%; border-radius: 8px; display: block; margin-top: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 70px 1fr; gap: 6px; align-items: end; }
+  .msg { margin-top: 8px; font-weight: 700; color: var(--muted); }
+  .err { color: #ff6b6b; }
+</style>
+</head>
+<body>
+<header><img src="logo.jpg" alt=""><h1>TSL Graphics</h1></header>
+<main>
+  <div class="kinds" id="kinds"></div>
+  <div class="cols" style="margin-top:14px">
+    <form class="card" id="form" onsubmit="return false"><div id="fields"></div></form>
+    <div class="card">
+      <div class="preview" id="preview"><iframe id="frame"></iframe></div>
+      <button class="primary" id="save" style="width:100%;margin-top:10px">Save image</button>
+      <div class="msg" id="msg"></div>
+      <div id="png"></div>
+    </div>
+  </div>
+
+  <h2>Results</h2>
+  <div class="card">
+    <div class="row3">
+      <label>Home<select id="rh"></select></label>
+      <label>Score<input id="rs" placeholder="2-1" inputmode="numeric"></label>
+      <label>Away<select id="ra"></select></label>
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;text-transform:none"><input type="checkbox" id="rp" style="width:auto;margin:0"> Decided by shootout (group tie-break)</label>
+    <button class="primary" id="radd">Add result</button>
+    <button id="rtable">Show points table</button>
+    <label style="margin-top:14px">All results (one per line, edit freely)<textarea id="results"></textarea></label>
+    <div class="msg" id="rmsg"></div>
+    <button id="rreset" style="margin-top:8px">Reset to published results</button>
+  </div>
+</main>
+
+<datalist id="teamlist"></datalist>
+<script src="matchday/league.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+                  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+  const text = f => fetch(`${f}?t=${Date.now()}`).then(r => r.ok ? r.text() : '');
+
+  // Fields per graphic: "name", "name*" = required, "name|default", "name~" = textarea. Mirrors matchday.html.
+  const MD = 'matchday/matchday.html', W = 1080, H = 1350;
+  const KINDS = {
+    goal:      ['Goal',        MD, ['scorer*', 'team*', 'home*', 'away*', 'score*', 'minute']],
+    score:     ['Final score', MD, ['home*', 'away*', 'score*', 'label|Full Time', 'homeScorers', 'awayScorers', 'match']],
+    fixture:   ['Next match',  MD, ['home*', 'away*', 'match', 'date', 'time', 'venue|Tamghas Futsal', 'label|Next Match']],
+    table:     ['Points table', MD, ['title|Points Table', 'subtitle', 'qualify|2', 'next|Quarter-Finals']],
+    results:   ['Results',     MD, ['matches*', 'title|Results', 'subtitle']],
+    motm:      ['Man of match', MD, ['name*', 'team*', 'stat', 'match']],
+    scorers:   ['Top scorers', MD, ['players*', 'title|Top Scorers', 'subtitle']],
+    fixtures:  ['Fixtures',    MD, ['fixtures~', 'title|Group Stage Fixtures', 'subtitle|Saturday · Kartik 14 · 7 AM Sharp']],
+    format:    ['Format / draw', MD, ['groups~', 'label|Official Draw']],
+    notice:    ['Notice',      MD, ['title*', 'label|Official Notice', 'date', 'time', 'venue|Tamghas Futsal', 'body~', 'sign|Organizing Committee']],
+    teams:     ['All teams',   MD, ['title|The Teams', 'subtitle']],
+    champions: ['Champions',   MD, ['team*', 'season|Season 1', 'label|Champions']],
+    squad:     ['Team list',   'teamlist/teamlist.html', ['team*', 'players~']],
+    cover:     ['FB cover',    'teamlist/cover.html', []],
+  };
+  const SIZE = { cover: [1640, 624] };
+  const HINTS = { score: '2-1', minute: '12', homeScorers: "Mishan KC 12'|Arjun KC 30'", awayScorers: "Arjun KC 25'",
+    matches: 'DAB,RTM,2-1|KPT,KYC,4:00 PM', players: 'Mishan KC,DAB,5|Arjun KC,RTM,3', stat: '2 Goals', match: 'Match 1' };
+  const TEAM_FIELDS = ['home', 'away', 'team'];
+  const files = {};  // groups.txt, fixtures.txt, squads.txt as published
+  let kind = 'goal';
+
+  const squads = () => Object.fromEntries(((store.get('squads') ?? files.squads) || '').split('\n')
+    .filter(l => l.includes(':') && !l.startsWith('#')).map(l => [l.slice(0, l.indexOf(':')).trim(), l.slice(l.indexOf(':') + 1).trim()]));
+
+  $('teamlist').innerHTML = TEAMS.map(t => `<option value="${t.name}">`).join('');
+  $('rh').innerHTML = $('ra').innerHTML = TEAMS.map(t => `<option>${t.name}</option>`).join('');
+  $('kinds').innerHTML = Object.entries(KINDS).map(([k, [n]]) => `<button type="button" data-kind="${k}">${n}</button>`).join('');
+  $('kinds').onclick = e => e.target.dataset.kind && pick(e.target.dataset.kind);
+
+  function pick(k) {
+    kind = k;
+    document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('on', b.dataset.kind === k));
+    const defs = { fixtures: files.fixtures, groups: files.groups };
+    $('fields').innerHTML = KINDS[k][2].map(f => {
+      const [name, def = defs[name.replace(/\W/g, '')] ?? ''] = f.replace(/[*~]/g, '').split('|'), req = f.includes('*');
+      const attrs = `name="${name}" placeholder="${HINTS[name] || ''}" ${TEAM_FIELDS.includes(name) ? 'list="teamlist"' : ''}`;
+      const esc = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      return `<label>${name.replace(/([A-Z])/g, ' $1')}${req ? ' *' : ''}${f.includes('~')
+        ? `<textarea ${attrs}>${esc(def)}</textarea>` : `<input ${attrs} value="${esc(def)}">`}</label>`;
+    }).join('') || '<p class="msg">No fields — just save it.</p>';
+    if (k === 'squad') $('fields').insertAdjacentHTML('beforeend', '<button type="button" id="keep">Remember this squad on this phone</button>');
+    render();
+  }
+
+  $('form').oninput = e => {
+    if (kind === 'squad' && e.target.name === 'team') $('form').elements.players.value = (squads()[e.target.value] || '').split('|').join('\n');
+    clearTimeout(render.t); render.t = setTimeout(render, 400);
+  };
+  $('form').onclick = e => {
+    if (e.target.id !== 'keep') return;
+    const f = $('form').elements, all = squads();
+    all[f.team.value.trim()] = f.players.value.split(/\n|\|/).map(s => s.trim()).filter(Boolean).join('|');
+    store.set('squads', Object.entries(all).map(([t, p]) => `${t}: ${p}`).join('\n'));
+    e.target.textContent = 'Remembered ✓';
+  };
+
+  function params() {
+    const p = { type: kind, ...Object.fromEntries(new FormData($('form'))) };
+    if (kind === 'table') Object.assign(p, { results: $('results').value, groups: files.groups });
+    if (kind === 'squad') p.players = (p.players || '').split('\n').join('|');
+    return p;
+  }
+
+  function render() {
+    const [w, h] = SIZE[kind] || [W, H], f = $('frame');
+    f.style.width = w + 'px'; f.style.height = h + 'px';
+    const s = $('preview').clientWidth / w;
+    f.style.transform = `scale(${s})`; $('preview').style.height = h * s + 'px';
+    f.src = `${KINDS[kind][1]}?${new URLSearchParams(params())}`;
+    $('png').innerHTML = ''; $('msg').className = 'msg'; $('msg').textContent = '';
+  }
+  addEventListener('resize', () => render());
+
+  // Google Fonts CSS with every font file inlined, so the PNG keeps Bebas/Barlow (html-to-image can't read cross-origin CSS).
+  const fontCache = {};
+  const fontCSS = doc => {
+    const href = doc.querySelector('link[href*="fonts.googleapis"]')?.href;
+    return href ? fontCache[href] ??= fetch(href).then(r => r.text()).then(async css => {
+      for (const u of new Set(css.match(/https:\/\/fonts\.gstatic\.com[^)'"]+/g))) {
+        const b = await fetch(u).then(r => r.blob());
+        css = css.replaceAll(u, await new Promise(ok => { const f = new FileReader(); f.onload = () => ok(f.result); f.readAsDataURL(b); }));
+      }
+      return css;
+    }) : '';
+  };
+
+  $('save').onclick = async () => {
+    const msg = $('msg'), doc = $('frame').contentDocument, win = $('frame').contentWindow;
+    if (doc.querySelector('.err')) { msg.className = 'msg err'; return msg.textContent = 'Fix the red error first: ' + doc.querySelector('.err').textContent; }
+    msg.className = 'msg'; msg.textContent = 'Making image…';
+    try {
+      await doc.fonts.ready;
+      const [w, h] = SIZE[kind] || [W, H], opts = { width: w, height: h, pixelRatio: 1, fontEmbedCSS: await fontCSS(doc) };
+      // ponytail: render twice; iOS Safari often drops fonts/images on the first pass
+      await htmlToImage.toBlob(doc.documentElement, opts);
+      const blob = await htmlToImage.toBlob(doc.documentElement, opts);
+      const name = `tsl-${kind}-${Date.now()}.png`, file = new File([blob], name, { type: 'image/png' }), url = URL.createObjectURL(blob);
+      $('png').innerHTML = `<div style="display:flex;gap:8px;margin-top:10px">
+          ${navigator.canShare?.({ files: [file] }) ? '<button class="primary" id="share">Share / Save to Photos</button>' : ''}
+          <a class="btn" href="${url}" download="${name}">Download</a></div>
+        <img src="${url}" alt="">`;
+      if ($('share')) $('share').onclick = () => navigator.share({ files: [file] }).catch(() => {});
+      msg.textContent = 'Done ✓  Tip: you can also long-press the image to save it.';
+    } catch (e) { msg.className = 'msg err'; msg.textContent = 'Could not make the image: ' + (e.message || e); }
+  };
+
+  // ---- Results: kept on this phone; the table preview updates as you type ----
+  const saveResults = () => {
+    try { parseResults($('results').value); $('rmsg').className = 'msg'; $('rmsg').textContent = 'Saved on this phone ✓'; }
+    catch (e) { $('rmsg').className = 'msg err'; $('rmsg').textContent = e.message; }
+    store.set('results', $('results').value);
+    if (kind === 'table') render();
+  };
+  $('results').oninput = () => { clearTimeout(saveResults.t); saveResults.t = setTimeout(saveResults, 500); };
+  $('radd').onclick = () => {
+    const s = $('rs').value.trim().replace(/\s/g, ''), h = $('rh').value, a = $('ra').value;
+    if (!/^\d+-\d+$/.test(s) || h === a) { $('rmsg').className = 'msg err'; return $('rmsg').textContent = 'Pick two different teams and a score like 2-1'; }
+    $('results').value = $('results').value.replace(/\n*$/, '\n') + `${h} ${s} ${a}${$('rp').checked ? ' (pens)' : ''}\n`;
+    $('rs').value = ''; $('rp').checked = false; saveResults();
+  };
+  $('rtable').onclick = () => { pick('table'); scrollTo({ top: 0, behavior: 'smooth' }); };
+  $('rreset').onclick = () => { if (confirm('Replace the results on this phone with the published results.txt?')) { $('results').value = files.results; saveResults(); } };
+
+  Promise.all(['matchday/groups.txt', 'matchday/fixtures.txt', 'matchday/results.txt', 'teamlist/squads.txt'].map(text)).then(([g, f, r, sq]) => {
+    Object.assign(files, { groups: g, fixtures: f, results: r, squads: sq });
+    $('results').value = store.get('results') ?? r;
+    pick('goal');
+  });
+</script>
+</body>
+</html>

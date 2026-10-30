@@ -1,0 +1,228 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSL Control Room</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+  /* Served by live/server.py at http://localhost:8000/ — everything for matchday in one page. */
+  :root { --navy: #0a1a3f; --navy-2: #12285c; --card: #102352; --orange: #f58220; --muted: #9fb0d6; --line: rgba(255,255,255,.08); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--navy); color: #fff; font-family: 'Barlow', sans-serif; }
+  a { color: var(--orange); }
+  header { display: flex; align-items: center; gap: 18px; padding: 18px 28px; border-bottom: 4px solid var(--orange); background: var(--navy-2);
+    position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+  header img { width: 56px; height: 56px; border-radius: 50%; box-shadow: 0 0 0 3px var(--orange); }
+  header h1 { margin: 0; font: 400 36px 'Bebas Neue', sans-serif; letter-spacing: 3px; }
+  header nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
+  header nav a { color: var(--muted); text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; }
+  header nav a:hover { color: #fff; }
+  .live-pill { font: 400 24px 'Bebas Neue', sans-serif; letter-spacing: 2px; padding: 6px 14px 2px; border-radius: 6px; background: var(--card); }
+  .live-pill b { color: var(--orange); font-weight: 400; }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 8px 28px 60px; }
+  section { padding-top: 30px; scroll-margin-top: 90px; }
+  h2 { margin: 0 0 4px; font: 400 34px 'Bebas Neue', sans-serif; letter-spacing: 3px; }
+  h2 + p { margin: 0 0 16px; color: var(--muted); }
+  h3 { margin: 0 0 10px; font-size: 13px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+
+  button, .btn { font: inherit; font-weight: 700; color: #fff; background: var(--navy-2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 16px; cursor: pointer; text-decoration: none; display: inline-block; }
+  button:hover, .btn:hover { filter: brightness(1.3); }
+  .primary { background: var(--orange); color: var(--navy); border-color: var(--orange); }
+  code { background: var(--navy); padding: 6px 8px; border-radius: 6px; font-size: 13px; word-break: break-all; display: block; margin: 8px 0; }
+
+  .preview { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; background: #2a3a5c; }
+  .preview.overlay { background: linear-gradient(135deg, #3d6b3a, #24452a); }  /* stand-in for the camera picture */
+  .preview iframe { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; pointer-events: none; }
+  .qr { display: flex; gap: 18px; align-items: center; }
+  .qr svg { width: 150px; height: 150px; background: #fff; border-radius: 8px; padding: 6px; flex: none; }
+
+  label { display: block; margin-bottom: 10px; font-size: 13px; font-weight: 700; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
+  input, select, textarea { width: 100%; margin-top: 4px; font: 500 16px 'Barlow', sans-serif; color: #fff; background: var(--navy);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px; text-transform: none; letter-spacing: 0; }
+  textarea { min-height: 220px; font-family: ui-monospace, monospace; font-size: 14px; }
+  .kinds { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .kinds button.on { background: var(--orange); color: var(--navy); }
+  .maker { display: grid; gap: 20px; grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr); }
+  @media (max-width: 760px) { .maker { grid-template-columns: 1fr; } }
+  .result img { width: 100%; border-radius: 8px; display: block; }
+  .result .empty { aspect-ratio: 4 / 5; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--line); border-radius: 8px; color: var(--muted); }
+  .msg { margin-top: 10px; font-weight: 700; }
+  .msg.err { color: #ff6b6b; }
+
+  .thumbs { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .thumbs a { color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; }
+  .thumbs img { width: 100%; border-radius: 8px; display: block; margin-bottom: 6px; background: var(--card); }
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.jpg" alt="">
+  <h1>TSL Control Room</h1>
+  <span class="live-pill" id="pill">Connecting…</span>
+  <nav><a href="#live">Live</a><a href="#graphics">Graphics</a><a href="#results">Results</a><a href="#teams">Team lists</a><a href="maker.html">Phone maker</a></nav>
+</header>
+
+<main>
+  <section id="live">
+    <h2>Live broadcast</h2>
+    <p>Scorekeeper runs the phone page. Paste the three links into OBS as Browser sources (1920×1080).</p>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(420px, 1fr))">
+      <div class="card">
+        <h3>Scorekeeper phone</h3>
+        <div class="qr"><div id="qr"></div><div>Scan with the phone (same Wi-Fi as this laptop).<code id="ctl"></code><a class="btn" href="live/control.html" target="_blank">Open control here</a></div></div>
+      </div>
+      <div class="card"><h3>Match scene · score bar</h3><div class="preview overlay"><iframe data-src="live/overlay.html"></iframe></div><code></code><button data-copy>Copy link</button></div>
+      <div class="card"><h3>Starting Soon scene</h3><div class="preview"><iframe data-src="live/screen.html?mode=soon"></iframe></div><code></code><button data-copy>Copy link</button></div>
+      <div class="card"><h3>Break scene · Half / Full Time</h3><div class="preview"><iframe data-src="live/screen.html?mode=break"></iframe></div><code></code><button data-copy>Copy link</button></div>
+    </div>
+  </section>
+
+  <section id="graphics">
+    <h2>Matchday graphics</h2>
+    <p>Pick a graphic, fill it in, hit Make. Saved to <a href="matchday/out/" target="_blank">matchday/out/</a> as a 1080×1350 PNG for Facebook.</p>
+    <div class="kinds" id="kinds"></div>
+    <div class="maker">
+      <form class="card" id="form">
+        <div id="fields"></div>
+        <button type="button" id="fill">Fill from live match</button>
+        <button type="submit" class="primary">Make graphic</button>
+        <div class="msg" id="msg"></div>
+      </form>
+      <div class="result card" id="result"><div class="empty">Your graphic shows here</div></div>
+    </div>
+  </section>
+
+  <section id="results">
+    <h2>Results &amp; groups</h2>
+    <p>One result per line, e.g. <b>Da Boys 2-1 Real Tamghas</b>. Save, then make the points table.</p>
+    <div class="grid">
+      <div class="card"><h3>results.txt</h3><textarea id="results.txt"></textarea><button data-save="results.txt" class="primary">Save results</button> <button id="mktable">Make points table</button></div>
+      <div class="card"><h3>groups.txt</h3><textarea id="groups.txt"></textarea><button data-save="groups.txt" class="primary">Save groups</button></div>
+    </div>
+    <div class="msg" id="rmsg"></div>
+  </section>
+
+  <section id="teams">
+    <h2>Team lists &amp; cover</h2>
+    <p>Click to open full size, then save or share.</p>
+    <div class="thumbs" id="thumbs"></div>
+  </section>
+</main>
+
+<datalist id="teamlist"></datalist>
+<script src="matchday/league.js"></script>
+<script>
+  if (location.hostname.endsWith('github.io')) location.replace('maker.html');  // no laptop server online: go to the phone maker
+  const $ = id => document.getElementById(id);
+  const mmss = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t) % 60).padStart(2, '0')}`;
+  const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');  // same as teamlist/render.sh
+  const post = (path, body) => fetch(path, { method: 'POST', body: JSON.stringify(body) }).then(r => r.json());
+  let live = {};
+
+  // ---- Live: status pill, QR for the phone, OBS links with scaled previews ----
+  function poll() {
+    fetch('/state').then(r => r.json()).then(s => {
+      const first = !live.lan;
+      live = s;
+      $('pill').innerHTML = `${team(s.home).code} <b>${s.hs} - ${s.as}</b> ${team(s.away).code} · ${mmss(s.clock)} · ${s.period}`;
+      if (first) {
+        const url = `http://${s.lan}:8000/live/control.html`;
+        $('ctl').textContent = url;
+        if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(url); q.make(); $('qr').innerHTML = q.createSvgTag({ scalable: true }); }
+      }
+    }).catch(() => $('pill').textContent = 'Server not running');
+  }
+  poll(); setInterval(poll, 1000);
+
+  document.querySelectorAll('iframe[data-src]').forEach(f => {
+    const url = `${location.origin}/${f.dataset.src}`;
+    f.src = f.dataset.src;
+    f.closest('.card').querySelector('code').textContent = url;
+    f.closest('.card').querySelector('[data-copy]').onclick = e => navigator.clipboard.writeText(url).then(() => e.target.textContent = 'Copied ✓');
+  });
+  const scale = () => document.querySelectorAll('.preview').forEach(p => p.firstElementChild.style.transform = `scale(${p.clientWidth / 1920})`);
+  addEventListener('resize', scale); scale();
+
+  // ---- Graphics maker. Fields per type: "name", "name*" = required, "name|default". Mirrors make.py / matchday.html. ----
+  const KINDS = {
+    goal: ['scorer*', 'team*', 'home*', 'away*', 'score*', 'minute'],
+    score: ['home*', 'away*', 'score*', 'label|Full Time', 'homeScorers', 'awayScorers', 'match'],
+    fixture: ['home*', 'away*', 'match', 'date', 'time', 'venue', 'label|Next Match'],
+    results: ['matches*', 'title|Results', 'subtitle'],
+    table: ['title|Points Table', 'subtitle', 'qualify|2', 'next|Semi-Finals'],
+    motm: ['name*', 'team*', 'stat', 'match'],
+    scorers: ['players*', 'title|Top Scorers', 'subtitle'],
+    teams: ['title|The Teams', 'subtitle', 'wildcards|0'],
+    champions: ['team*', 'season', 'label|Champions'],
+  };
+  const NAMES = { goal: 'Goal', score: 'Final score', fixture: 'Fixture', results: 'Results', table: 'Points table', motm: 'Man of the match', scorers: 'Top scorers', teams: 'All teams', champions: 'Champions' };
+  const HINTS = {
+    homeScorers: "Mishan KC 12'|Viju Pun 30'", awayScorers: "Arjun KC 25'", score: '2-1', minute: '12',
+    matches: 'DAB,RTM,2-1|KPT,KYC,4:00 PM', players: 'Mishan KC,DAB,5|Arjun KC,RTM,3', match: 'Match 1', stat: '2 Goals',
+  };
+  const TEAM_FIELDS = ['home', 'away', 'team'];
+  let kind = 'goal';
+
+  $('teamlist').innerHTML = TEAMS.map(t => `<option value="${t.name}">`).join('');
+  $('kinds').innerHTML = Object.keys(KINDS).map(k => `<button type="button" data-kind="${k}">${NAMES[k]}</button>`).join('');
+  $('kinds').onclick = e => e.target.dataset.kind && pick(e.target.dataset.kind);
+
+  function pick(k) {
+    kind = k;
+    document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('on', b.dataset.kind === k));
+    $('fields').innerHTML = KINDS[k].map(f => {
+      const [name, def = ''] = f.replace('*', '').split('|'), req = f.includes('*');
+      const list = TEAM_FIELDS.includes(name) ? 'list="teamlist"' : '';
+      return `<label>${name.replace(/([A-Z])/g, ' $1')}${req ? ' *' : ''}<input name="${name}" value="${def}" placeholder="${HINTS[name] || ''}" ${list} ${req ? 'required' : ''}></label>`;
+    }).join('');
+    $('fill').hidden = !['goal', 'score', 'fixture'].includes(k);
+    $('msg').textContent = '';
+  }
+  pick('goal');
+
+  $('fill').onclick = () => {
+    const f = $('form').elements, set = (n, v) => f[n] && (f[n].value = v);
+    set('home', live.home); set('away', live.away); set('score', `${live.hs}-${live.as}`);
+    set('minute', Math.max(1, Math.ceil(live.clock / 60)));
+  };
+
+  $('form').onsubmit = e => {
+    e.preventDefault();
+    make({ type: kind, ...Object.fromEntries(new FormData($('form'))) });
+  };
+
+  function make(params, msg = $('msg')) {
+    msg.className = 'msg'; msg.textContent = 'Making…';
+    return post('/make', params).then(r => {
+      if (r.error) throw new Error(r.error);
+      const src = `${r.png}?t=${Date.now()}`, file = r.png.split('/').pop();
+      $('result').innerHTML = `<a href="${src}" target="_blank"><img src="${src}" alt=""></a>
+        <p><a class="btn primary" href="${src}" download="${file}">Download ${file}</a></p>`;
+      msg.textContent = 'Done ✓ — check it for red error text before posting.';
+      $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }).catch(err => { msg.className = 'msg err'; msg.textContent = err.message; });
+  }
+
+  // ---- Results & groups ----
+  for (const name of ['results.txt', 'groups.txt'])
+    fetch(`matchday/${name}?t=${Date.now()}`).then(r => r.text()).then(t => $(name).value = t);
+  document.querySelectorAll('[data-save]').forEach(b => b.onclick = () => {
+    const name = b.dataset.save;
+    try { name === 'results.txt' ? parseResults($(name).value) : parseGroups($(name).value); }  // same checks as the table
+    catch (err) { $('rmsg').className = 'msg err'; return $('rmsg').textContent = err.message; }
+    post('/save', { name, text: $(name).value }).then(() => { $('rmsg').className = 'msg'; $('rmsg').textContent = `Saved ${name} ✓`; });
+  });
+  $('mktable').onclick = () => { pick('table'); make({ type: 'table' }, $('rmsg')); };
+
+  // ---- Team lists: one PNG per team (named like render.sh does), plus the cover ----
+  $('thumbs').innerHTML = [...TEAMS.map(t => [t.name, `teamlist/${slug(t.name)}.png`]), ['Facebook cover', 'teamlist/facebook-cover.png']]
+    .map(([name, src]) => `<a href="${src}" target="_blank"><img src="${src}" loading="lazy" alt="">${name}</a>`).join('');
+</script>
+</body>
+</html>

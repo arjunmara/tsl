@@ -1,0 +1,16 @@
+# Group stage, in playing order:  Group, Home v Away[, time]
+A, Navayug Yuwa Club v Da Boys, 7:00 AM
+B, Real Tamghas v 14 Star Youth Club, 7:35 AM
+C, Four Star Warriors v Resunga Eight, 8:10 AM
+D, Junior Ballers Tamghas v Darbar Futsal Team, 8:45 AM
+D, Khukuri Youth Club v Bhadgaun Ward No. 3, 9:20 AM
+A, Navayug Yuwa Club v PTB Guys, 9:55 AM
+B, Real Tamghas v Cocktails Youth Club, 10:30 AM
+C, Four Star Warriors v Kapey Tribe, 11:05 AM
+D, Junior Ballers Tamghas v Khukuri Youth Club, 11:40 AM
+D, Darbar Futsal Team v Bhadgaun Ward No. 3, 12:15 PM
+A, Da Boys v PTB Guys, 12:50 PM
+B, 14 Star Youth Club v Cocktails Youth Club, 1:25 PM
+C, Resunga Eight v Kapey Tribe, 2:00 PM
+D, Junior Ballers Tamghas v Bhadgaun Ward No. 3, 2:35 PM
+D, Darbar Futsal Team v Khukuri Youth Club, 3:10 PM

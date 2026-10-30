@@ -1,0 +1,15 @@
+# Only the templates and tools that generate the graphics/videos; media stays local.
+/*
+!/.gitignore
+!/index.html
+!/maker.html
+!/logo.jpg
+!/matchday/
+!/teamlist/
+!/live/
+!/highlights/
+/matchday/out/
+/teamlist/*.png
+/highlights/*
+!/highlights/*.html
+!/highlights/*.py
