@@ -86,7 +86,7 @@
     scorers:   ['Top scorers', MD, ['players~*', 'title|Top Scorers', 'subtitle']],
     fixtures:  ['Fixtures',    MD, ['fixtures~', 'title|Group Stage Fixtures', 'subtitle|Saturday · Kartik 14 · 7 AM Sharp']],
     format:    ['Format / draw', MD, ['groups~', 'label|Official Draw']],
-    notice:    ['Notice',      MD, ['title*', 'label|Official Notice', 'date', 'time', 'venue|Tamghas Futsal', 'body~', 'sign|Organizing Committee']],
+    notice:    ['Notice',      MD, ['title*', 'label|Official Notice', 'sub', 'date', 'time', 'venue|Tamghas Futsal', 'rows~', 'body~', 'pill', 'qr', 'logo2', 'sign|Organizing Committee']],
     teams:     ['All teams',   MD, ['title|The Teams', 'subtitle']],
     champions: ['Champions',   MD, ['team@*', 'season|Season 1', 'label|Champions']],
     squad:     ['Team list',   'teamlist/teamlist.html', ['team@*', 'players~']],
@@ -94,7 +94,7 @@
   };
   const OPTS = { 'score.label': ['Full Time', 'Half Time'], 'fixture.label': ['Next Match', 'Up Next', 'Kick-off'] };
   const SIZE = { cover: [1640, 624] };
-  const HINTS = { score: '2-1', minute: '12', homeScorers: "Mishan KC 12'|Arjun KC 30'", awayScorers: "Arjun KC 25'", stat: '2 Goals' };
+  const HINTS = { rows: 'Date=Saturday · Kartik 14 (one per line; replaces date/time/venue)', qr: 'https://facebook.com/... (link for a QR code)', logo2: '../14starlogo.jpg', pill: 'Follow Now', score: '2-1', minute: '12', homeScorers: "Mishan KC 12'|Arjun KC 30'", awayScorers: "Arjun KC 25'", stat: '2 Goals' };
   const files = {};  // groups.txt, fixtures.txt, results.txt, squads.txt as published
   let kind = 'goal';
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
