@@ -100,6 +100,8 @@
   function render(s) {
     const h = find(s.home), a = find(s.away);
     crest($('hc'), h); crest($('ac'), a);
+    const ring = c => `0 0 0 7px ${c || 'var(--orange)'}, 0 16px 40px rgba(0,0,0,.4)`;  // kit colours on the rings
+    $('hc').style.boxShadow = ring(s.hc); $('ac').style.boxShadow = ring(s.ac);
     $('hn').textContent = h.name; $('an').textContent = a.name;
     if (mode === 'soon') {
       $('head').textContent = 'Starting Soon';

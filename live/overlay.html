@@ -60,6 +60,8 @@
   function render(s) {
     $('wrap').classList.toggle('hidden', !s.show);
     $('home').textContent = code(s.home);
+    $('home').style.boxShadow = s.hc ? `inset 0 -8px 0 ${s.hc}` : '';  // kit colour bar under each team
+    $('away').style.boxShadow = s.ac ? `inset 0 -8px 0 ${s.ac}` : '';
     $('away').textContent = code(s.away);
     $('hs').textContent = s.hs;
     $('as').textContent = s.as;

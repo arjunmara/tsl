@@ -32,6 +32,10 @@
   .start.running { background: #b00020; }
   .on { background: var(--orange); color: var(--navy); }
   select { width: 100%; }
+  .kit { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .kit button { width: 38px; height: 38px; padding: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); }
+  .kit button.on { outline: 3px solid var(--orange); outline-offset: 2px; }
+  .kit input { width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%; background: none; }
   .err { display: none; margin-bottom: 12px; padding: 10px; border-radius: 8px; background: #b00020; font-weight: 700; }
 </style>
 </head>
@@ -58,6 +62,9 @@
   <div class="side"><div class="name" id="hn"></div><button class="plus bebas" onclick="add('hs', 1)">+1</button><button class="minus" onclick="add('hs', -1)">Undo −1</button></div>
   <div class="side"><div class="name" id="an"></div><button class="plus bebas" onclick="add('as', 1)">+1</button><button class="minus" onclick="add('as', -1)">Undo −1</button></div>
 </div>
+
+<h2>Kit colours</h2>
+<div class="row"><div class="kit" id="hkit"></div><div class="kit" id="akit"></div></div>
 
 <h2>Clock</h2>
 <div class="row"><button class="start" id="start" onclick="send({clock: s.running ? 'stop' : 'start'})">Start</button></div>
@@ -108,6 +115,7 @@
     $('show').textContent = s.show ? 'Showing — tap to hide' : 'Hidden — tap to show';
     $('show').classList.toggle('on', s.show);
     [...$('periods').children].forEach(b => b.classList.toggle('on', b.textContent === s.period));
+    renderKits();
   }
 
   // Writes go to Firebase (organiser only); every screen showing the overlay updates within a second.
@@ -149,7 +157,28 @@
     const home = $('home').value, away = $('away').value;
     if (home === away) return alert('Pick two different teams.');
     if (confirm(`New match: ${home} vs ${away}?\nScore and clock go back to zero.`))
-      send({ home, away, hs: 0, as: 0, clock: 'reset', period: '1st Half' });
+      send({ home, away, hs: 0, as: 0, clock: 'reset', period: '1st Half', hc: kits[team(home).code] || '', ac: kits[team(away).code] || '' });
+  }
+
+  // Kit colours: tap a swatch (or the picker for any colour). Each team's last colour is remembered for its next match.
+  const KIT = ['#d71920', '#1f4fd8', '#6cc3f0', '#ffffff', '#111111', '#ffd400', '#1e9e3e', '#f58220', '#7a1f3d', '#6a2fb5'];
+  const kitsRef = firebase.database().ref('tsl/kits');
+  let kits = {};
+  kitsRef.on('value', snap => { kits = snap.val() || {}; });
+  let kitKey;
+  function renderKits() {
+    const key = [s.home, s.away, s.hc, s.ac].join('|');
+    if (key === kitKey) return;  // the clock re-renders 4x a second; rebuilding would close an open colour picker
+    kitKey = key;
+    for (const [side, key, name] of [['hkit', 'hc', s.home], ['akit', 'ac', s.away]]) {
+      $(side).innerHTML = KIT.map(c => `<button style="background:${c}" class="${s[key] === c ? 'on' : ''}" aria-label="${c}" onclick="kit('${key}', '${c}')"></button>`).join('')
+        + `<input type="color" value="${s[key] || '#ffffff'}" aria-label="Any colour" onchange="kit('${key}', this.value)">`;
+    }
+  }
+  function kit(key, c) {
+    if (!user) return $('login').showModal();
+    send({ [key]: c });
+    kitsRef.child(team(key === 'hc' ? s.home : s.away).code).set(c);
   }
 
   onLive(render);
