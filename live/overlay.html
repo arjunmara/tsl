@@ -9,7 +9,7 @@
   :root { --navy: #0a1a3f; --navy-2: #12285c; --orange: #f58220; --muted: #9fb0d6; }
   html, body { margin: 0; background: transparent; overflow: hidden; }
   body { width: 1920px; height: 1080px; font-family: 'Barlow', sans-serif; color: #fff; }
-  .wrap { position: absolute; top: 48px; left: 64px; transition: opacity .4s, transform .4s; }
+  .wrap { position: absolute; top: 48px; left: 64px; transform-origin: top left; transition: opacity .4s, transform .4s; }
   body.bug-only { width: 720px; height: 165px; }
   body.bug-only .wrap { top: 12px; left: 8px; }
   .wrap.hidden { opacity: 0; transform: translateY(-20px); }
@@ -97,7 +97,15 @@
       document.body.style.transform = q.has('stretch') ? `scale(${sx * zoom}, ${sy * zoom})` : `scale(${Math.min(sx, sy) * zoom})`;
     };
     addEventListener('resize', fit); fit();
-  } else fitStage();
+  } else {
+    // Full-frame mode (widget stretched over the whole camera): &zoom=1.4 sizes the bug, &x=40&y=30 moves it (px of a 1920x1080 frame).
+    fitStage();
+    const w = $('wrap');
+    if (q.has('x')) w.style.left = (+q.get('x') || 0) + 'px';
+    if (q.has('y')) w.style.top = (+q.get('y') || 0) + 'px';
+    if (q.has('zoom')) w.style.scale = +q.get('zoom') || 1;
+    w.style.transformOrigin = 'top left';
+  }
   onLive(render);
 </script>
 </body>
