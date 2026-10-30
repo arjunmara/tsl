@@ -266,6 +266,11 @@
       if ($('share')) $('share').onclick = () => navigator.share({ files: [file] }).catch(() => {});
       msg.textContent = 'Done ✓  Tip: you can also long-press the image to save it.';
       if (kind === 'goal') logGoal();
+      // A Full Time score is the result: record it so the points table updates without a second step.
+      if (kind === 'score' && val('label') === 'Full Time' && /^\d+-\d+$/.test(val('score').replace(/\s/g, ''))) {
+        setResult(val('home'), val('score').replace(/\s/g, ''), val('away'));
+        msg.textContent += ' Result added — points table updated.';
+      }
     } catch (e) { msg.className = 'msg err'; msg.textContent = 'Could not make the image: ' + (e.message || e); }
   };
 
@@ -298,11 +303,16 @@
     $('rm').value = nextMatch(); fillResultMatch();
   };
   $('rm').onchange = fillResultMatch;
+  // One result per match: a corrected score replaces the old line instead of counting twice.
+  function setResult(h, sc, a, pens = false) {
+    const same = l => { try { const [r] = parseResults(l); return r && r.pens === pens && [r.home.name, r.away.name].sort() + '' === [h, a].sort() + ''; } catch { return false; } };
+    $('results').value = $('results').value.split('\n').filter(l => !same(l)).join('\n').replace(/\n*$/, '\n') + `${h} ${sc} ${a}${pens ? ' (pens)' : ''}\n`;
+    saveResults(); store.set('pick', nextMatch()); refreshResultMatches();
+  }
   $('radd').onclick = () => {
     const s = $('rs').value.trim().replace(/\s/g, ''), h = $('rh').value, a = $('ra').value;
-    if (!/^\d+-\d+$/.test(s) || h === a) { $('rmsg').className = 'msg err'; return $('rmsg').textContent = 'Pick two different teams and a score like 2-1'; }
-    $('results').value = $('results').value.replace(/\n*$/, '\n') + `${h} ${s} ${a}${$('rp').checked ? ' (pens)' : ''}\n`;
-    $('rp').checked = false; saveResults(); store.set('pick', nextMatch()); refreshResultMatches();
+    if (!/^\d+-\d+$/.test(s) || !h || h === a) { $('rmsg').className = 'msg err'; return $('rmsg').textContent = 'Pick two different teams and a score like 2-1'; }
+    setResult(h, s, a, $('rp').checked); $('rp').checked = false;
   };
   $('rtable').onclick = () => { pick('table'); scrollTo({ top: 0, behavior: 'smooth' }); };
   $('rreset').onclick = () => { if (confirm('Replace the results on this phone with the published results.txt?')) { $('results').value = files.results; saveResults(); } };
