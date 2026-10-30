@@ -1,0 +1,34 @@
+// Live scoreboard state in Firebase (tsl/live), shared by overlay, control, screen and the hub.
+// Anyone can read it (so PRISM/OBS can show it from anywhere); writing needs the organiser sign-in.
+firebase.initializeApp(FIREBASE);
+const liveRef = firebase.database().ref('tsl/live');
+let serverOffset = 0;  // phone clocks drift; Firebase tells us how far off we are
+firebase.database().ref('.info/serverTimeOffset').on('value', s => serverOffset = s.val() || 0);
+const LIVE_DEFAULT = { home: 'Navayug Yuwa Club', away: 'Da Boys', hs: 0, as: 0, period: '1st Half', show: true, elapsed: 0, since: null };
+const clockOf = s => s.elapsed + (s.since ? Math.max(0, Date.now() + serverOffset - s.since) / 1000 : 0);
+
+// cb(state) on every change, and 4x a second so the clock ticks.
+function onLive(cb) {
+  let s = { ...LIVE_DEFAULT };
+  const tick = () => cb({ ...s, clock: clockOf(s), running: !!s.since });
+  liveRef.on('value', snap => { s = { ...LIVE_DEFAULT, ...snap.val() }; tick(); });
+  setInterval(tick, 250);
+}
+
+// Same rules as the old laptop /state: clock 'start' | 'stop' | 'reset' | seconds, plus home/away/hs/as/period/show.
+function patchLive(s, p) {
+  const u = {}, TS = firebase.database.ServerValue.TIMESTAMP;
+  if (p.clock === 'start' && !s.since) u.since = TS;
+  if (p.clock === 'stop' && s.since) { u.elapsed = clockOf(s); u.since = null; }
+  if (p.clock === 'reset') { u.elapsed = 0; u.since = null; }
+  if (typeof p.clock === 'number') { u.elapsed = Math.max(0, p.clock); u.since = s.since ? TS : null; }
+  for (const k of ['home', 'away', 'period', 'show']) if (k in p) u[k] = p[k];
+  for (const k of ['hs', 'as']) if (k in p) u[k] = Math.max(0, +p[k] || 0);
+  return liveRef.update(u);
+}
+
+// Fixed 1920x1080 pages scale to whatever size the OBS browser source or PRISM web widget gives them.
+function fitStage() {
+  const fit = () => { document.body.style.transformOrigin = '0 0'; document.body.style.transform = `scale(${Math.min(innerWidth / 1920, innerHeight / 1080)})`; };
+  addEventListener('resize', fit); fit();
+}

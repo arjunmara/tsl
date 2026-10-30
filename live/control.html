@@ -36,7 +36,17 @@
 </style>
 </head>
 <body>
-<div class="err" id="err">Can't reach the laptop. Check the Wi-Fi.</div>
+<div class="err" id="err"></div>
+<button id="who" style="width:100%;margin-bottom:12px">Sign in to control the scoreboard</button>
+<dialog id="login" style="background:var(--navy-2);color:#fff;border:0;border-radius:12px;width:min(340px,90vw)">
+  <form id="loginform">
+    <h2 style="margin-top:0">Organiser sign-in</h2>
+    <input name="email" type="email" placeholder="Email" autocomplete="username" required style="width:100%;margin-bottom:8px;padding:12px;font:inherit">
+    <input name="password" type="password" placeholder="Password" autocomplete="current-password" required style="width:100%;margin-bottom:8px;padding:12px;font:inherit">
+    <div id="loginmsg" style="color:#ff6b6b;font-weight:700"></div>
+    <div class="row"><button class="on">Sign in</button><button type="button" onclick="$('login').close()">Cancel</button></div>
+  </form>
+</dialog>
 
 <div class="live">
   <div class="sc bebas" id="sc"></div>
@@ -64,10 +74,16 @@
 <div class="row"><button id="show" onclick="send({show: !s.show})"></button></div>
 
 <h2>New match</h2>
-<div class="row"><select id="home"></select><select id="away"></select></div>
+<div class="row"><select id="fx"></select></div>
+<div class="row" style="margin-top:8px"><select id="home"></select><select id="away"></select></div>
 <div class="row" style="margin-top:8px"><button onclick="newMatch()">Start new match (0-0, clock 00:00)</button></div>
 
 <script src="../matchday/league.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="../firebase-config.js"></script>
+<script src="live.js"></script>
 <script>
   const $ = id => document.getElementById(id);
   const PERIODS = ['1st Half', 'Half Time', '2nd Half', 'Full Time', 'Penalties'];
@@ -92,13 +108,41 @@
     $('show').textContent = s.show ? 'Showing — tap to hide' : 'Hidden — tap to show';
     $('show').classList.toggle('on', s.show);
     [...$('periods').children].forEach(b => b.classList.toggle('on', b.textContent === s.period));
-    $('err').style.display = 'none';
   }
 
+  // Writes go to Firebase (organiser only); every screen showing the overlay updates within a second.
+  const auth = firebase.auth();
+  let user = null;
+  auth.onAuthStateChanged(u => { user = u; $('who').textContent = u ? `Signed in ✓ (${u.email}) — tap to sign out` : 'Sign in to control the scoreboard'; });
+  $('who').onclick = () => user ? confirm('Sign out?') && auth.signOut() : $('login').showModal();
+  $('loginform').onsubmit = e => {
+    e.preventDefault();
+    auth.signInWithEmailAndPassword(e.target.email.value.trim(), e.target.password.value)
+      .then(() => $('login').close()).catch(err => $('loginmsg').textContent = err.message);
+  };
+  let offline;  // only warn after a few seconds: every page load starts "disconnected" for a moment
+  firebase.database().ref('.info/connected').on('value', c => {
+    clearTimeout(offline);
+    if (c.val()) return $('err').style.display = 'none';
+    offline = setTimeout(() => { $('err').textContent = 'No connection — changes will send when the signal is back.'; $('err').style.display = 'block'; }, 4000);
+  });
   function send(patch) {
-    return fetch('/state', { method: 'POST', body: JSON.stringify(patch) }).then(r => r.json()).then(render)
-      .catch(() => $('err').style.display = 'block');
+    if (!user) return $('login').showModal();
+    return patchLive(s, patch).catch(e => { $('err').textContent = e.message; $('err').style.display = 'block'; });
   }
+
+  // Pick the match from the fixtures list (same list as the phone maker).
+  const fixtures = text => text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map((l, i) => {
+    const [g, vs, time = ''] = l.split(',').map(x => x.trim()), [h, a] = vs.split(/\s+v\s+/);
+    return { n: i + 1, home: team(h).name, away: team(a).name, time };
+  });
+  firebase.database().ref('tsl/fixtures').on('value', snap => {
+    (snap.val() ? Promise.resolve(snap.val()) : fetch('../matchday/fixtures.txt').then(r => r.text())).then(t => {
+      const fx = fixtures(t);
+      $('fx').innerHTML = '<option value="">Pick from fixtures…</option>' + fx.map(m => `<option value="${m.home}|${m.away}">${m.n}. ${m.time} · ${team(m.home).code} v ${team(m.away).code}</option>`).join('');
+    });
+  });
+  $('fx').onchange = () => { if ($('fx').value) [$('home').value, $('away').value] = $('fx').value.split('|'); };
   const add = (k, n) => send({ [k]: s[k] + n });
 
   function newMatch() {
@@ -108,9 +152,7 @@
       send({ home, away, hs: 0, as: 0, clock: 'reset', period: '1st Half' });
   }
 
-  const poll = () => fetch('/state').then(r => r.json()).then(render).catch(() => $('err').style.display = 'block');
-  poll();
-  setInterval(poll, 1000);
+  onLive(render);
 </script>
 </body>
 </html>

@@ -75,7 +75,7 @@
     <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(420px, 1fr))">
       <div class="card">
         <h3>Scorekeeper phone</h3>
-        <div class="qr"><div id="qr"></div><div>Scan with the phone (same Wi-Fi as this laptop).<code id="ctl"></code><a class="btn" href="live/control.html" target="_blank">Open control here</a></div></div>
+        <div class="qr"><div id="qr"></div><div>Scan with any phone that has internet (sign in as organiser).<code id="ctl"></code><a class="btn" href="live/control.html" target="_blank">Open control here</a></div></div>
       </div>
       <div class="card"><h3>Match scene · score bar</h3><div class="preview overlay"><iframe data-src="live/overlay.html"></iframe></div><code></code><button data-copy>Copy link</button></div>
       <div class="card"><h3>Starting Soon scene</h3><div class="preview"><iframe data-src="live/screen.html?mode=soon"></iframe></div><code></code><button data-copy>Copy link</button></div>
@@ -117,6 +117,10 @@
 
 <datalist id="teamlist"></datalist>
 <script src="matchday/league.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="live/live.js"></script>
 <script>
   if (location.hostname.endsWith('github.io')) location.replace('maker.html');  // no laptop server online: go to the phone maker
   const $ = id => document.getElementById(id);
@@ -126,19 +130,14 @@
   let live = {};
 
   // ---- Live: status pill, QR for the phone, OBS links with scaled previews ----
-  function poll() {
-    fetch('/state').then(r => r.json()).then(s => {
-      const first = !live.lan;
-      live = s;
-      $('pill').innerHTML = `${team(s.home).code} <b>${s.hs} - ${s.as}</b> ${team(s.away).code} · ${mmss(s.clock)} · ${s.period}`;
-      if (first) {
-        const url = `http://${s.lan}:8000/live/control.html`;
-        $('ctl').textContent = url;
-        if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(url); q.make(); $('qr').innerHTML = q.createSvgTag({ scalable: true }); }
-      }
-    }).catch(() => $('pill').textContent = 'Server not running');
-  }
-  poll(); setInterval(poll, 1000);
+  // The scoreboard lives in Firebase now, so the control page works from any phone with data (no laptop needed).
+  const CONTROL = 'https://arjunmara.github.io/tsl/live/control.html';
+  $('ctl').textContent = CONTROL;
+  if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(CONTROL); q.make(); $('qr').innerHTML = q.createSvgTag({ scalable: true }); }
+  onLive(s => {
+    live = s;
+    $('pill').innerHTML = `${team(s.home).code} <b>${s.hs} - ${s.as}</b> ${team(s.away).code} · ${mmss(s.clock)} · ${s.period}`;
+  });
 
   document.querySelectorAll('iframe[data-src]').forEach(f => {
     const url = `${location.origin}/${f.dataset.src}`;

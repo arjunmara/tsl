@@ -68,6 +68,10 @@
   <div class="stripe bottom"></div>
 
 <script src="../matchday/league.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="../firebase-config.js"></script>
+<script src="live.js"></script>
 <script>
   // Background: the team-list swooshes and edge stars, stretched to 16:9.
   const NS = 'http://www.w3.org/2000/svg', $ = id => document.getElementById(id);
@@ -107,9 +111,7 @@
       $('mid').innerHTML = `<span class="score">${s.hs} - ${s.as}</span>`;
     }
   }
-  const poll = () => fetch('/state').then(r => r.json()).then(render).catch(() => {});
-  poll();
-  setInterval(poll, 1000);
+  fitStage(); onLive(render);
 </script>
 </body>
 </html>

@@ -111,16 +111,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
 <script>
   const $ = id => document.getElementById(id);
-  // Firebase project config (Project settings → Your apps). null = no sharing, everything stays on this phone.
-  const FIREBASE = {
-    apiKey: 'AIzaSyAicg1RfR7xmmfdyxDhWD0wib-TjVLO6Bs',
-    authDomain: 'tamghassuperleague-4242a.firebaseapp.com',
-    databaseURL: 'https://tamghassuperleague-4242a-default-rtdb.asia-southeast1.firebasedatabase.app',
-    projectId: 'tamghassuperleague-4242a',
-    appId: '1:355993986791:web:f435694a4d2ea0b7b32442',
-  };
+  // FIREBASE comes from firebase-config.js.
   // results, goals and squads are shared through Firebase when signed in; localStorage is the offline copy.
   const SHARED = ['results', 'goals', 'events', 'squads', 'fixtures', 'groups'], sync = { db: null, user: null };
   const local = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
