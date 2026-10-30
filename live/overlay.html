@@ -5,13 +5,18 @@
 <title>TSL Live Overlay</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@600;700&display=swap" rel="stylesheet">
 <style>
-  /* OBS browser source or PRISM web widget (16:9, scales to fit), transparent background. Everything sits in the top-left corner. */
+  /* OBS browser source or PRISM web widget, transparent background. The score bug sits top-left in a 1920x1080 #stage
+     scaled to the widget; the Starting Soon / Break scenes (screen.html) fill the whole widget and fade in when the
+     scorer's control page picks them (or automatically at Half Time / Full Time). */
   :root { --navy: #0a1a3f; --navy-2: #12285c; --orange: #f58220; --muted: #9fb0d6; }
-  html, body { margin: 0; background: transparent; overflow: hidden; }
-  body { width: 1920px; height: 1080px; font-family: 'Barlow', sans-serif; color: #fff; }
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  body { font-family: 'Barlow', sans-serif; color: #fff; }
+  #stage { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; }
   .wrap { position: absolute; top: 48px; left: 64px; transform-origin: top left; transition: opacity .4s, transform .4s; }
-  body.bug-only { width: 720px; height: 165px; }
+  body.bug-only #stage { width: 720px; height: 165px; }
   body.bug-only .wrap { top: 12px; left: 8px; }
+  .scene { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; opacity: 0; transition: opacity .6s; pointer-events: none; }
+  .scene.on { opacity: 1; }
   .wrap.hidden { opacity: 0; transform: translateY(-20px); }
 
   .bug { display: flex; align-items: stretch; height: 72px; filter: drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
@@ -37,6 +42,7 @@
 </style>
 </head>
 <body>
+<div id="stage">
 <div class="wrap" id="wrap">
   <div class="bug">
     <div class="logo"><img src="../logo.jpg" alt=""></div>
@@ -47,18 +53,24 @@
   </div>
   <div class="goal" id="goal"><div class="tag bebas">Goal</div><div class="who" id="who"></div></div>
 </div>
+</div>
 <script src="../matchday/league.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="../firebase-config.js"></script>
-<script src="live.js?v=2"></script>
+<script src="live.js?v=3"></script>
 <script>
   const $ = id => document.getElementById(id);
   const code = name => { try { return team(name).code; } catch { return name; } };
   let last, goalTimer;
 
+  // Which scene is on air: the control page's choice, or in "auto" the period decides.
+  const sceneOf = s => s.scene && s.scene !== 'auto' ? s.scene : /Half Time|Full Time/.test(s.period) ? 'break' : 'match';
+
   function render(s) {
-    $('wrap').classList.toggle('hidden', !s.show);
+    const scene = sceneOf(s);
+    document.querySelectorAll('.scene').forEach(f => f.classList.toggle('on', f.dataset.scene === scene));
+    $('wrap').classList.toggle('hidden', !s.show || scene !== 'match');
     $('home').textContent = code(s.home);
     $('home').style.boxShadow = s.hc ? `inset 0 -8px 0 ${s.hc}` : '';  // kit colour bar under each team
     $('away').style.boxShadow = s.ac ? `inset 0 -8px 0 ${s.ac}` : '';
@@ -70,7 +82,7 @@
     $('clock').classList.toggle('stopped', !s.running);
     $('period').textContent = s.period;
     // Only flash for a +1 in the same match, not when teams are switched or a score is corrected down.
-    if (last && last.home === s.home && last.away === s.away) {
+    if (last && last.home === s.home && last.away === s.away && scene === 'match') {
       if (s.hs > last.hs) goal(s.home);
       else if (s.as > last.as) goal(s.away);
     }
@@ -88,13 +100,13 @@
   // ?bug=1: just the score bug, filling the widget (for PRISM-style web widgets you drag/resize yourself).
   // Tuning knobs for apps that size the widget their own way: &zoom=1.3 (bigger/smaller), &stretch=1 (fill the box exactly).
   const q = new URLSearchParams(location.search);
-  if (q.has('bug')) {
+  if (q.has('bug')) {  // a small widget can't hold the full-screen scenes, so bug mode has none
     document.body.classList.add('bug-only');
     const zoom = +q.get('zoom') || 1;
     const fit = () => {
       const sx = innerWidth / 720, sy = innerHeight / 165;
-      document.body.style.transformOrigin = '0 0';
-      document.body.style.transform = q.has('stretch') ? `scale(${sx * zoom}, ${sy * zoom})` : `scale(${Math.min(sx, sy) * zoom})`;
+      $('stage').style.transformOrigin = '0 0';
+      $('stage').style.transform = q.has('stretch') ? `scale(${sx * zoom}, ${sy * zoom})` : `scale(${Math.min(sx, sy) * zoom})`;
     };
     addEventListener('resize', fit); fit();
   } else {
@@ -103,7 +115,9 @@
     // ponytail: preset numbers are a best guess without the phone in hand; &zoom/&x/&y still override them.
     const preset = q.has('iphone') ? { zoom: 1.15, x: 150, y: 40 } : {};
     const num = k => q.has(k) ? +q.get(k) || 0 : preset[k];
-    fitStage();
+    fitStage(false, $('stage'));
+    for (const mode of ['soon', 'break'])
+      document.body.insertAdjacentHTML('beforeend', `<iframe class="scene" data-scene="${mode}" src="screen.html?mode=${mode}" aria-hidden="true"></iframe>`);
     const w = $('wrap');
     if (num('x') !== undefined) w.style.left = num('x') + 'px';
     if (num('y') !== undefined) w.style.top = num('y') + 'px';

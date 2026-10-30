@@ -77,8 +77,9 @@
 <h2>Period</h2>
 <div class="row" id="periods"></div>
 
-<h2>Scoreboard</h2>
-<div class="row"><button id="show" onclick="send({show: !s.show})"></button></div>
+<h2>On air</h2>
+<div class="row" id="scenes"></div>
+<div class="row" style="margin-top:8px"><button id="show" onclick="send({show: !s.show})"></button></div>
 
 <h2>New match</h2>
 <div class="row"><select id="fx"></select></div>
@@ -90,12 +91,16 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="../firebase-config.js"></script>
-<script src="live.js?v=2"></script>
+<script src="live.js?v=3"></script>
 <script>
   const $ = id => document.getElementById(id);
   const PERIODS = ['1st Half', 'Half Time', '2nd Half', 'Full Time', 'Penalties'];
   let s = {};
 
+  // Scenes on the stream. Auto: score bug in play, Break screen at Half Time / Full Time.
+  const SCENES = [['auto', 'Auto'], ['soon', 'Starting Soon'], ['match', 'Score bug'], ['break', 'Break']];
+  $('scenes').style.flexWrap = 'wrap';
+  $('scenes').innerHTML = SCENES.map(([k, l]) => `<button style="flex-basis:45%" data-scene="${k}" onclick="send({scene: '${k}'})">${l}</button>`).join('');
   $('periods').style.flexWrap = 'wrap';
   $('periods').innerHTML = PERIODS.map(p => `<button style="flex-basis:30%" onclick="send({period: '${p}'})">${p}</button>`).join('');
   const opts = TEAMS.map(t => `<option>${t.name}</option>`).join('');
@@ -112,7 +117,8 @@
     $('an').textContent = s.away;
     $('start').textContent = s.running ? 'Stop clock' : 'Start clock';
     $('start').classList.toggle('running', s.running);
-    $('show').textContent = s.show ? 'Showing — tap to hide' : 'Hidden — tap to show';
+    $('show').textContent = s.show ? 'Score bug showing — tap to hide' : 'Score bug hidden — tap to show';
+    [...$('scenes').children].forEach(b => b.classList.toggle('on', b.dataset.scene === (s.scene || 'auto')));
     $('show').classList.toggle('on', s.show);
     [...$('periods').children].forEach(b => b.classList.toggle('on', b.textContent === s.period));
     renderKits();
@@ -157,7 +163,7 @@
     const home = $('home').value, away = $('away').value;
     if (home === away) return alert('Pick two different teams.');
     if (confirm(`New match: ${home} vs ${away}?\nScore and clock go back to zero.`))
-      send({ home, away, hs: 0, as: 0, clock: 'reset', period: '1st Half', hc: kits[team(home).code] || '', ac: kits[team(away).code] || '' });
+      send({ home, away, hs: 0, as: 0, clock: 'reset', period: '1st Half', scene: 'soon', hc: kits[team(home).code] || '', ac: kits[team(away).code] || '' });
   }
 
   // Kit colours: tap a swatch (or the picker for any colour). Each team's last colour is remembered for its next match.
