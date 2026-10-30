@@ -205,18 +205,43 @@
           </div>`;
       },
 
-      // Half time / full time. home, away, score, [label, homeScorers, awayScorers, match]
+      // Card / key moment. event (Yellow Card, Red Card, Second Yellow, Penalty Missed, ...), name, team, [minute, home, away, score]
+      event() {
+        const t = team(need('team')), ev = get('event', 'Yellow Card'), k = ev.toLowerCase();
+        const card = (c, r) => `<div style="width:120px;height:170px;border-radius:12px;background:${c};transform:rotate(${r}deg);box-shadow:0 18px 40px rgba(0,0,0,.45)"></div>`;
+        const icon = k.includes('second') ? `<div style="display:flex;gap:0">${card('#ffd400', -12)}<div style="margin-left:-40px">${card('#e10600', 8)}</div></div>`
+          : k.includes('red') ? card('#e10600', -8) : k.includes('yellow') ? card('#ffd400', -8) : '';
+        const colour = k.includes('red') || k.includes('second') ? '#ff4d4d' : k.includes('yellow') ? '#ffd400' : 'var(--orange)';
+        const sc = get('score') && get('home') && get('away') ? (() => {
+          const h = team(get('home')), a = team(get('away')), [hg, ag] = scoreParts(get('score'));
+          return `<div class="row" style="width:760px;height:110px;margin-top:56px;justify-content:center;gap:34px">
+            ${crest(h, 72)}<span class="bebas" style="font-size:88px">${hg}</span><span class="bebas" style="font-size:56px;color:var(--muted)">–</span>
+            <span class="bebas" style="font-size:88px">${ag}</span>${crest(a, 72)}</div>`; })() : '';
+        return `
+          ${icon}
+          <div class="bebas" style="font-size:${icon ? 150 : 190}px;line-height:.85;margin-top:${icon ? 34 : 0}px;color:${colour};text-shadow:0 10px 40px rgba(0,0,0,.4)">${esc(ev)}</div>
+          <div style="margin-top:30px">${big(need('name'), 110, 940)}</div>
+          <div style="display:flex;align-items:center;gap:20px;margin-top:20px">
+            ${crest(t, 60)}<span class="tname" style="font-size:38px">${esc(t.name)}</span>
+            ${get('minute') ? `<span class="pill" style="margin-left:6px">${esc(get('minute'))}'</span>` : ''}
+          </div>${sc}`;
+      },
+
+      // Half time / full time. home, away, score, [label, homeScorers, awayScorers, homeCards, awayCards, match]
+      // Cards: "Y Name 12'" (yellow) or "R Name 30'" (red).
       score() {
         const h = team(need('home')), a = team(need('away'));
         const [hg, ag] = scoreParts(need('score'));
-        const sc = k => `<ul class="scorers">${list(k).map(s => `<li>${esc(s)}</li>`).join('')}</ul>`;
+        const cardIcon = c => `<i style="display:inline-block;width:14px;height:20px;border-radius:3px;margin-right:8px;vertical-align:-2px;background:${c === 'R' ? '#e10600' : '#ffd400'}"></i>`;
+        const sc = (k, c) => `<ul class="scorers">${list(k).map(s => `<li>${esc(s)}</li>`).join('')}
+          ${list(c).map(s => `<li style="opacity:.85">${cardIcon(s[0])}${esc(s.slice(2))}</li>`).join('')}</ul>`;
         return `
           ${get('match') ? `<div class="label">${esc(get('match'))}</div>` : ''}
           ${big(get('label', 'Full Time'), 150, 940)}
           <div class="matchup" style="margin-top:50px">
-            <div class="side">${crest(h, 200)}<div class="tname">${esc(h.name)}</div>${sc('homeScorers')}</div>
+            <div class="side">${crest(h, 200)}<div class="tname">${esc(h.name)}</div>${sc('homeScorers', 'homeCards')}</div>
             <div class="mid" style="height:200px"><div class="bebas" style="font-size:150px;white-space:nowrap">${hg}<span style="color:var(--orange)"> - </span>${ag}</div></div>
-            <div class="side">${crest(a, 200)}<div class="tname">${esc(a.name)}</div>${sc('awayScorers')}</div>
+            <div class="side">${crest(a, 200)}<div class="tname">${esc(a.name)}</div>${sc('awayScorers', 'awayCards')}</div>
           </div>`;
       },
 

@@ -36,6 +36,10 @@
   .rrow { display: flex; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .rrow button { padding: 6px 9px; } .rrow select, .rrow input { width: auto; margin: 0; padding: 8px 6px; }
   .danger { color: #ff6b6b; }
+  .sbox { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+  .sbox .sname { flex: 1; font-weight: 700; color: #fff; font-size: 16px; text-transform: none; letter-spacing: 0; }
+  .sbox input { width: 64px; margin: 0; text-align: center; font-size: 22px; font-weight: 700; padding: 8px 4px; }
+  .sbox button { width: 48px; padding: 8px 0; font-size: 22px; line-height: 1; }
 </style>
 </head>
 <body>
@@ -64,11 +68,12 @@
   <h2>Results</h2>
   <div class="card">
     <label>Match<select id="rm"></select></label>
-    <div class="row3">
+    <div class="cols" style="gap:8px;grid-template-columns:1fr 1fr">
       <label>Home<select id="rh"></select></label>
-      <label>Score<input id="rs" placeholder="2-1" inputmode="numeric"></label>
       <label>Away<select id="ra"></select></label>
     </div>
+    <label>Score</label>
+    <div id="rbox"></div>
     <label style="display:flex;gap:8px;align-items:center;text-transform:none"><input type="checkbox" id="rp" style="width:auto;margin:0"> This is a group tie-break shootout score (add the draw too)</label>
     <button class="primary" id="radd">Add result</button>
     <button id="rcancel" hidden>Cancel edit</button>
@@ -117,7 +122,7 @@
     appId: '1:355993986791:web:f435694a4d2ea0b7b32442',
   };
   // results, goals and squads are shared through Firebase when signed in; localStorage is the offline copy.
-  const SHARED = ['results', 'goals', 'squads', 'fixtures', 'groups'], sync = { db: null, user: null };
+  const SHARED = ['results', 'goals', 'events', 'squads', 'fixtures', 'groups'], sync = { db: null, user: null };
   const local = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
                   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   const store = { get: local.get, set: (k, v) => { local.set(k, v); if (sync.user && SHARED.includes(k)) sync.db.child(k).set(v); } };
@@ -128,7 +133,8 @@
   const MD = 'matchday/matchday.html', W = 1080, H = 1350;
   const KINDS = {
     goal:      ['Goal',        MD, ['pick', 'scorer#*', 'minute', 'team@*', 'home@*', 'away@*', 'score*']],
-    score:     ['Final score', MD, ['pick', 'label^|Full Time', 'home@*', 'away@*', 'score*', 'homeScorers', 'awayScorers', 'match']],
+    score:     ['Final score', MD, ['pick', 'label^|Full Time', 'home@*', 'away@*', 'score*', 'homeScorers=', 'awayScorers=', 'homeCards=', 'awayCards=', 'match']],
+    event:     ['Key event',   MD, ['pick', 'event^|Yellow Card', 'name#*', 'minute', 'team@*', 'home@*', 'away@*', 'score']],
     fixture:   ['Next match',  MD, ['pick', 'label^|Next Match', 'home@*', 'away@*', 'match', 'date|Saturday · Kartik 14', 'time', 'venue|Tamghas Futsal']],
     table:     ['Points table', MD, ['title|Points Table', 'subtitle', 'qualify|2', 'next|Quarter-Finals']],
     results:   ['Results',     MD, ['matches~*', 'title|Results', 'subtitle']],
@@ -142,13 +148,29 @@
     squad:     ['Team list',   'teamlist/teamlist.html', ['team@*', 'players~']],
     cover:     ['FB cover',    'teamlist/cover.html', []],
   };
-  const OPTS = { 'score.label': ['Full Time', 'Half Time'], 'fixture.label': ['Next Match', 'Up Next', 'Kick-off'] };
+  const EVENTS = { 'Yellow Card': '🟨', 'Red Card': '🟥', 'Second Yellow': '🟨🟥', 'Penalty Missed': '❌', 'Penalty Saved': '🧤', 'Injury': '🩹' };
+  const OPTS = { 'event.event': Object.keys(EVENTS), 'score.label': ['Full Time', 'Half Time'], 'fixture.label': ['Next Match', 'Up Next', 'Kick-off'] };
   const SIZE = { cover: [1640, 624] };
   const HINTS = { rows: 'Date=Saturday · Kartik 14 (one per line; replaces date/time/venue)', qr: 'https://facebook.com/... (link for a QR code)', logo2: '../14starlogo.jpg', pill: 'Follow Now', score: '2-1', minute: '12', homeScorers: "Mishan KC 12'|Arjun KC 30'", awayScorers: "Arjun KC 25'", stat: '2 Goals' };
   const files = {};  // groups.txt, fixtures.txt, results.txt, squads.txt as published
-  let kind = 'goal', editingGoal = null;  // JSON of the logged goal being edited
+  let kind = 'goal', editLog = null;  // { key: 'goals' | 'events', json } of the log entry being edited
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  const F = () => $('form').elements, set = (n, v) => F()[n] && (F()[n].value = v), val = n => F()[n]?.value ?? '';
+  const F = () => $('form').elements, val = n => F()[n]?.value ?? '';
+  const set = (n, v) => { if (!F()[n]) return; F()[n].value = v; if (n === 'score') boxesFrom('sb', v); };
+  // Score = two boxes with −/+ (one per team). attr 'sb' = graphic form, 'rb' = results card.
+  const boxRow = (attr, side) => `<div class="sbox"><span class="sname" data-${attr}-name="${side}">${side === 'h' ? 'Home' : 'Away'}</span>
+    <button type="button" data-step="${attr},${side},-1" aria-label="minus">−</button><input type="number" min="0" inputmode="numeric" data-${attr}="${side}" value="0">
+    <button type="button" data-step="${attr},${side},1" aria-label="plus">+</button></div>`;
+  const box = (attr, side) => document.querySelector(`[data-${attr}="${side}"]`);
+  const boxesTo = attr => box(attr, 'h') ? `${+box(attr, 'h').value || 0}-${+box(attr, 'a').value || 0}` : '';
+  const boxesFrom = (attr, v) => { const [h = 0, a = 0] = String(v || '').split('-').map(Number); if (box(attr, 'h')) { box(attr, 'h').value = h || 0; box(attr, 'a').value = a || 0; } };
+  const boxNames = (attr, h, a) => { document.querySelectorAll(`[data-${attr}-name]`).forEach(el => { const t = el.dataset[`${attr}Name`] === 'h' ? h : a; el.textContent = t || (el.dataset[`${attr}Name`] === 'h' ? 'Home' : 'Away'); }); };
+  document.addEventListener('click', e => {
+    if (!e.target.dataset.step) return;
+    const [attr, side, d] = e.target.dataset.step.split(','), i = box(attr, side);
+    i.value = Math.max(0, (+i.value || 0) + +d); i.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  document.addEventListener('input', e => { if (e.target.dataset.sb) F().score.value = boxesTo('sb'); });
 
   // ---- Data: fixtures in playing order, squads, goals logged on this phone ----
   const fxText = () => store.get('fixtures') ?? files.fixtures ?? '', grText = () => store.get('groups') ?? files.groups ?? '';
@@ -162,6 +184,10 @@
   const players = t => (squads()[t] || '').split('|').map(s => s.trim()).filter(s => s && !/\((coach|manager)\)/i.test(s))
     .map(s => s.replace(/\((c|gk)\)/gi, '').replace(/\s+/g, ' ').trim());
   const goals = () => JSON.parse(store.get('goals') || '[]');  // [{n: match no., team, name, min}]
+  const events = () => JSON.parse(store.get('events') || '[]');  // [{n, type, team, name, min}]
+  // Per-match logs, edited with the same buttons. who = the form's player field.
+  const LOG = { goals: { kind: 'goal', who: 'scorer', what: 'goal', title: 'Goals', all: goals },
+                events: { kind: 'event', who: 'name', what: 'event', title: 'Key events', all: events } };
   const matchGoals = n => goals().filter(g => g.n == n);
   const tally = (n, h, a) => { const gs = matchGoals(n); return [gs.filter(g => g.team === h).length, gs.filter(g => g.team === a).length]; };
   const played = () => { try { return parseResults($('results').value).filter(r => !r.pens); } catch { return []; } };
@@ -186,15 +212,17 @@
   }
 
   function pick(k) {
-    if (k !== kind) editingGoal = null;
+    if (k !== kind) editLog = null;
     kind = k;
     document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('on', b.dataset.kind === k));
     const defs = defaults();
     $('fields').innerHTML = KINDS[k][2].map(f => {
-      const [name, def = defs[name.replace(/\W/g, '')] ?? ''] = f.replace(/[*~@#^]/g, '').split('|'), req = f.includes('*');
+      const [name, def = defs[name.replace(/\W/g, '')] ?? ''] = f.replace(/[*~@#^=]/g, '').split('|'), req = f.includes('*');
+      if (f.includes('=')) return `<input type="hidden" name="${name}">`;  // filled from the logs below
       const lbl = `${name === 'pick' ? 'Match' : name.replace(/([A-Z])/g, ' $1')}${req ? ' *' : ''}`;
       const opts = OPTS[`${k}.${name}`];
-      const input = name === 'pick' ? `<select name="pick">${matchOptions()}<option value="">Other / knockout (pick teams below)</option></select>`
+      const input = name === 'score' ? `<input type="hidden" name="score">${boxRow('sb', 'h')}${boxRow('sb', 'a')}`
+        : name === 'pick' ? `<select name="pick">${matchOptions()}<option value="">Other / knockout (pick teams below)</option></select>`
         : f.includes('@') ? `<select name="${name}">${teamOptions}</select>`
         : f.includes('#') ? `<select name="${name}" data-players></select>`
         : opts ? `<select name="${name}">${opts.map(o => `<option>${esc(o)}</option>`).join('')}</select>`
@@ -205,9 +233,10 @@
         : k === 'notice' && name === 'rows' ? `<textarea name="rows" hidden></textarea><div id="nrows"></div>`
         : f.includes('~') ? `<textarea name="${name}">${esc(def)}</textarea>`
         : `<input name="${name}" value="${esc(def)}" placeholder="${HINTS[name] || ''}" ${['minute', 'score'].includes(name) ? 'inputmode="numeric"' : ''}>`;
-      return `<label>${lbl}${input}</label>`;
+      return name === 'score' ? `<label>${lbl}</label>${input}` : `<label>${lbl}${input}</label>`;  // a label around −/+ would press "−" when tapped
     }).join('') || '<p class="msg">No fields — just save it.</p>';
-    if (['goal', 'score'].includes(k)) $('fields').insertAdjacentHTML('beforeend', '<div id="glog"></div>');
+    if (['goal', 'score', 'event'].includes(k)) $('fields').insertAdjacentHTML('beforeend', '<div id="glog"></div>');
+    if (F().score) F().score.value = '0-0';
     if (F().pick) { F().pick.value = store.get('pick') ?? nextMatch(); applyMatch(); }
     renderSquad(); renderMatchPick(); renderNoticeRows();
     render();
@@ -242,14 +271,21 @@
       set('home', m.home); set('away', m.away);
       const [hs, as] = tally(n, m.home, m.away), label = `Match ${m.n} · ${roundName(m.g)}`;
       if (kind === 'fixture') { set('match', label); set('time', m.time); }
-      if (kind === 'score') {
-        set('match', label); set('score', `${hs}-${as}`);
-        const list = t => matchGoals(n).filter(g => g.team === t).map(g => g.name === 'Own Goal' ? `OG ${g.min}'` : `${g.name}${g.min ? ` ${g.min}'` : ''}`).join('|');
-        set('homeScorers', list(m.home)); set('awayScorers', list(m.away));
-      }
+      if (kind === 'score') { set('match', label); set('score', `${hs}-${as}`); fillFromLogs(); }
+      if (kind === 'event') set('score', `${hs}-${as}`);
       if (kind === 'motm') set('match', `${m.home} ${hs}-${as} ${m.away}`);
     }
     fillPlayers();
+  }
+
+  // Final score lists come straight from the goal and card logs.
+  function fillFromLogs() {
+    const n = val('pick'), min = x => x.min ? ` ${x.min}'` : '';
+    const scorers = t => matchGoals(n).filter(g => g.team === t).map(g => g.name === 'Own Goal' ? `OG${min(g)}` : g.name + min(g)).join('|');
+    const cards = t => events().filter(x => x.n == n && x.team === t && /card|yellow/i.test(x.type))
+      .map(x => `${/yellow card/i.test(x.type) ? 'Y' : 'R'} ${x.name}${min(x)}`).join('|');
+    set('homeScorers', scorers(val('home'))); set('awayScorers', scorers(val('away')));
+    set('homeCards', cards(val('home'))); set('awayCards', cards(val('away')));
   }
 
   // Player dropdowns list both teams' squads; picking a player sets their team (and the new score for a goal).
@@ -262,15 +298,21 @@
         ${kind === 'goal' ? `<option data-team="${esc(t)}" value="Own Goal">Own goal (counts for ${esc(t)})</option>` : ''}</optgroup>`).join('');
       s.value = keep;
     });
-    if ($('glog')) $('glog').innerHTML = '<label style="margin-top:6px">Goals this match</label>'
-      + (matchGoals(val('pick')).sort((a, b) => a.min - b.min).map(g => { const j = esc(JSON.stringify(g));
-        return `<div class="rrow" ${JSON.stringify(g) === editingGoal ? 'style="background:rgba(245,130,32,.15)"' : ''}>
-          <span style="flex:1">⚽ ${g.min ? g.min + "' " : ''}${esc(g.name)} <span class="msg">(${team(g.team).code})</span></span>
-          <button type="button" data-gedit="${j}" aria-label="Edit goal">✎</button><button type="button" class="danger" data-del="${j}" aria-label="Delete goal">✕</button></div>`; }).join('')
-        || '<p class="msg">No goals logged yet.</p>')
-      + (kind !== 'goal' ? '' : editingGoal
-        ? '<div style="margin-top:8px"><button type="button" class="primary" id="gsave">Update goal</button> <button type="button" id="gcancel">Cancel</button></div>'
-        : '<button type="button" id="gadd" style="margin-top:8px">Log goal without image</button>');
+    boxNames('sb', val('home') && team(val('home')).code, val('away') && team(val('away')).code);
+    if ($('glog')) $('glog').innerHTML = (kind === 'goal' ? ['goals'] : kind === 'event' ? ['events'] : ['goals', 'events']).map(logSection).join('');
+  }
+
+  function logSection(key) {
+    const L = LOG[key], items = L.all().filter(x => x.n == val('pick')).sort((a, b) => a.min - b.min);
+    return `<label style="margin-top:12px">${L.title} this match</label>`
+      + (items.map(x => { const j = esc(JSON.stringify(x)), on = editLog?.key === key && editLog.json === JSON.stringify(x);
+          return `<div class="rrow" ${on ? 'style="background:rgba(245,130,32,.15)"' : ''}>
+            <span style="flex:1">${key === 'goals' ? '⚽' : EVENTS[x.type] || '•'} ${x.min ? x.min + "' " : ''}${esc(x.name)} <span class="msg">(${team(x.team).code})${key === 'events' ? ' · ' + esc(x.type) : ''}</span></span>
+            <button type="button" data-ledit="${key}" data-lj="${j}" aria-label="Edit">✎</button><button type="button" class="danger" data-ldel="${key}" data-lj="${j}" aria-label="Delete">✕</button></div>`; }).join('')
+        || `<p class="msg">None logged yet.</p>`)
+      + (kind !== L.kind ? '' : editLog?.key === key
+        ? `<div style="margin-top:8px"><button type="button" class="primary" data-lsave="${key}">Update ${L.what}</button> <button type="button" data-lcancel>Cancel</button></div>`
+        : `<button type="button" data-lsave="${key}" style="margin-top:8px">Log ${L.what} without image</button>`);
   }
 
   $('form').onchange = e => {
@@ -303,24 +345,23 @@
   });
   $('form').oninput = e => { if (e.target.tagName !== 'SELECT') { clearTimeout(render.t); render.t = setTimeout(render, 400); } };
   $('form').onclick = e => {
-    if (e.target.dataset.del) {
-      const d = e.target.dataset.del;
-      if (!canEdit() || !confirm('Delete this goal?')) return;
-      if (d === editingGoal) editingGoal = null;
-      store.set('goals', JSON.stringify(goals().filter(g => JSON.stringify(g) !== d)));
+    const ld = e.target.dataset;
+    if (ld.ldel) {
+      if (!canEdit($('msg')) || !confirm(`Delete this ${LOG[ld.ldel].what}?`)) return;
+      if (editLog?.json === ld.lj) editLog = null;
+      store.set(ld.ldel, JSON.stringify(LOG[ld.ldel].all().filter(x => JSON.stringify(x) !== ld.lj)));
       return applyMatch(), fillResultMatch(), render();
     }
-    if (e.target.dataset.gedit) {  // load the goal into the Goal form; "Update goal" (or Save image) writes it back
-      const g = JSON.parse(e.target.dataset.gedit);
-      store.set('pick', g.n);
-      if (kind !== 'goal') pick('goal');
-      editingGoal = e.target.dataset.gedit;
-      fillPlayers(); set('scorer', g.name); set('minute', g.min); set('team', g.team);
-      const [hs, as] = tally(g.n, val('home'), val('away')); set('score', `${hs}-${as}`);
+    if (ld.ledit) {  // load the entry into its form; "Update" (or Save image) writes it back
+      const L = LOG[ld.ledit], x = JSON.parse(ld.lj);
+      store.set('pick', x.n);
+      if (kind !== L.kind) pick(L.kind);
+      editLog = { key: ld.ledit, json: ld.lj };
+      fillPlayers(); set(L.who, x.name); set('minute', x.min); set('team', x.team); if (x.type) set('event', x.type);
       return fillPlayers(), render();
     }
-    if (e.target.id === 'gsave' || e.target.id === 'gadd') return logGoal();
-    if (e.target.id === 'gcancel') return editingGoal = null, fillPlayers();
+    if (ld.lsave) return logEntry(ld.lsave);
+    if (ld.lcancel !== undefined) return editLog = null, fillPlayers();
     if (e.target.id === 'naddrow') { setNoticeRows([...noticeRowsFromDom(), ['', '']]); renderNoticeRows(); return [...document.querySelectorAll('[data-nk]')].at(-1)?.focus(); }
     if (e.target.dataset.ndel) { const r = noticeRowsFromDom(); r.splice(e.target.dataset.ndel, 1); setNoticeRows(r); renderNoticeRows(); return render(); }
     // Squad editor buttons
@@ -404,7 +445,8 @@
         <img src="${url}" alt="">`;
       if ($('share')) $('share').onclick = () => navigator.share({ files: [file] }).catch(() => {});
       msg.textContent = 'Done ✓  Tip: you can also long-press the image to save it.';
-      if (kind === 'goal') logGoal();
+      if (kind === 'goal') logEntry('goals');
+      if (kind === 'event') logEntry('events');
       // A Full Time score is the result: record it so the points table updates without a second step.
       if (kind === 'score' && val('label') === 'Full Time' && /^\d+-\d+$/.test(val('score').replace(/\s/g, ''))) {
         setResult(val('home'), val('score').replace(/\s/g, ''), val('away'));
@@ -414,16 +456,17 @@
   };
 
   // Saved goal graphics are remembered per match: they feed the next goal's score, the final score and top scorers.
-  // Adds the goal in the form, or replaces the one being edited.
-  function logGoal() {
-    const g = { n: val('pick'), team: val('team'), name: val('scorer'), min: val('minute') }, msg = $('msg');
-    if (!g.n || !g.name || !g.team) { msg.className = 'msg err'; return msg.textContent = 'Pick the match and scorer first.'; }
-    if (!canEdit()) { msg.className = 'msg err'; return msg.textContent = 'View only: sign in to change goals.'; }
-    const all = goals(), j = JSON.stringify(g);
-    if (editingGoal) store.set('goals', JSON.stringify(all.map(x => JSON.stringify(x) === editingGoal ? g : x)));
-    else if (!all.some(x => JSON.stringify(x) === j)) store.set('goals', JSON.stringify([...all, g]));
-    msg.className = 'msg'; msg.textContent += editingGoal ? ' Goal updated.' : ' Goal logged.';
-    editingGoal = null;
+  // Adds the goal/event in the form, or replaces the one being edited.
+  function logEntry(key) {
+    const L = LOG[key], msg = $('msg'), base = { n: val('pick'), team: val('team'), name: val(L.who), min: val('minute') };
+    const x = key === 'goals' ? base : { n: base.n, type: val('event'), team: base.team, name: base.name, min: base.min };
+    if (!x.n || !x.name || !x.team) { msg.className = 'msg err'; return msg.textContent = 'Pick the match and player first.'; }
+    if (!canEdit(msg)) return;
+    const all = L.all(), j = JSON.stringify(x);
+    if (editLog?.key === key) store.set(key, JSON.stringify(all.map(y => JSON.stringify(y) === editLog.json ? x : y)));
+    else if (!all.some(y => JSON.stringify(y) === j)) store.set(key, JSON.stringify([...all, x]));
+    msg.className = 'msg'; msg.textContent += editLog ? ` ${L.what[0].toUpperCase() + L.what.slice(1)} updated.` : ` ${L.what[0].toUpperCase() + L.what.slice(1)} logged.`;
+    editLog = null;
     fillPlayers(); fillResultMatch();
   }
 
@@ -454,7 +497,7 @@
       const [r] = parseResults(edit), pair = [r.home.name, r.away.name].sort() + '';
       editing = edit;
       $('rm').value = fixtures().find(m => [m.home, m.away].sort() + '' === pair)?.n || '';
-      $('rh').value = r.home.name; $('ra').value = r.away.name; $('rs').value = `${r.hg}-${r.ag}`; $('rp').checked = r.pens;
+      $('rh').value = r.home.name; $('ra').value = r.away.name; boxesFrom('rb', `${r.hg}-${r.ag}`); $('rp').checked = r.pens; resultNames();
       $('radd').textContent = 'Update result'; $('rcancel').hidden = false;
       $('rm').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
@@ -465,7 +508,7 @@
     if (!m) return;
     $('rh').value = m.home; $('ra').value = m.away;
     const [hs, as] = tally(m.n, m.home, m.away);
-    $('rs').value = matchGoals(m.n).length ? `${hs}-${as}` : '';
+    boxesFrom('rb', `${hs}-${as}`); resultNames();
   };
   const refreshResultMatches = () => {
     $('rm').innerHTML = matchOptions() + '<option value="">Other / knockout (pick teams below)</option>';
@@ -473,6 +516,8 @@
     renderResults();
   };
   $('rm').onchange = fillResultMatch;
+  const resultNames = () => boxNames('rb', $('rh').value, $('ra').value);
+  $('rh').onchange = $('ra').onchange = resultNames;
   // One result per match: a corrected score replaces the old line instead of counting twice.
   function setResult(h, sc, a, pens = false) {
     if (!canEdit()) return;
@@ -482,8 +527,8 @@
     saveResults(); store.set('pick', nextMatch()); refreshResultMatches();
   }
   $('radd').onclick = () => {
-    const s = $('rs').value.trim().replace(/\s/g, ''), h = $('rh').value, a = $('ra').value;
-    if (!/^\d+-\d+$/.test(s) || !h || h === a) { $('rmsg').className = 'msg err'; return $('rmsg').textContent = 'Pick two different teams and a score like 2-1'; }
+    const s = boxesTo('rb'), h = $('rh').value, a = $('ra').value;
+    if (!h || h === a) { $('rmsg').className = 'msg err'; return $('rmsg').textContent = 'Pick two different teams.'; }
     setResult(h, s, a, $('rp').checked); $('rp').checked = false;
   };
   $('rtable').onclick = () => { pick('table'); scrollTo({ top: 0, behavior: 'smooth' }); };
@@ -496,12 +541,14 @@
   let editingFx = null;  // match number being edited
   function saveFixtures(list) {  // list items keep their old .n (null = new) so goals and the picked match can follow them
     const remap = new Map(list.map((m, i) => [String(m.n), String(i + 1)]));
-    const gs = goals(), kept = gs.filter(g => remap.has(String(g.n))).map(g => ({ ...g, n: remap.get(String(g.n)) }));
-    if (JSON.stringify(kept) !== JSON.stringify(gs)) store.set('goals', JSON.stringify(kept));
+    for (const key of ['goals', 'events']) {
+      const gs = LOG[key].all(), kept = gs.filter(g => remap.has(String(g.n))).map(g => ({ ...g, n: remap.get(String(g.n)) }));
+      if (JSON.stringify(kept) !== JSON.stringify(gs)) store.set(key, JSON.stringify(kept));
+    }
     if (remap.has(String(store.get('pick')))) store.set('pick', remap.get(String(store.get('pick'))));
     store.set('fixtures', '# Group, Home v Away, time — edited in the phone maker\n' + list.map(m => `${m.g}, ${m.home} v ${m.away}${m.time ? `, ${m.time}` : ''}`).join('\n') + '\n');
     endFxEdit(); renderFixtures(); refreshResultMatches();
-    if (['goal', 'score', 'fixture', 'motm', 'fixtures', 'results'].includes(kind)) pick(kind);
+    if (['goal', 'score', 'event', 'fixture', 'motm', 'fixtures', 'results'].includes(kind)) pick(kind);
   }
   const endFxEdit = () => {
     editingFx = null; $('fadd').textContent = 'Add fixture'; $('fcancel').hidden = true;
@@ -529,8 +576,8 @@
       saveFixtures(list);
     }
     if (d.fdel) {
-      const m = list[d.fdel - 1], ng = matchGoals(m.n).length;
-      if (confirm(`Delete match ${m.n}: ${m.home} v ${m.away}?${ng ? `\nIts ${ng} logged goal(s) will be deleted too.` : ''}`)) saveFixtures(list.filter(x => x !== m));
+      const m = list[d.fdel - 1], ng = matchGoals(m.n).length + events().filter(x => x.n == m.n).length;
+      if (confirm(`Delete match ${m.n}: ${m.home} v ${m.away}?${ng ? `\nIts ${ng} logged goal(s)/event(s) will be deleted too.` : ''}`)) saveFixtures(list.filter(x => x !== m));
     }
   };
   $('fadd').onclick = () => {
@@ -566,6 +613,7 @@
   Promise.all(['matchday/groups.txt', 'matchday/fixtures.txt', 'matchday/results.txt', 'teamlist/squads.txt'].map(text)).then(([g, f, r, sq]) => {
     Object.assign(files, { groups: g, fixtures: f, results: r, squads: sq });
     $('results').value = store.get('results') ?? r;
+    $('rbox').innerHTML = boxRow('rb', 'h') + boxRow('rb', 'a');
     $('rh').innerHTML = $('ra').innerHTML = $('fh').innerHTML = $('fa').innerHTML = teamOptions;
     $('fg').innerHTML = ROUNDS.map(r => `<option value="${r}">${r}</option>`).join('');
     endFxEdit(); renderFixtures(); renderGroups();

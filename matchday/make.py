@@ -4,6 +4,8 @@
   ./make.py fixture   home="Da Boys" away="Real Tamghas" match="Match 1" date="Fri 14 Nov" time="4:00 PM" venue="Tamghas Futsal"
   ./make.py goal      scorer="Mishan KC" team=DAB home=DAB away=RTM score=1-0 minute=12
   ./make.py score     home=DAB away=RTM score=2-1 label="Full Time" homeScorers="Mishan KC 12'|Viju Pun 30'" awayScorers="Arjun KC 25'"
+                      [homeCards="Y Name 12'|R Name 30'" awayCards=...]
+  ./make.py event     event="Yellow Card" name="Mishan KC" team=DAB minute=18 [home=NYC away=DAB score=1-1]
   ./make.py results   title=Results subtitle="Matchday 1" matches="DAB,RTM,2-1|KPT,KYC,4:00 PM"
   ./make.py table     (reads results.txt, and groups.txt for group tables; qualify=2 next="Semi-Finals")
   ./make.py motm      name="Mishan KC" team=DAB stat="2 Goals" match="Da Boys 2-1 Real Tamghas"

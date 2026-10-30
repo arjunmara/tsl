@@ -14,7 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parent
 DB = 'https://tamghassuperleague-4242a-default-rtdb.asia-southeast1.firebasedatabase.app/tsl'
 KEY = 'AIzaSyAicg1RfR7xmmfdyxDhWD0wib-TjVLO6Bs'  # public web API key (same as maker.html)
 FILES = {'results': 'matchday/results.txt', 'fixtures': 'matchday/fixtures.txt', 'groups': 'matchday/groups.txt',
-         'squads': 'teamlist/squads.txt', 'goals': 'matchday/goals.json'}
+         'squads': 'teamlist/squads.txt', 'goals': 'matchday/goals.json', 'events': 'matchday/events.json'}
 TOKEN_FILE = pathlib.Path.home() / '.config' / 'tsl-sync.json'
 _auth = {}  # idToken + expiry, refreshed from the saved refresh token
 _wrote = {}  # what we last wrote/read per key, so our own writes don't bounce back as "edits"
