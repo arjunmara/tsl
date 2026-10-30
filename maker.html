@@ -218,7 +218,7 @@
     const p = { type: kind, ...Object.fromEntries(new FormData($('form'))) };
     delete p.pick;
     if (kind === 'table') Object.assign(p, { results: $('results').value, groups: files.groups });
-    for (const k of ['players', 'matches']) if (p[k]) p[k] = p[k].split('\n').map(s => s.trim()).filter(Boolean).join('|');
+    for (const k of ['players', 'matches', 'rows']) if (p[k]) p[k] = p[k].split('\n').map(s => s.trim()).filter(Boolean).join('|');
     return p;
   }
 
