@@ -10,6 +10,8 @@
   html, body { margin: 0; background: transparent; overflow: hidden; }
   body { width: 1920px; height: 1080px; font-family: 'Barlow', sans-serif; color: #fff; }
   .wrap { position: absolute; top: 48px; left: 64px; transition: opacity .4s, transform .4s; }
+  body.bug-only { width: 600px; height: 165px; }
+  body.bug-only .wrap { top: 12px; left: 8px; }
   .wrap.hidden { opacity: 0; transform: translateY(-20px); }
 
   .bug { display: flex; align-items: stretch; height: 72px; filter: drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
@@ -81,7 +83,13 @@
   }
 
   // Live from Firebase; if the connection drops, the last frame just stays on screen.
-  fitStage(); onLive(render);
+  // ?bug=1: just the score bug, filling the widget (for PRISM-style web widgets you drag/resize yourself).
+  if (new URLSearchParams(location.search).has('bug')) {
+    document.body.classList.add('bug-only');
+    const fit = () => { document.body.style.transformOrigin = '0 0'; document.body.style.transform = `scale(${Math.min(innerWidth / 600, innerHeight / 165)})`; };
+    addEventListener('resize', fit); fit();
+  } else fitStage();
+  onLive(render);
 </script>
 </body>
 </html>
