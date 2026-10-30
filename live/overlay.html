@@ -99,11 +99,15 @@
     addEventListener('resize', fit); fit();
   } else {
     // Full-frame mode (widget stretched over the whole camera): &zoom=1.4 sizes the bug, &x=40&y=30 moves it (px of a 1920x1080 frame).
+    // &iphone=1: preset for an iPhone 15 Pro Max in landscape (19.5:9 widget): clear of the rounded corner / Dynamic Island side.
+    // ponytail: preset numbers are a best guess without the phone in hand; &zoom/&x/&y still override them.
+    const preset = q.has('iphone') ? { zoom: 1.15, x: 150, y: 40 } : {};
+    const num = k => q.has(k) ? +q.get(k) || 0 : preset[k];
     fitStage();
     const w = $('wrap');
-    if (q.has('x')) w.style.left = (+q.get('x') || 0) + 'px';
-    if (q.has('y')) w.style.top = (+q.get('y') || 0) + 'px';
-    if (q.has('zoom')) w.style.scale = +q.get('zoom') || 1;
+    if (num('x') !== undefined) w.style.left = num('x') + 'px';
+    if (num('y') !== undefined) w.style.top = num('y') + 'px';
+    if (num('zoom')) w.style.scale = num('zoom');
     w.style.transformOrigin = 'top left';
   }
   onLive(render);
