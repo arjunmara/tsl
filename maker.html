@@ -82,7 +82,13 @@
 <script>
   const $ = id => document.getElementById(id);
   // Firebase project config (Project settings → Your apps). null = no sharing, everything stays on this phone.
-  const FIREBASE = null;
+  const FIREBASE = {
+    apiKey: 'AIzaSyAicg1RfR7xmmfdyxDhWD0wib-TjVLO6Bs',
+    authDomain: 'tamghassuperleague-4242a.firebaseapp.com',
+    databaseURL: 'https://tamghassuperleague-4242a-default-rtdb.asia-southeast1.firebasedatabase.app',
+    projectId: 'tamghassuperleague-4242a',
+    appId: '1:355993986791:web:f435694a4d2ea0b7b32442',
+  };
   // results, goals and squads are shared through Firebase when signed in; localStorage is the offline copy.
   const SHARED = ['results', 'goals', 'squads'], sync = { db: null, user: null };
   const local = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
