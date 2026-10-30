@@ -124,7 +124,7 @@
   const SIZE = { cover: [1640, 624] };
   const HINTS = { rows: 'Date=Saturday · Kartik 14 (one per line; replaces date/time/venue)', qr: 'https://facebook.com/... (link for a QR code)', logo2: '../14starlogo.jpg', pill: 'Follow Now', score: '2-1', minute: '12', homeScorers: "Mishan KC 12'|Arjun KC 30'", awayScorers: "Arjun KC 25'", stat: '2 Goals' };
   const files = {};  // groups.txt, fixtures.txt, results.txt, squads.txt as published
-  let kind = 'goal';
+  let kind = 'goal', editingGoal = null;  // JSON of the logged goal being edited
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   const F = () => $('form').elements, set = (n, v) => F()[n] && (F()[n].value = v), val = n => F()[n]?.value ?? '';
 
@@ -160,6 +160,7 @@
   }
 
   function pick(k) {
+    if (k !== kind) editingGoal = null;
     kind = k;
     document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('on', b.dataset.kind === k));
     const defs = defaults();
@@ -210,8 +211,15 @@
         ${kind === 'goal' ? `<option data-team="${esc(t)}" value="Own Goal">Own goal (counts for ${esc(t)})</option>` : ''}</optgroup>`).join('');
       s.value = keep;
     });
-    if ($('glog')) $('glog').innerHTML = matchGoals(val('pick')).map(g => `<div class="msg">⚽ ${g.min ? g.min + "' " : ''}${esc(g.name)} (${team(g.team).code})
-      <button type="button" data-del="${esc(JSON.stringify(g))}" style="padding:2px 8px">✕</button></div>`).join('');
+    if ($('glog')) $('glog').innerHTML = '<label style="margin-top:6px">Goals this match</label>'
+      + (matchGoals(val('pick')).sort((a, b) => a.min - b.min).map(g => { const j = esc(JSON.stringify(g));
+        return `<div class="rrow" ${JSON.stringify(g) === editingGoal ? 'style="background:rgba(245,130,32,.15)"' : ''}>
+          <span style="flex:1">⚽ ${g.min ? g.min + "' " : ''}${esc(g.name)} <span class="msg">(${team(g.team).code})</span></span>
+          <button type="button" data-gedit="${j}" aria-label="Edit goal">✎</button><button type="button" class="danger" data-del="${j}" aria-label="Delete goal">✕</button></div>`; }).join('')
+        || '<p class="msg">No goals logged yet.</p>')
+      + (kind !== 'goal' ? '' : editingGoal
+        ? '<div style="margin-top:8px"><button type="button" class="primary" id="gsave">Update goal</button> <button type="button" id="gcancel">Cancel</button></div>'
+        : '<button type="button" id="gadd" style="margin-top:8px">Log goal without image</button>');
   }
 
   $('form').onchange = e => {
@@ -239,9 +247,22 @@
   $('form').onclick = e => {
     if (e.target.dataset.del) {
       const d = e.target.dataset.del;
+      if (!canEdit() || !confirm('Delete this goal?')) return;
+      if (d === editingGoal) editingGoal = null;
       store.set('goals', JSON.stringify(goals().filter(g => JSON.stringify(g) !== d)));
       return applyMatch(), fillResultMatch(), render();
     }
+    if (e.target.dataset.gedit) {  // load the goal into the Goal form; "Update goal" (or Save image) writes it back
+      const g = JSON.parse(e.target.dataset.gedit);
+      store.set('pick', g.n);
+      if (kind !== 'goal') pick('goal');
+      editingGoal = e.target.dataset.gedit;
+      fillPlayers(); set('scorer', g.name); set('minute', g.min); set('team', g.team);
+      const [hs, as] = tally(g.n, val('home'), val('away')); set('score', `${hs}-${as}`);
+      return fillPlayers(), render();
+    }
+    if (e.target.id === 'gsave' || e.target.id === 'gadd') return logGoal();
+    if (e.target.id === 'gcancel') return editingGoal = null, fillPlayers();
     // Squad editor buttons
     const d = e.target.dataset, ps = squadList();
     if (d.pdel) { if (confirm(`Remove ${ps[d.pdel].replace(/\(.*?\)/g, '').trim()}?`)) { ps.splice(d.pdel, 1); setSquad(ps); } }
@@ -333,12 +354,17 @@
   };
 
   // Saved goal graphics are remembered per match: they feed the next goal's score, the final score and top scorers.
+  // Adds the goal in the form, or replaces the one being edited.
   function logGoal() {
-    const g = { n: val('pick'), team: val('team'), name: val('scorer'), min: val('minute') };
-    if (!g.n || goals().some(x => JSON.stringify(x) === JSON.stringify(g))) return;
-    store.set('goals', JSON.stringify([...goals(), g]));
+    const g = { n: val('pick'), team: val('team'), name: val('scorer'), min: val('minute') }, msg = $('msg');
+    if (!g.n || !g.name || !g.team) { msg.className = 'msg err'; return msg.textContent = 'Pick the match and scorer first.'; }
+    if (!canEdit()) { msg.className = 'msg err'; return msg.textContent = 'View only: sign in to change goals.'; }
+    const all = goals(), j = JSON.stringify(g);
+    if (editingGoal) store.set('goals', JSON.stringify(all.map(x => JSON.stringify(x) === editingGoal ? g : x)));
+    else if (!all.some(x => JSON.stringify(x) === j)) store.set('goals', JSON.stringify([...all, g]));
+    msg.className = 'msg'; msg.textContent += editingGoal ? ' Goal updated.' : ' Goal logged.';
+    editingGoal = null;
     fillPlayers(); fillResultMatch();
-    $('msg').textContent += ' Goal logged for the final score.';
   }
 
   // ---- Results: kept on this phone; the table preview updates as you type ----
