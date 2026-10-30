@@ -50,12 +50,13 @@
 
   <h2>Results</h2>
   <div class="card">
+    <label>Match<select id="rm"></select></label>
     <div class="row3">
       <label>Home<select id="rh"></select></label>
       <label>Score<input id="rs" placeholder="2-1" inputmode="numeric"></label>
       <label>Away<select id="ra"></select></label>
     </div>
-    <label style="display:flex;gap:8px;align-items:center;text-transform:none"><input type="checkbox" id="rp" style="width:auto;margin:0"> Decided by shootout (group tie-break)</label>
+    <label style="display:flex;gap:8px;align-items:center;text-transform:none"><input type="checkbox" id="rp" style="width:auto;margin:0"> This is a group tie-break shootout score (add the draw too)</label>
     <button class="primary" id="radd">Add result</button>
     <button id="rtable">Show points table</button>
     <label style="margin-top:14px">All results (one per line, edit freely)<textarea id="results"></textarea></label>
@@ -64,7 +65,6 @@
   </div>
 </main>
 
-<datalist id="teamlist"></datalist>
 <script src="matchday/league.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
 <script>
@@ -73,70 +73,152 @@
                   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   const text = f => fetch(`${f}?t=${Date.now()}`).then(r => r.ok ? r.text() : '');
 
-  // Fields per graphic: "name", "name*" = required, "name|default", "name~" = textarea. Mirrors matchday.html.
+  // Fields per graphic. Markers: * required, ~ textarea, @ team dropdown, # player dropdown (from the match's two teams),
+  // ^ dropdown from OPTS, |default. "pick" is the match picker: it fills teams/time/score and isn't sent to the template.
   const MD = 'matchday/matchday.html', W = 1080, H = 1350;
   const KINDS = {
-    goal:      ['Goal',        MD, ['scorer*', 'team*', 'home*', 'away*', 'score*', 'minute']],
-    score:     ['Final score', MD, ['home*', 'away*', 'score*', 'label|Full Time', 'homeScorers', 'awayScorers', 'match']],
-    fixture:   ['Next match',  MD, ['home*', 'away*', 'match', 'date', 'time', 'venue|Tamghas Futsal', 'label|Next Match']],
+    goal:      ['Goal',        MD, ['pick', 'scorer#*', 'minute', 'team@*', 'home@*', 'away@*', 'score*']],
+    score:     ['Final score', MD, ['pick', 'label^|Full Time', 'home@*', 'away@*', 'score*', 'homeScorers', 'awayScorers', 'match']],
+    fixture:   ['Next match',  MD, ['pick', 'label^|Next Match', 'home@*', 'away@*', 'match', 'date|Saturday · Kartik 14', 'time', 'venue|Tamghas Futsal']],
     table:     ['Points table', MD, ['title|Points Table', 'subtitle', 'qualify|2', 'next|Quarter-Finals']],
-    results:   ['Results',     MD, ['matches*', 'title|Results', 'subtitle']],
-    motm:      ['Man of match', MD, ['name*', 'team*', 'stat', 'match']],
-    scorers:   ['Top scorers', MD, ['players*', 'title|Top Scorers', 'subtitle']],
+    results:   ['Results',     MD, ['matches~*', 'title|Results', 'subtitle']],
+    motm:      ['Man of match', MD, ['pick', 'name#*', 'team@*', 'stat', 'match']],
+    scorers:   ['Top scorers', MD, ['players~*', 'title|Top Scorers', 'subtitle']],
     fixtures:  ['Fixtures',    MD, ['fixtures~', 'title|Group Stage Fixtures', 'subtitle|Saturday · Kartik 14 · 7 AM Sharp']],
     format:    ['Format / draw', MD, ['groups~', 'label|Official Draw']],
     notice:    ['Notice',      MD, ['title*', 'label|Official Notice', 'date', 'time', 'venue|Tamghas Futsal', 'body~', 'sign|Organizing Committee']],
     teams:     ['All teams',   MD, ['title|The Teams', 'subtitle']],
-    champions: ['Champions',   MD, ['team*', 'season|Season 1', 'label|Champions']],
-    squad:     ['Team list',   'teamlist/teamlist.html', ['team*', 'players~']],
+    champions: ['Champions',   MD, ['team@*', 'season|Season 1', 'label|Champions']],
+    squad:     ['Team list',   'teamlist/teamlist.html', ['team@*', 'players~']],
     cover:     ['FB cover',    'teamlist/cover.html', []],
   };
+  const OPTS = { 'score.label': ['Full Time', 'Half Time'], 'fixture.label': ['Next Match', 'Up Next', 'Kick-off'] };
   const SIZE = { cover: [1640, 624] };
-  const HINTS = { score: '2-1', minute: '12', homeScorers: "Mishan KC 12'|Arjun KC 30'", awayScorers: "Arjun KC 25'",
-    matches: 'DAB,RTM,2-1|KPT,KYC,4:00 PM', players: 'Mishan KC,DAB,5|Arjun KC,RTM,3', stat: '2 Goals', match: 'Match 1' };
-  const TEAM_FIELDS = ['home', 'away', 'team'];
-  const files = {};  // groups.txt, fixtures.txt, squads.txt as published
+  const HINTS = { score: '2-1', minute: '12', homeScorers: "Mishan KC 12'|Arjun KC 30'", awayScorers: "Arjun KC 25'", stat: '2 Goals' };
+  const files = {};  // groups.txt, fixtures.txt, results.txt, squads.txt as published
   let kind = 'goal';
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const F = () => $('form').elements, set = (n, v) => F()[n] && (F()[n].value = v), val = n => F()[n]?.value ?? '';
 
+  // ---- Data: fixtures in playing order, squads, goals logged on this phone ----
+  const fixtures = () => (files.fixtures || '').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map((l, i) => {
+    const [g, vs, time = ''] = l.split(',').map(s => s.trim()), [h, a] = vs.split(/\s+v\s+/);
+    return { n: i + 1, g, home: team(h).name, away: team(a).name, time };
+  });
   const squads = () => Object.fromEntries(((store.get('squads') ?? files.squads) || '').split('\n')
     .filter(l => l.includes(':') && !l.startsWith('#')).map(l => [l.slice(0, l.indexOf(':')).trim(), l.slice(l.indexOf(':') + 1).trim()]));
+  const players = t => (squads()[t] || '').split('|').map(s => s.trim()).filter(s => s && !/\((coach|manager)\)/i.test(s))
+    .map(s => s.replace(/\((c|gk)\)/gi, '').replace(/\s+/g, ' ').trim());
+  const goals = () => JSON.parse(store.get('goals') || '[]');  // [{n: match no., team, name, min}]
+  const matchGoals = n => goals().filter(g => g.n == n);
+  const tally = (n, h, a) => { const gs = matchGoals(n); return [gs.filter(g => g.team === h).length, gs.filter(g => g.team === a).length]; };
+  const played = () => { try { return parseResults($('results').value).filter(r => !r.pens); } catch { return []; } };
+  const resultOf = m => played().find(r => r.home.name === m.home && r.away.name === m.away || r.home.name === m.away && r.away.name === m.home);
+  const nextMatch = () => (fixtures().find(m => !resultOf(m)) || fixtures().at(-1) || {}).n || '';
+  const matchOptions = () => fixtures().map(m => `<option value="${m.n}">${m.n}. ${m.time} · ${team(m.home).code} v ${team(m.away).code}${resultOf(m) ? ' ✓' : ''}</option>`).join('');
 
-  $('teamlist').innerHTML = TEAMS.map(t => `<option value="${t.name}">`).join('');
-  $('rh').innerHTML = $('ra').innerHTML = TEAMS.map(t => `<option>${t.name}</option>`).join('');
   $('kinds').innerHTML = Object.entries(KINDS).map(([k, [n]]) => `<button type="button" data-kind="${k}">${n}</button>`).join('');
   $('kinds').onclick = e => e.target.dataset.kind && pick(e.target.dataset.kind);
+  const teamOptions = `<option value="">— pick —</option>` + TEAMS.map(t => `<option>${esc(t.name)}</option>`).join('');
+
+  function defaults() {
+    const fx = fixtures(), tally5 = Object.values(goals().filter(g => g.name !== 'Own Goal').reduce((m, g) => {
+      (m[g.name + g.team] ??= { name: g.name, team: g.team, n: 0 }).n++; return m; }, {})).sort((a, b) => b.n - a.n).slice(0, 8);
+    return {
+      fixtures: files.fixtures, groups: files.groups,
+      matches: (fx.some(resultOf) ? fx.filter(resultOf).slice(-7) : fx.slice(0, 7)).map(m => { const r = resultOf(m); return `${team(m.home).code},${team(m.away).code},${r ? (r.home.name === m.home ? `${r.hg}-${r.ag}` : `${r.ag}-${r.hg}`) : m.time}`; }).join('\n'),
+      players: tally5.map(p => `${p.name},${team(p.team).code},${p.n}`).join('\n'),
+    };
+  }
 
   function pick(k) {
     kind = k;
     document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('on', b.dataset.kind === k));
-    const defs = { fixtures: files.fixtures, groups: files.groups };
+    const defs = defaults();
     $('fields').innerHTML = KINDS[k][2].map(f => {
-      const [name, def = defs[name.replace(/\W/g, '')] ?? ''] = f.replace(/[*~]/g, '').split('|'), req = f.includes('*');
-      const attrs = `name="${name}" placeholder="${HINTS[name] || ''}" ${TEAM_FIELDS.includes(name) ? 'list="teamlist"' : ''}`;
-      const esc = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-      return `<label>${name.replace(/([A-Z])/g, ' $1')}${req ? ' *' : ''}${f.includes('~')
-        ? `<textarea ${attrs}>${esc(def)}</textarea>` : `<input ${attrs} value="${esc(def)}">`}</label>`;
+      const [name, def = defs[name.replace(/\W/g, '')] ?? ''] = f.replace(/[*~@#^]/g, '').split('|'), req = f.includes('*');
+      const lbl = `${name === 'pick' ? 'Match' : name.replace(/([A-Z])/g, ' $1')}${req ? ' *' : ''}`;
+      const opts = OPTS[`${k}.${name}`];
+      const input = name === 'pick' ? `<select name="pick">${matchOptions()}<option value="">Other / knockout (pick teams below)</option></select>`
+        : f.includes('@') ? `<select name="${name}">${teamOptions}</select>`
+        : f.includes('#') ? `<select name="${name}" data-players></select>`
+        : opts ? `<select name="${name}">${opts.map(o => `<option>${esc(o)}</option>`).join('')}</select>`
+        : f.includes('~') ? `<textarea name="${name}">${esc(def)}</textarea>`
+        : `<input name="${name}" value="${esc(def)}" placeholder="${HINTS[name] || ''}" ${['minute', 'score'].includes(name) ? 'inputmode="numeric"' : ''}>`;
+      return `<label>${lbl}${input}</label>`;
     }).join('') || '<p class="msg">No fields — just save it.</p>';
     if (k === 'squad') $('fields').insertAdjacentHTML('beforeend', '<button type="button" id="keep">Remember this squad on this phone</button>');
+    if (['goal', 'score'].includes(k)) $('fields').insertAdjacentHTML('beforeend', '<div id="glog"></div>');
+    if (F().pick) { F().pick.value = store.get('pick') ?? nextMatch(); applyMatch(); }
     render();
   }
 
-  $('form').oninput = e => {
-    if (kind === 'squad' && e.target.name === 'team') $('form').elements.players.value = (squads()[e.target.value] || '').split('|').join('\n');
-    clearTimeout(render.t); render.t = setTimeout(render, 400);
+  // Match picked: fill teams, labels, time and the score so far.
+  function applyMatch() {
+    const n = val('pick'), m = fixtures()[n - 1];
+    store.set('pick', n);
+    if (m) {
+      set('home', m.home); set('away', m.away);
+      const [hs, as] = tally(n, m.home, m.away), label = `Match ${m.n} · Group ${m.g}`;
+      if (kind === 'fixture') { set('match', label); set('time', m.time); }
+      if (kind === 'score') {
+        set('match', label); set('score', `${hs}-${as}`);
+        const list = t => matchGoals(n).filter(g => g.team === t).map(g => g.name === 'Own Goal' ? `OG ${g.min}'` : `${g.name}${g.min ? ` ${g.min}'` : ''}`).join('|');
+        set('homeScorers', list(m.home)); set('awayScorers', list(m.away));
+      }
+      if (kind === 'motm') set('match', `${m.home} ${hs}-${as} ${m.away}`);
+    }
+    fillPlayers();
+  }
+
+  // Player dropdowns list both teams' squads; picking a player sets their team (and the new score for a goal).
+  function fillPlayers() {
+    const teams = [val('home'), val('away')].filter(Boolean);
+    document.querySelectorAll('[data-players]').forEach(s => {
+      const keep = s.value;
+      s.innerHTML = '<option value="">— pick —</option>' + teams.map(t => `<optgroup label="${esc(t)}">
+        ${players(t).map(p => `<option data-team="${esc(t)}">${esc(p)}</option>`).join('')}
+        ${kind === 'goal' ? `<option data-team="${esc(t)}" value="Own Goal">Own goal (counts for ${esc(t)})</option>` : ''}</optgroup>`).join('');
+      s.value = keep;
+    });
+    if ($('glog')) $('glog').innerHTML = matchGoals(val('pick')).map(g => `<div class="msg">⚽ ${g.min ? g.min + "' " : ''}${esc(g.name)} (${team(g.team).code})
+      <button type="button" data-del="${esc(JSON.stringify(g))}" style="padding:2px 8px">✕</button></div>`).join('');
+  }
+
+  $('form').onchange = e => {
+    const n = e.target.name;
+    if (n === 'pick') applyMatch();
+    if (n === 'home' || n === 'away') fillPlayers();
+    if (e.target.dataset.players !== undefined) {
+      const t = e.target.selectedOptions[0]?.dataset.team;
+      if (t) set('team', t);
+      if (kind === 'goal' && t) {
+        const [hs, as] = tally(val('pick'), val('home'), val('away'));
+        set('score', `${hs + (t === val('home'))}-${as + (t === val('away'))}`);
+      }
+    }
+    if (kind === 'squad' && n === 'team') set('players', (squads()[e.target.value] || '').split('|').join('\n'));
+    render();
   };
+  $('form').oninput = e => { if (e.target.tagName !== 'SELECT') { clearTimeout(render.t); render.t = setTimeout(render, 400); } };
   $('form').onclick = e => {
+    if (e.target.dataset.del) {
+      const d = e.target.dataset.del;
+      store.set('goals', JSON.stringify(goals().filter(g => JSON.stringify(g) !== d)));
+      return applyMatch(), fillResultMatch(), render();
+    }
     if (e.target.id !== 'keep') return;
-    const f = $('form').elements, all = squads();
-    all[f.team.value.trim()] = f.players.value.split(/\n|\|/).map(s => s.trim()).filter(Boolean).join('|');
+    const all = squads();
+    all[val('team').trim()] = val('players').split(/\n|\|/).map(s => s.trim()).filter(Boolean).join('|');
     store.set('squads', Object.entries(all).map(([t, p]) => `${t}: ${p}`).join('\n'));
     e.target.textContent = 'Remembered ✓';
   };
 
   function params() {
     const p = { type: kind, ...Object.fromEntries(new FormData($('form'))) };
+    delete p.pick;
     if (kind === 'table') Object.assign(p, { results: $('results').value, groups: files.groups });
-    if (kind === 'squad') p.players = (p.players || '').split('\n').join('|');
+    for (const k of ['players', 'matches']) if (p[k]) p[k] = p[k].split('\n').map(s => s.trim()).filter(Boolean).join('|');
     return p;
   }
 
@@ -164,7 +246,10 @@
   };
 
   $('save').onclick = async () => {
-    const msg = $('msg'), doc = $('frame').contentDocument, win = $('frame').contentWindow;
+    const msg = $('msg');
+    clearTimeout(render.t); render();  // always export what the form says now, not a half-updated preview
+    await new Promise(ok => $('frame').onload = ok);
+    const doc = $('frame').contentDocument;
     if (doc.querySelector('.err')) { msg.className = 'msg err'; return msg.textContent = 'Fix the red error first: ' + doc.querySelector('.err').textContent; }
     msg.className = 'msg'; msg.textContent = 'Making image…';
     try {
@@ -180,8 +265,18 @@
         <img src="${url}" alt="">`;
       if ($('share')) $('share').onclick = () => navigator.share({ files: [file] }).catch(() => {});
       msg.textContent = 'Done ✓  Tip: you can also long-press the image to save it.';
+      if (kind === 'goal') logGoal();
     } catch (e) { msg.className = 'msg err'; msg.textContent = 'Could not make the image: ' + (e.message || e); }
   };
+
+  // Saved goal graphics are remembered per match: they feed the next goal's score, the final score and top scorers.
+  function logGoal() {
+    const g = { n: val('pick'), team: val('team'), name: val('scorer'), min: val('minute') };
+    if (!g.n || goals().some(x => JSON.stringify(x) === JSON.stringify(g))) return;
+    store.set('goals', JSON.stringify([...goals(), g]));
+    fillPlayers(); fillResultMatch();
+    $('msg').textContent += ' Goal logged for the final score.';
+  }
 
   // ---- Results: kept on this phone; the table preview updates as you type ----
   const saveResults = () => {
@@ -191,11 +286,23 @@
     if (kind === 'table') render();
   };
   $('results').oninput = () => { clearTimeout(saveResults.t); saveResults.t = setTimeout(saveResults, 500); };
+  const fillResultMatch = () => {
+    const m = fixtures()[$('rm').value - 1];
+    if (!m) return;
+    $('rh').value = m.home; $('ra').value = m.away;
+    const [hs, as] = tally(m.n, m.home, m.away);
+    $('rs').value = matchGoals(m.n).length ? `${hs}-${as}` : '';
+  };
+  const refreshResultMatches = () => {
+    $('rm').innerHTML = matchOptions() + '<option value="">Other / knockout (pick teams below)</option>';
+    $('rm').value = nextMatch(); fillResultMatch();
+  };
+  $('rm').onchange = fillResultMatch;
   $('radd').onclick = () => {
     const s = $('rs').value.trim().replace(/\s/g, ''), h = $('rh').value, a = $('ra').value;
     if (!/^\d+-\d+$/.test(s) || h === a) { $('rmsg').className = 'msg err'; return $('rmsg').textContent = 'Pick two different teams and a score like 2-1'; }
     $('results').value = $('results').value.replace(/\n*$/, '\n') + `${h} ${s} ${a}${$('rp').checked ? ' (pens)' : ''}\n`;
-    $('rs').value = ''; $('rp').checked = false; saveResults();
+    $('rp').checked = false; saveResults(); store.set('pick', nextMatch()); refreshResultMatches();
   };
   $('rtable').onclick = () => { pick('table'); scrollTo({ top: 0, behavior: 'smooth' }); };
   $('rreset').onclick = () => { if (confirm('Replace the results on this phone with the published results.txt?')) { $('results').value = files.results; saveResults(); } };
@@ -203,6 +310,8 @@
   Promise.all(['matchday/groups.txt', 'matchday/fixtures.txt', 'matchday/results.txt', 'teamlist/squads.txt'].map(text)).then(([g, f, r, sq]) => {
     Object.assign(files, { groups: g, fixtures: f, results: r, squads: sq });
     $('results').value = store.get('results') ?? r;
+    $('rh').innerHTML = $('ra').innerHTML = teamOptions;
+    refreshResultMatches();
     pick('goal');
   });
 </script>
