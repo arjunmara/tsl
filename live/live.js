@@ -28,7 +28,13 @@ function patchLive(s, p) {
 }
 
 // Fixed 1920x1080 pages scale to whatever size the OBS browser source or PRISM web widget gives them.
-function fitStage() {
-  const fit = () => { document.body.style.transformOrigin = '0 0'; document.body.style.transform = `scale(${Math.min(innerWidth / 1920, innerHeight / 1080)})`; };
+// center = full-screen scenes: the content (el) stays whole and centred; the page's own background fills the rest of the box.
+function fitStage(center = false, el = document.body) {
+  const fit = () => {
+    const k = Math.min(innerWidth / 1920, innerHeight / 1080);
+    const dx = center ? (innerWidth - 1920 * k) / 2 : 0, dy = center ? (innerHeight - 1080 * k) / 2 : 0;
+    el.style.transformOrigin = '0 0';
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(${k})`;
+  };
   addEventListener('resize', fit); fit();
 }

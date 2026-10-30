@@ -9,7 +9,8 @@
      Both show the current match from the scorekeeper's control page, so they never need editing. */
   :root { --navy: #0a1a3f; --navy-2: #12285c; --orange: #f58220; --muted: #9fb0d6; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 1920px; height: 1080px; overflow: hidden; }
+  /* Background, stars and stripes fill the whole box (any shape); only .wrap (the 1920x1080 content) is scaled and centred. */
+  html, body { width: 100%; height: 100%; overflow: hidden; }
   body {
     font-family: 'Barlow', sans-serif; color: #fff; position: relative; text-align: center;
     background:
@@ -17,9 +18,9 @@
       linear-gradient(180deg, var(--navy-2) 0%, var(--navy) 60%);
   }
   .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .stripe { position: absolute; left: 0; right: 0; height: 10px; background: var(--orange); }
+  .stripe { position: absolute; left: 0; right: 0; height: 10px; background: var(--orange); z-index: 1; }
   .stripe.top { top: 0; } .stripe.bottom { bottom: 0; }
-  .wrap { position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; padding-top: 64px; }
+  .wrap { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; display: flex; flex-direction: column; align-items: center; padding-top: 64px; }
   .logo { width: 150px; height: 150px; border-radius: 50%; background: #fff; padding: 3px;
     box-shadow: 0 0 0 6px var(--orange), 0 16px 40px rgba(0,0,0,.45); }
   .logo img { width: 100%; height: 100%; border-radius: 50%; display: block; }
@@ -63,8 +64,8 @@
       <div class="mid bebas" id="mid"></div>
       <div class="side"><div class="crest bebas" id="ac"></div><div class="tname bebas" id="an"></div></div>
     </div>
+    <footer><b>TSL</b> &nbsp;·&nbsp; LIVE FROM TAMGHAS, GULMI</footer>
   </div>
-  <footer><b>TSL</b> &nbsp;·&nbsp; LIVE FROM TAMGHAS, GULMI</footer>
   <div class="stripe bottom"></div>
 
 <script src="../matchday/league.js"></script>
@@ -111,7 +112,7 @@
       $('mid').innerHTML = `<span class="score">${s.hs} - ${s.as}</span>`;
     }
   }
-  fitStage(); onLive(render);
+  fitStage(true, document.querySelector('.wrap')); onLive(render);
 </script>
 </body>
 </html>
