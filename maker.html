@@ -261,7 +261,7 @@
     document.querySelectorAll('[data-tab]').forEach(s => s.hidden = s.dataset.tab !== t);
     document.querySelectorAll('[data-go]').forEach(b => b.classList.toggle('on', b.dataset.go === t));
     local.set('tab', t); scrollTo(0, 0);
-    if (t === 'make') render();
+    if (t === 'make') $('png').innerHTML ? fit() : render();  // coming back keeps a saved image
   }
   document.querySelector('nav').onclick = e => { const t = e.target.closest('[data-go]')?.dataset.go; if (t) tab(t); };
 
@@ -470,15 +470,19 @@
     return p;
   }
 
-  function render() {
+  const fit = () => {
     const [w, h] = SIZE[kind] || [W, H], f = $('frame');
     f.style.width = w + 'px'; f.style.height = h + 'px';
     const s = $('preview').clientWidth / w;
     f.style.transform = `scale(${s})`; $('preview').style.height = h * s + 'px';
-    f.src = `${KINDS[kind][1]}?${new URLSearchParams(params())}`;
+  };
+  function render() {
+    fit();
+    $('frame').src = `${KINDS[kind][1]}?${new URLSearchParams(params())}`;
     $('png').innerHTML = ''; $('msg').className = 'msg'; $('msg').textContent = '';
   }
-  addEventListener('resize', () => render());
+  // Only rescale on resize: phones fire it when the address bar slides away, which used to wipe the saved image.
+  addEventListener('resize', fit);
 
   // Google Fonts CSS with every font file inlined, so the PNG keeps Bebas/Barlow (html-to-image can't read cross-origin CSS).
   const fontCache = {};
@@ -507,20 +511,22 @@
       await htmlToImage.toBlob(doc.documentElement, opts);
       const blob = await htmlToImage.toBlob(doc.documentElement, opts);
       const name = `tsl-${kind}-${Date.now()}.png`, file = new File([blob], name, { type: 'image/png' }), url = URL.createObjectURL(blob);
-      $('png').innerHTML = `<button class="primary wide" id="share" style="margin-top:12px;font-size:17px">📤 Share to Facebook</button>
+      $('png').innerHTML = `<div class="actions" style="margin-top:12px"><button class="primary" id="fb">f Post on Facebook</button><button id="share">📤 Share…</button></div>
         <div class="actions"><button type="button" id="copycap">📋 Copy caption</button><a class="btn" id="dl" href="${url}" download="${name}">⬇ Download</a></div>
         <label style="margin-top:12px">Caption<textarea id="cap" style="min-height:110px">${esc(caption())}</textarea></label>
         <img src="${url}" alt="">`;
       const copy = () => navigator.clipboard?.writeText($('cap').value).catch(() => { $('cap').select(); document.execCommand('copy'); });
       // Facebook won't take pre-filled text from other apps, so the caption is copied in the same tap.
-      // Phones that can share files (Safari, Chrome) get the share sheet. Others (Brave) can't, so: save the image and open Facebook.
+      // "Post on Facebook" works on any phone, with or without the Facebook app: save the image, open Facebook, paste.
+      // "Share…" is the phone's own share sheet (Facebook only shows there if its app is installed).
       const viaFacebook = () => { $('dl').click(); open('https://www.facebook.com/', '_blank');
         msg.textContent = 'Image saved & caption copied ✓ In Facebook: Photo → pick the newest image → paste the caption.'; };
+      $('fb').onclick = () => { copy(); viaFacebook(); };
       $('share').onclick = () => {
         copy();
         if (!navigator.canShare?.({ files: [file] })) return viaFacebook();
         navigator.share({ files: [file] }).catch(e => e.name !== 'AbortError' && viaFacebook());
-        msg.textContent = 'Caption copied ✓ Pick Facebook, then tap the text box → Paste.';
+        msg.textContent = 'Caption copied ✓ Pick an app, then paste the caption.';
       };
       $('copycap').onclick = () => { copy(); msg.textContent = 'Caption copied ✓'; };
       $('png').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -762,7 +768,7 @@
       if (document.activeElement !== $('results')) $('results').value = local.get('results') ?? files.results;
       fillTeamSelects(); refreshResultMatches(); if (!editingFx) endFxEdit(); renderFixtures(); renderGroups();
       if ($('glog')) fillPlayers();
-      if (['table', 'results', 'scorers', 'fixtures', 'format'].includes(kind)) pick(kind);
+      if (['table', 'results', 'scorers', 'fixtures', 'format'].includes(kind) && !$('png').innerHTML) pick(kind);  // keep a saved image on screen
     }));
     firebase.database().ref('.info/connected').on('value', c => c.val() ? status(label(), sync.user && 'ok') : status('Offline — will sync when back', 'bad'));
     $('sync').onclick = () => sync.user ? confirm('Sign out of organiser mode on this phone?') && auth.signOut() : $('login').showModal();
