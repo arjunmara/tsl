@@ -314,7 +314,7 @@
           ${get('subtitle') ? `<div class="label" style="margin-top:10px">${esc(get('subtitle'))}</div>` : ''}
           <div class="tbl" style="margin-top:36px">
             ${ps.slice(0, 12).map((p, i) => {
-              return `<div class="row ${i ? '' : 'lead'}" style="height:${ps.length > 10 ? 66 : 78}px;padding-left:28px">
+              return `<div class="row ${i ? '' : 'lead'}" style="height:${ps.length > 11 ? 60 : ps.length > 10 ? 66 : 78}px;padding-left:28px">
                 <span class="tm">${esc(p.name)}<span class="sub">${esc(p.team.name)}</span></span>
                 <span class="pts" style="width:130px;font-size:50px">${p.g}</span></div>`; }).join('')}
           </div>`;
