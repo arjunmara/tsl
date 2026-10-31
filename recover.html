@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSL Recover</title>
+<style>
+  body { font: 16px/1.4 system-ui, sans-serif; margin: 0; padding: 16px; background: #0a1a3f; color: #fff; }
+  pre { white-space: pre-wrap; word-break: break-word; background: #12285c; padding: 12px; border-radius: 8px; font-size: 13px; }
+  button { font-size: 18px; padding: 12px 18px; border: 0; border-radius: 8px; background: #f58220; color: #0a1a3f; font-weight: 700; }
+</style>
+</head>
+<body>
+<!-- Reads only this phone's saved copy of the maker data. No Firebase here on purpose: opening maker.html would replace it with the live (wiped) data. -->
+<h2>TSL data saved on this phone</h2>
+<p id="sum"></p>
+<button id="copy">Copy all</button>
+<pre id="out"></pre>
+<script>
+  const get = k => { try { return localStorage.getItem(k); } catch { return null; } };
+  const keys = ['results', 'goals', 'events', 'squads', 'fixtures', 'groups'];
+  const data = Object.fromEntries(keys.map(k => [k, get(k)]));
+  const count = s => { try { return JSON.parse(s || '[]').length; } catch { return 0; } };
+  const results = (data.results || '').split('\n').filter(l => l.trim() && !l.startsWith('#')).length;
+  document.getElementById('sum').textContent = `${results} results, ${count(data.goals)} goals, ${count(data.events)} key events.`;
+  const text = JSON.stringify(data);
+  document.getElementById('out').textContent = `RESULTS\n${data.results || '(none)'}\n\nGOALS\n${data.goals || '(none)'}\n\nEVENTS\n${data.events || '(none)'}`;
+  document.getElementById('copy').onclick = () => navigator.clipboard.writeText(text).then(() => document.getElementById('copy').textContent = 'Copied ✓ — paste it to the organiser');
+</script>
+</body>
+</html>
