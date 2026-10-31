@@ -267,7 +267,7 @@
       table() {
         const cols = ['p', 'w', 'd', 'l', 'gd'];
         if (get('groups')) {
-          const n = +get('qualify', '2'), next = get('next', 'Semi-Finals');
+          const n = +get('qualify', '2'), next = get('next', 'Quarter-Finals');
           const groups = groupTables(parseResults(get('results')), parseGroups(get('groups')));
           return `
             ${big(get('title', 'Points Table'), groups.length > 2 ? 70 : 84, 900)}

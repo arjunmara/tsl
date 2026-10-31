@@ -7,7 +7,7 @@
                       [homeCards="Y Name 12'|R Name 30'" awayCards=...]
   ./make.py event     event="Yellow Card" name="Mishan KC" team=DAB minute=18 [home=NYC away=DAB score=1-1]
   ./make.py results   title=Results subtitle="Matchday 1" matches="DAB,RTM,2-1|KPT,KYC,4:00 PM"
-  ./make.py table     (reads results.txt, and groups.txt for group tables; qualify=2 next="Semi-Finals")
+  ./make.py table     (reads results.txt, and groups.txt for group tables; qualify=2 next="Quarter-Finals")
   ./make.py motm      name="Mishan KC" team=DAB stat="2 Goals" match="Da Boys 2-1 Real Tamghas"
   ./make.py scorers   players="Mishan KC,DAB,5|Arjun KC,RTM,3"
   ./make.py champions team=DAB season="Season 1"
