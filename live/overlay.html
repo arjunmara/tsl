@@ -92,12 +92,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="../firebase-config.js"></script>
-<script src="live.js?v=5"></script>
+<script src="live.js?v=6"></script>
 <script>
   const $ = id => document.getElementById(id);
   const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const code = name => { try { return team(name).code; } catch { return name; } };
-  let last, goalTimer, sponsors = [];
+  let last, goalTimer, sponsors = [], layKey, place = () => {};
 
   // Which scene is on air: the control page's choice, or in "auto" the period decides.
   const sceneOf = s => s.scene && s.scene !== 'auto' ? s.scene : /Half Time|Full Time/.test(s.period) ? 'break' : 'match';
@@ -107,6 +107,7 @@
     document.querySelectorAll('.scene').forEach(f => f.classList.toggle('on', f.dataset.scene === scene));
     $('wrap').classList.toggle('hidden', !s.show || scene !== 'match');
     $('guide').classList.toggle('on', !!s.guide);
+    if (s.lay && JSON.stringify(s.lay) !== layKey) { layKey = JSON.stringify(s.lay); place(s.lay); }  // positions set from the control page
     $('ticker').classList.toggle('hidden', !s.ticker || scene !== 'match' || !$('track').children.length);  // break screens have their own footer
     const ad = s.ad && s.ad.until > serverNow();
     if (ad && $('adimg').getAttribute('src') !== s.ad.src) {
@@ -162,13 +163,18 @@
     for (const mode of ['soon', 'break'])
       document.body.insertAdjacentHTML('beforeend', `<iframe class="scene" data-scene="${mode}" src="screen.html?mode=${mode}" aria-hidden="true"></iframe>`);
     const w = $('wrap');
-    if (num('x') !== undefined) w.style.left = num('x') + 'px';
-    if (num('y') !== undefined) w.style.top = num('y') + 'px';
-    if (num('zoom')) w.style.scale = num('zoom');
+    // Layout in px of a 1920x1080 frame: bug x/y/zoom, ticker bottom (tb) and side inset. URL/preset first; the control page overrides live.
+    place = l => {
+      if (l.x !== undefined) w.style.left = l.x + 'px';
+      if (l.y !== undefined) w.style.top = l.y + 'px';
+      if (l.zoom) w.style.scale = l.zoom;
+      if (l.side !== undefined) $('ticker').style.left = $('ticker').style.right = l.side + 'px';
+      if (l.tb !== undefined) $('ticker').style.bottom = l.tb + 'px';
+    };
+    place({ x: num('x'), y: num('y'), zoom: num('zoom') });
     w.style.transformOrigin = 'top left';
     // Ticker clear of the iPhone's rounded corners; &tb= moves it up (px of a 1920x1080 frame).
-    const side = q.has('iphone') ? 150 : 0, t = $('ticker');
-    t.style.left = t.style.right = side + 'px'; t.style.bottom = (q.has('tb') ? +q.get('tb') || 0 : q.has('iphone') ? 30 : 0) + 'px';
+    place({ side: q.has('iphone') ? 150 : 0, tb: q.has('tb') ? +q.get('tb') || 0 : q.has('iphone') ? 30 : 0 });
     const wide = () => { const k = innerHeight / 1080; $('wide').style.width = innerWidth / k + 'px'; $('wide').style.transform = `scale(${k})`; };
     addEventListener('resize', wide); wide();
     loadSponsors().then(sp => {

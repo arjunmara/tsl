@@ -62,6 +62,9 @@
   .ads button { padding: 6px; min-height: 0; font-size: 12px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
   .ads img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
   .ads button.on { outline: 3px solid var(--orange); }
+  .lrow { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .lrow span { flex: 1; font-weight: 700; font-size: 14px; }
+  .lrow button { min-width: 52px; padding: 10px; }
   .err { display: none; margin: 10px 14px 0; padding: 10px; border-radius: 10px; background: #b00020; font-weight: 700; }
   .hint { font-size: 13px; color: var(--muted); margin: 6px 2px 0; }
 
@@ -140,6 +143,16 @@
       <button id="guide" style="width:100%" onclick="send({guide: !s.guide})"></button>
       <p class="hint">Turn on, then in PRISM drag the web widget's corners until the orange frame touches all four edges of the screen. Turn off when done.</p>
     </div>
+    <h2>Position on the stream</h2>
+    <div class="card" id="lay">
+      <div class="lrow"><span>Sponsor ticker</span><button data-l="tb,-10">↓ Lower</button><button data-l="tb,10">↑ Higher</button></div>
+      <div class="lrow"><span>Ticker width</span><button data-l="side,-20">↔ Wider</button><button data-l="side,20">→← Narrower</button></div>
+      <div class="lrow"><span>Score bug</span><button data-l="x,-20">←</button><button data-l="x,20">→</button><button data-l="y,-10">↑</button><button data-l="y,10">↓</button></div>
+      <div class="lrow"><span>Score bug size</span><button data-l="zoom,-0.05">−</button><button data-l="zoom,0.05">+</button></div>
+      <p class="hint" id="laynow"></p>
+      <button style="width:100%" data-l="reset">Reset to iPhone default</button>
+      <p class="hint">Watch the real stream on another phone while you nudge. The overlay can't go past the PRISM widget's edges: if the ticker won't go low enough, drag the widget's bottom edge to the bottom of the screen (use "Show widget edges" above).</p>
+    </div>
     <h2>Kit colours</h2>
     <div class="card"><div class="row"><div class="kit" id="hkit"></div><div class="kit" id="akit"></div></div></div>
   </section>
@@ -155,7 +168,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="../firebase-config.js"></script>
-<script src="live.js?v=5"></script>
+<script src="live.js?v=6"></script>
 <script>
   const $ = id => document.getElementById(id);
   const PERIODS = ['1st Half', 'Half Time', '2nd Half', 'Full Time', 'Penalties'];
@@ -170,6 +183,18 @@
   const pv = on => { $('pv').hidden = !on; $('eye').classList.toggle('on', on); try { localStorage.setItem('pv', on ? '1' : '0'); } catch {} };
   $('eye').onclick = () => pv($('pv').hidden);
   pv((() => { try { return localStorage.getItem('pv') !== '0'; } catch { return true; } })());
+
+  // Overlay positions, nudged live (px of a 1920x1080 frame). Defaults = the iPhone preset.
+  const LAY = { x: 150, y: 40, zoom: 1.15, tb: 30, side: 150 };
+  $('lay').onclick = e => {
+    const d = e.target.closest('[data-l]')?.dataset.l; if (!d) return;
+    if (d === 'reset') return send({ lay: LAY });
+    const [k, n] = d.split(','), l = { ...LAY, ...s.lay };
+    l[k] = Math.round((l[k] + +n) * 100) / 100;
+    if (k === 'tb' || k === 'side' || k === 'y' || k === 'x') l[k] = Math.max(0, l[k]);
+    if (k === 'zoom') l[k] = Math.min(2, Math.max(0.6, l[k]));
+    send({ lay: l });
+  };
 
   // Tabs: Match (used all game), Sponsors, Setup (between games). The scoreboard stays pinned on top.
   document.querySelector('nav').onclick = e => {
@@ -204,6 +229,8 @@
     $('onair').innerHTML = [['On air: ' + { soon: 'Starting Soon', match: 'Match', break: 'Break' }[scene], true],
       [s.show ? 'Score bug' : 'Score bug hidden', false], [s.ticker ? 'Ticker' : 'Ticker off', false], adOn && ['Ad showing', true]]
       .filter(Boolean).map(([t, lit]) => `<span class="${lit ? 'lit' : ''}">${t}</span>`).join('');
+    const l = { ...LAY, ...s.lay };
+    $('laynow').textContent = `Ticker ${l.tb} from bottom · bug at ${l.x}, ${l.y} · size ${Math.round(l.zoom * 100)}%`;
     $('guide').textContent = s.guide ? 'Widget edges showing — tap to hide' : 'Show widget edges';
     $('guide').classList.toggle('on', !!s.guide);
     $('tick').textContent = s.ticker ? 'Sponsor ticker showing — tap to hide' : 'Sponsor ticker hidden — tap to show';
