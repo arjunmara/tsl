@@ -116,13 +116,15 @@
     const ring = c => `0 0 0 7px ${c || 'var(--orange)'}, 0 16px 40px rgba(0,0,0,.4)`;  // kit colours on the rings
     $('hc').style.boxShadow = ring(s.hc); $('ac').style.boxShadow = ring(s.ac);
     $('hn').textContent = h.name; $('an').textContent = a.name;
-    const m = fx.find(f => f.home === h.name && f.away === a.name) || fx.find(f => f.home === a.name && f.away === h.name);
+    // Latest fixture between the two: a knockout rematch of a group game is the one being played.
+    const m = fx.findLast(f => f.home === h.name && f.away === a.name || f.home === a.name && f.away === h.name);
     const list = t => !m ? '' : goals.filter(g => g.n == m.n && g.team === t).sort((x, y) => x.min - y.min)
       .map(g => `${g.name === 'Own Goal' ? 'OG' : esc(g.name)}${g.min ? ` ${g.min}'` : ''}`).join('<br>');
     $('hsc').innerHTML = mode === 'soon' ? '' : list(h.name); $('asc').innerHTML = mode === 'soon' ? '' : list(a.name);
     if (mode === 'soon') {
       $('head').textContent = 'Starting Soon';
-      $('sub').textContent = m ? `Match ${m.n} · ${round(m.g)}${m.time ? ` · ${m.time}` : ''}` : 'Next match';
+      const ko = m && ['QF', 'SF'].includes(m.g) ? `${round(m.g)} ${fx.filter(f => f.g === m.g && f.n <= m.n).length}` : m?.g === 'Final' ? 'The Final' : '';
+      $('sub').textContent = m ? `${ko || `Match ${m.n} · ${round(m.g)}`}${m.time ? ` · ${m.time}` : ''}` : 'Next match';
       $('mid').innerHTML = '<span class="vs">VS</span>';
     } else {
       const ft = s.period === 'Full Time';
