@@ -398,6 +398,30 @@
           </div>`;
       },
 
+      // Road to the final. qf="NYC,14SYC|FSW,BW3|RTM,PTB|JBT,RE8", [sf="..|..", final="A,B" once known, title, subtitle]
+      bracket() {
+        const pairs = k => list(k).map(p => p.split(',').map(s => s.trim()));
+        const qf = pairs('qf'), sf = pairs('sf'), fin = pairs('final')[0];
+        if (qf.length !== 4) throw new Error('qf= needs 4 matches');
+        const side = (t, ph) => `<div style="display:flex;align-items:center;gap:10px;height:38px">${t ? `${crest(team(t), 34)}
+          <span style="font-weight:700;font-size:17px;letter-spacing:1px;text-transform:uppercase;text-align:left">${esc(team(t).name)}</span>`
+          : `<span style="font-weight:700;font-size:16px;letter-spacing:2px;color:var(--muted)">${ph}</span>`}</div>`;
+        const tie = (tag, [h, a] = [], ph = [], hl) => `<div class="row" style="height:auto;width:100%;box-sizing:border-box;flex-direction:column;align-items:stretch;padding:10px 14px;gap:4px;
+          ${hl ? 'box-shadow:inset 0 0 0 3px var(--orange)' : ''}">
+          <span style="font-weight:700;font-size:13px;letter-spacing:3px;color:var(--orange);text-align:left">${tag}</span>${side(h, ph[0])}${side(a, ph[1])}</div>`;
+        const col = (title, items, w) => `<div style="width:${w}px;display:flex;flex-direction:column;gap:10px">
+          <div style="font-weight:700;font-size:17px;letter-spacing:5px;color:var(--orange)">${title}</div>
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:space-around;gap:14px">${items.join('')}</div></div>`;
+        return `
+          ${big(get('title', 'Road to the Final'), 100, 940)}
+          ${get('subtitle') ? `<div class="label" style="margin-top:8px">${esc(get('subtitle'))}</div>` : ''}
+          <div style="display:flex;gap:18px;width:980px;height:720px;margin-top:30px">
+            ${col('QUARTER-FINALS', qf.map((m, i) => tie(`QF${i + 1}`, m)), 360)}
+            ${col('SEMI-FINALS', [0, 1].map(i => tie(`SF${i + 1}`, sf[i], [`WINNER QF${2 * i + 1}`, `WINNER QF${2 * i + 2}`])), 300)}
+            ${col('FINAL', [tie('🏆 FINAL', fin, ['WINNER SF1', 'WINNER SF2'], true)], 300)}
+          </div>`;
+      },
+
       // Group-stage order (make.py fills fixtures= from fixtures.txt: "Group, Home v Away[, time]" lines). [title, subtitle]
       fixtures() {
         const ms = get('fixtures', '').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(l => {

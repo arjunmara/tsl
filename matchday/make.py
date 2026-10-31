@@ -13,6 +13,7 @@
   ./make.py champions team=DAB season="Season 1"
   ./make.py teams     subtitle="Season 1" [wildcards=1 for open slots]
   ./make.py format    (reads groups.txt; or groups="4,3,3,3" for empty slots) top 2 per group to quarter-finals
+  ./make.py bracket   qf="NYC,14SYC|FSW,BW3|RTM,PTB|JBT,RE8" [sf="A,B|C,D" final="A,B" subtitle="Sunday · Kartik 15"]
   ./make.py fixtures  (reads fixtures.txt; make it with ./fixtures.py) [subtitle="Kick-off Saturday · Kartik 14"]
   ./make.py notice    [logo2=../14starlogo.jpg sub=".." rows="Date=..|Kick-off=.." pill="Follow Now" qr="https://..."]
                       title="Tie-Sheet Draw" date="Today" time="5:00 PM" venue="Tamghas Futsal" body="..." sign="Organizing Committee"
