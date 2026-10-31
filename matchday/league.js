@@ -26,13 +26,17 @@ function team(s) {
 
 // One result per line: "Da Boys 2-1 Real Tamghas". Blank lines and # comments are ignored.
 // A tie-break shootout adds "(pens)": "Da Boys 4-3 Real Tamghas (pens)". It only breaks ties, never adds points or goals.
+// Knockout games start with their round: "QF: Da Boys 2-1 Real Tamghas". They never count in the tables.
+const ROUND = /^(QF|SF|Final)\s*:\s*/i;
 function parseResults(text) {
   return text.split(/\n|\|/).map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(l => {
+    const round = (l.match(ROUND) || [])[1];
+    l = l.replace(ROUND, '');
     const pens = /\s*\(pens\)$/i.test(l);
     const m = l.replace(/\s*\(pens\)$/i, '').match(/^(.+?)\s+(\d+)\s*-\s*(\d+)\s+(.+)$/);
     if (!m) throw new Error(`Can't read result: "${l}" (expected "Home 2-1 Away")`);
     if (pens && m[2] === m[3]) throw new Error(`A shootout needs a winner: "${l}"`);
-    return { home: team(m[1]), hg: +m[2], ag: +m[3], away: team(m[4]), pens };
+    return { home: team(m[1]), hg: +m[2], ag: +m[3], away: team(m[4]), pens, ...(round && { round: { qf: 'QF', sf: 'SF', final: 'Final' }[round.toLowerCase()] }) };
   });
 }
 
@@ -54,6 +58,7 @@ function headToHead(results, names) {
 // Until a needed shootout is played, overall GD, goals scored, then name keep the order stable; that order is provisional.
 // ponytail: 3+ team ties use one mini-league among all of them, no re-run of the mini-league once some are separated.
 function table(results, teams = TEAMS) {
+  results = results.filter(r => !r.round);
   const rows = new Map(teams.map(t => [t.name, { team: t, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 }]));
   const games = results.filter(r => !r.pens);
   for (const r of games) {
@@ -93,6 +98,7 @@ function parseGroups(text) {
 // which doesn't belong in results.txt), so it throws instead of being silently dropped.
 function groupTables(results, groups) {
   const groupOf = t => groups.find(g => g.teams.includes(t));
+  results = results.filter(r => !r.round);
   for (const r of results)
     if (groupOf(r.home) !== groupOf(r.away)) throw new Error(`${r.home.name} and ${r.away.name} are in different groups`);
   return groups.map(g => ({ name: g.name, rows: table(results.filter(r => groupOf(r.home) === g), g.teams) }));

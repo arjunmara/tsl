@@ -56,4 +56,10 @@ const pens = table(parseResults('JBT 1-1 RE8|JBT 3-4 RE8 (pens)'), two);
 assert.deepEqual(pens.map(x => [x.team.code, x.p, x.pts, x.gf]), [['RE8', 1, 1, 1], ['JBT', 1, 1, 1]]);
 assert.throws(() => parseResults('JBT 3-3 RE8 (pens)'), /needs a winner/);
 
+// Knockout lines carry their round and stay out of the tables, even between teams from the same group.
+const ko = parseResults('QF: DAB 2-1 FSW|final: dab 1-1 rtm|FINAL: DAB 4-3 RTM (pens)');
+assert.deepEqual(ko.map(x => x.round), ['QF', 'Final', 'Final']);
+assert.equal(groupTables([...r, ...ko], groups)[0].rows[0].p, 2);  // DAB: 2 group games, knockouts ignored
+assert.equal(table(ko).every(x => x.p === 0), true);
+
 console.log('ok');
