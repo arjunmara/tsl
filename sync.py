@@ -75,6 +75,7 @@ def push(keys=FILES):
         val = read(key)
         if val is not None and val != _wrote.get(key):
             http(f'{DB}/{key}.json?auth={t}', val, 'PUT')
+            http(f'{DB}/history.json?auth={t}', {'k': key, 'v': val, 'at': {'.sv': 'timestamp'}, 'by': 'laptop'}, 'POST')
             _wrote[key] = val
             print(f'  → {FILES[key]} (to phone)')
 

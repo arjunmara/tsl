@@ -81,7 +81,6 @@
     <div class="msg" id="rmsg"></div>
     <textarea id="results" hidden></textarea>
     <div id="rlist" style="margin-top:10px"></div>
-    <button id="rreset" class="danger" style="margin-top:12px">Clear all results</button>
   </div>
 
   <h2>Fixtures</h2>
@@ -119,7 +118,11 @@
   const SHARED = ['results', 'goals', 'events', 'squads', 'fixtures', 'groups'], sync = { db: null, user: null };
   const local = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
                   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-  const store = { get: local.get, set: (k, v) => { local.set(k, v); if (sync.user && SHARED.includes(k)) sync.db.child(k).set(v); } };
+  // Shared keys only go up once this phone has the live data: a phone with an empty/stale copy used to overwrite everyone's.
+  // Every upload is also kept in tsl/history, so a bad write can be rolled back.
+  const store = { get: local.get, set: (k, v) => { local.set(k, v); if (sync.user && sync.ready && SHARED.includes(k)) {
+    sync.db.child(k).set(v); sync.db.child('history').push({ k, v, at: firebase.database.ServerValue.TIMESTAMP, by: sync.user.email });
+  } } };
   const text = f => fetch(`${f}?t=${Date.now()}`).then(r => r.ok ? r.text() : '');
 
   // Fields per graphic. Markers: * required, ~ textarea, @ team dropdown, # player dropdown (from the match's two teams),
@@ -496,7 +499,10 @@
     store.set('results', $('results').value);
     if (kind === 'table') render();
   };
-  const canEdit = (el = $('rmsg')) => !(sync.db && !sync.user) || (el.className = 'msg err', el.textContent = 'View only: tap "Sign in" at the top to make changes.', false);
+  const canEdit = (el = $('rmsg')) => {
+    const why = sync.db && (!sync.user ? 'View only: tap "Sign in" at the top to make changes.' : !sync.ready && 'Still loading the live data, try again in a moment.');
+    return !why || (el.className = 'msg err', el.textContent = why, false);
+  };
   const resultLines = () => $('results').value.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
   const removeLine = l => $('results').value = resultLines().filter(x => x !== l).join('\n') + '\n';
   let editing = null;  // the result line being edited
@@ -551,7 +557,6 @@
     setResult(h, s, a, $('rp').checked); $('rp').checked = false;
   };
   $('rtable').onclick = () => { pick('table'); scrollTo({ top: 0, behavior: 'smooth' }); };
-  $('rreset').onclick = () => { if (canEdit() && confirm('Delete ALL results? This cannot be undone.')) { $('results').value = ''; endEdit(); saveResults(); refreshResultMatches(); } };
 
   // ---- Fixtures: add / edit / move / delete. Times stay with their slot; logged goals follow their match. ----
   const ROUNDS = ['A', 'B', 'C', 'D', 'QF', 'SF', 'Final'];
@@ -649,17 +654,20 @@
     const auth = firebase.auth(), status = t => $('sync').textContent = t;
     let remote = {};
     const label = () => sync.user ? 'Live · organiser ✓' : 'Live · view only — Sign in';
-    const seed = () => sync.user && SHARED.forEach(k => remote[k] == null && local.get(k) != null && sync.db.child(k).set(local.get(k)));
+    const seed = () => sync.user && sync.ready && SHARED.forEach(k => remote[k] == null && local.get(k) != null && sync.db.child(k).set(local.get(k)));
     auth.onAuthStateChanged(u => { sync.user = u; status(label()); seed(); });
-    sync.db.on('value', snap => {
-      remote = snap.val() || {};
+    // One listener per shared key (not the whole tsl tree, which now holds the history too).
+    SHARED.forEach(k => sync.db.child(k).on('value', snap => {
+      remote[k] = snap.val();
+      if (remote[k] != null) local.set(k, remote[k]);
+      if (!sync.ready && !SHARED.every(x => x in remote)) return;  // wait until every key has loaded once
+      sync.ready = true;
       seed();
-      SHARED.forEach(k => remote[k] != null && local.set(k, remote[k]));
       if (document.activeElement !== $('results')) $('results').value = local.get('results') ?? files.results;
       refreshResultMatches(); renderFixtures(); renderGroups();
       if ($('glog')) fillPlayers();
       if (['table', 'results', 'scorers', 'fixtures', 'format'].includes(kind)) pick(kind);
-    });
+    }));
     firebase.database().ref('.info/connected').on('value', c => status(c.val() ? label() : 'Offline — will sync when back'));
     $('sync').onclick = () => sync.user ? confirm('Sign out of organiser mode on this phone?') && auth.signOut() : $('login').showModal();
     $('loginform').onsubmit = e => {
