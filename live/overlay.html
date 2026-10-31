@@ -11,7 +11,10 @@
   :root { --navy: #0a1a3f; --navy-2: #12285c; --orange: #f58220; --muted: #9fb0d6; }
   html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
   body { font-family: 'Barlow', sans-serif; color: #fff; }
-  #stage { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; }
+  #stage { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; z-index: 2; }  /* above the scene screens, so the ticker shows on them too */
+  /* #wide: 1080 px tall like #stage, but as wide as the widget (the iPhone is wider than 16:9), so the ticker spans it and the ad centres. */
+  #wide { position: absolute; top: 0; left: 0; height: 1080px; z-index: 3; transform-origin: 0 0; pointer-events: none; }
+  body.bug-only #wide { display: none; }
   .wrap { position: absolute; top: 48px; left: 64px; transform-origin: top left; transition: opacity .4s, transform .4s; }
   body.bug-only #stage { width: 720px; height: 165px; }
   body.bug-only .wrap { top: 12px; left: 8px; }
@@ -37,6 +40,26 @@
   .goal { margin: 10px 0 0 70px; height: 0; overflow: hidden; display: flex; align-items: stretch; transition: height .35s; }
   .goal.on { height: 58px; }
   .goal .tag { padding: 6px 22px 0; font-size: 40px; background: var(--orange); color: var(--navy); border-radius: 6px 0 0 6px; }
+  /* Sponsor ticker along the bottom, and an ad popped from the control page. Both sit above the scene screens. */
+  .ticker { position: absolute; left: 0; right: 0; bottom: 0; height: 66px; display: flex; z-index: 3; background: rgba(10,26,63,.92);
+    border-top: 3px solid var(--orange); overflow: hidden; transition: transform .5s; }
+  .ticker.hidden { transform: translateY(150%); opacity: 0; }
+  .ticker .lbl { flex: none; display: flex; align-items: center; padding: 4px 22px 0; font-size: 30px; background: var(--orange); color: var(--navy); }
+  .ticker .lane { flex: 1; overflow: hidden; display: flex; align-items: center; }
+  .ticker .track { display: flex; align-items: center; white-space: nowrap; animation: roll linear infinite; }
+  .ticker .sp { display: flex; align-items: center; gap: 14px; padding: 0 34px; font-weight: 700; font-size: 28px; letter-spacing: 2px; text-transform: uppercase; }
+  .ticker .sp img { height: 46px; max-width: 140px; object-fit: contain; border-radius: 6px; background: #fff; padding: 2px; }
+  .ticker .sp::after { content: '◆'; margin-left: 34px; color: var(--orange); font-size: 18px; }
+  @keyframes roll { to { transform: translateX(-50%); } }
+  .ad { position: absolute; left: 50%; top: 46%; z-index: 4; transform: translate(-50%, -50%) scale(.9); opacity: 0; transition: opacity .5s, transform .5s;
+    padding: 10px; border-radius: 14px; background: var(--navy); box-shadow: 0 0 0 4px var(--orange), 0 20px 60px rgba(0,0,0,.6); }
+  .ad.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .ad img { display: block; max-width: 1200px; max-height: 680px; border-radius: 8px; margin: 0 auto; }
+  .ad .cap { text-align: center; padding: 14px 10px 6px; }
+  .ad .cap b { display: block; font-weight: 400; font-size: 52px; line-height: 1; }
+  .ad .cap i { display: block; font-style: normal; font-weight: 700; font-size: 24px; letter-spacing: 2px; color: var(--orange); text-transform: uppercase; margin-top: 6px; }
+  .ad .cap i:empty { display: none; }
+  .ad span { position: absolute; top: -18px; left: 24px; padding: 4px 14px 2px; font-size: 22px; border-radius: 6px; background: var(--orange); color: var(--navy); }
   .goal .who { padding: 0 26px; font-weight: 700; font-size: 26px; letter-spacing: 4px; text-transform: uppercase;
     background: var(--navy); border-radius: 0 6px 6px 0; display: flex; align-items: center; }
 </style>
@@ -54,15 +77,20 @@
   <div class="goal" id="goal"><div class="tag bebas">Goal</div><div class="who" id="who"></div></div>
 </div>
 </div>
+<div id="wide">
+<div class="ticker hidden" id="ticker"><div class="lbl bebas">Sponsors</div><div class="lane"><div class="track" id="track"></div></div></div>
+<div class="ad" id="ad"><span class="bebas">Proud Sponsor</span><img id="adimg" alt=""><div class="cap"><b class="bebas" id="adname"></b><i id="adline"></i></div></div>
+</div>
 <script src="../matchday/league.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="../firebase-config.js"></script>
-<script src="live.js?v=3"></script>
+<script src="live.js?v=4"></script>
 <script>
   const $ = id => document.getElementById(id);
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const code = name => { try { return team(name).code; } catch { return name; } };
-  let last, goalTimer;
+  let last, goalTimer, sponsors = [];
 
   // Which scene is on air: the control page's choice, or in "auto" the period decides.
   const sceneOf = s => s.scene && s.scene !== 'auto' ? s.scene : /Half Time|Full Time/.test(s.period) ? 'break' : 'match';
@@ -71,6 +99,13 @@
     const scene = sceneOf(s);
     document.querySelectorAll('.scene').forEach(f => f.classList.toggle('on', f.dataset.scene === scene));
     $('wrap').classList.toggle('hidden', !s.show || scene !== 'match');
+    $('ticker').classList.toggle('hidden', !s.ticker || scene !== 'match' || !$('track').children.length);  // break screens have their own footer
+    const ad = s.ad && s.ad.until > serverNow();
+    if (ad && $('adimg').getAttribute('src') !== s.ad.src) {
+      const sp = sponsors.find(x => x.ad === s.ad.src) || {};
+      $('adimg').src = s.ad.src; $('adname').textContent = sp.name === '-' ? '' : sp.name || ''; $('adline').textContent = sp.line || '';
+    }
+    $('ad').classList.toggle('on', !!ad);
     $('home').textContent = code(s.home);
     $('home').style.boxShadow = s.hc ? `inset 0 -8px 0 ${s.hc}` : '';  // kit colour bar under each team
     $('away').style.boxShadow = s.ac ? `inset 0 -8px 0 ${s.ac}` : '';
@@ -123,6 +158,18 @@
     if (num('y') !== undefined) w.style.top = num('y') + 'px';
     if (num('zoom')) w.style.scale = num('zoom');
     w.style.transformOrigin = 'top left';
+    // Ticker clear of the iPhone's rounded corners; &tb= moves it up (px of a 1920x1080 frame).
+    const side = q.has('iphone') ? 150 : 0, t = $('ticker');
+    t.style.left = t.style.right = side + 'px'; t.style.bottom = (q.has('tb') ? +q.get('tb') || 0 : q.has('iphone') ? 30 : 0) + 'px';
+    const wide = () => { const k = innerHeight / 1080; $('wide').style.width = innerWidth / k + 'px'; $('wide').style.transform = `scale(${k})`; };
+    addEventListener('resize', wide); wide();
+    loadSponsors().then(sp => {
+      sponsors = sp;
+      const items = sp.filter(x => x.name && x.name !== '-').map(x => `<div class="sp">${x.logo ? `<img src="${x.logo}" alt="">` : ''}${esc(x.name)}</div>`).join('');
+      if (!items) return;
+      $('track').innerHTML = items.repeat(8);  // two identical halves (4 + 4) roll seamlessly by -50%
+      requestAnimationFrame(() => $('track').style.animationDuration = $('track').scrollWidth / 2 / 90 + 's');  // ~90 px/s
+    });
   }
   onLive(render);
 </script>

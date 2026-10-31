@@ -36,6 +36,10 @@
   .kit button { width: 38px; height: 38px; padding: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); }
   .kit button.on { outline: 3px solid var(--orange); outline-offset: 2px; }
   .kit input { width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%; background: none; }
+  .ads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .ads button { padding: 6px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .ads img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; }
+  .ads button.on { outline: 3px solid var(--orange); }
   .err { display: none; margin-bottom: 12px; padding: 10px; border-radius: 8px; background: #b00020; font-weight: 700; }
 </style>
 </head>
@@ -81,6 +85,11 @@
 <div class="row" id="scenes"></div>
 <div class="row" style="margin-top:8px"><button id="show" onclick="send({show: !s.show})"></button></div>
 
+<h2>Sponsors</h2>
+<div class="row"><button id="tick" onclick="send({ticker: !s.ticker})"></button></div>
+<div class="ads" id="ads"></div>
+<div class="row" style="margin-top:8px"><button id="adoff" onclick="send({ad: null})">Hide ad now</button></div>
+
 <h2>New match</h2>
 <div class="row"><select id="fx"></select></div>
 <div class="row" style="margin-top:8px"><select id="home"></select><select id="away"></select></div>
@@ -91,7 +100,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="../firebase-config.js"></script>
-<script src="live.js?v=3"></script>
+<script src="live.js?v=4"></script>
 <script>
   const $ = id => document.getElementById(id);
   const PERIODS = ['1st Half', 'Half Time', '2nd Half', 'Full Time', 'Penalties'];
@@ -122,7 +131,18 @@
     $('show').classList.toggle('on', s.show);
     [...$('periods').children].forEach(b => b.classList.toggle('on', b.textContent === s.period));
     renderKits();
+    $('tick').textContent = s.ticker ? 'Sponsor ticker showing — tap to hide' : 'Sponsor ticker hidden — tap to show';
+    $('tick').classList.toggle('on', s.ticker);
+    const live = s.ad && s.ad.until > serverNow();
+    [...$('ads').children].forEach(b => b.classList.toggle('on', !!live && b.dataset.src === s.ad.src));
+    $('adoff').hidden = !live;
   }
+
+  // Sponsor ads: tap one to pop it over the stream for 10 seconds (tap again to restart the 10 s).
+  const AD_SECONDS = 10;
+  loadSponsors().then(sp => $('ads').innerHTML = sp.filter(x => x.ad).map(x =>
+    `<button data-src="${x.ad}" onclick="send({ad: {src: this.dataset.src, until: serverNow() + ${AD_SECONDS * 1000}}})"><img src="${x.ad}" alt="" loading="lazy">${x.name === '-' ? 'Image' : x.name}</button>`).join('')
+    || '<p style="color:var(--muted);grid-column:1/-1">No ads yet — add them to Sponsors/sponsors.txt.</p>');
 
   // Writes go to Firebase (organiser only); every screen showing the overlay updates within a second.
   const auth = firebase.auth();

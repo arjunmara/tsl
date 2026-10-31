@@ -1,0 +1,25 @@
+# Sponsors for the live stream. One per line:   Name | logo file | ad image | line under the ad
+# Put the image files in this folder. Logo and ad are optional (leave blank: "Name | | ad.jpg").
+# Name "-" = an image that isn't a sponsor (promo, poster): it gets an ad button but stays off the ticker.
+
+District Hospital Doctors Team | | web/district-hospital-doctors-team.jpg | District Hospital, Gulmi
+Mayadevi Breast Care Center | | web/mayadevi-breast-care-center.jpg | Dr. Sanjay Pandey · Breast cancer awareness
+Sagar Thapa | | web/sagar-thapa.jpg | Long-term supporter, from Australia
+Sarwan Chand | | web/sarwan-chand.jpg | Continuous long-term supporter
+Santosh Serchan | |  | Former player & sports supporter
+Rajan Pandey
+Hridaya Girls Hostel | | web/hridaya-girls-hostel.jpg | Satdobato, Lalitpur & Baneshwor, Kathmandu
+Karan Kaji | |  | Former local athlete, from Japan
+Ashraf Ali | | web/ashraf-ali.jpg
+Noya Super Mart | | web/noya-super-mart.jpg | For your daily shopping needs
+Gaule Hair Salon | | web/gaule-hair-salon.jpg
+Sagarmatha Recondition | | web/sagarmatha-recondition.jpg
+Siddhababa Enterprises | | web/siddhababa-enterprises.jpg
+Global Motorcycle Workshop | | web/global-motorcycle-workshop.jpg | Resunga Municipality-1
+NST Electronic & Mobile Service Center | |  | Special Sponsor · Resunga-8, Khanigaun
+Pathway Research & Training Center | | web/pathway-research-training-center.jpg | Special Sponsor · STEAM education, Kathmandu
+Urban Yuwa Clothing House & Urban Kids Mart | | web/urban-yuwa-clothing-house-urban-kids-mart.jpg | Championship Trophy Sponsor
+Hari Kunwar | | web/hari-kunwar.jpg | Best Goalkeeper Trophy Sponsor
+Aman Chhetri | |  | Best Player Trophy Sponsor
+Topendra Magar | |  | Drinking Water Sponsor
+Saphal Diaries Cafeteria | |  | Team Drinks (Coffee) Sponsor

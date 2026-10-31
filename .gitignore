@@ -11,6 +11,10 @@
 !/matchday/
 !/teamlist/
 !/live/
+!/Sponsors/
+/Sponsors/*
+!/Sponsors/sponsors.txt
+!/Sponsors/web/
 !/highlights/
 /matchday/out/
 /teamlist/*.png
