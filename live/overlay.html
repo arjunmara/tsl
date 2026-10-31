@@ -15,6 +15,12 @@
   /* #wide: 1080 px tall like #stage, but as wide as the widget (the iPhone is wider than 16:9), so the ticker spans it and the ad centres. */
   #wide { position: absolute; top: 0; left: 0; height: 1080px; z-index: 3; transform-origin: 0 0; pointer-events: none; }
   body.bug-only #wide { display: none; }
+  /* Lining-up guide: the widget's exact edges, so its corners can be dragged to the screen corners in PRISM. */
+  #guide { position: fixed; inset: 0; z-index: 9; display: none; border: 8px solid var(--orange); pointer-events: none;
+    align-items: center; justify-content: center; text-align: center; font: 700 4vh 'Barlow', sans-serif; color: #fff; text-shadow: 0 2px 6px #000; }
+  #guide.on { display: flex; }
+  #guide::before, #guide::after { content: ''; position: absolute; width: 12vh; height: 12vh; border: 0 solid #fff; }
+  #guide::before { top: 0; left: 0; border-width: 1.6vh 0 0 1.6vh; } #guide::after { bottom: 0; right: 0; border-width: 0 1.6vh 1.6vh 0; }
   .wrap { position: absolute; top: 48px; left: 64px; transform-origin: top left; transition: opacity .4s, transform .4s; }
   body.bug-only #stage { width: 720px; height: 165px; }
   body.bug-only .wrap { top: 12px; left: 8px; }
@@ -77,6 +83,7 @@
   <div class="goal" id="goal"><div class="tag bebas">Goal</div><div class="who" id="who"></div></div>
 </div>
 </div>
+<div id="guide">Overlay edges — drag the widget's corners<br>to the corners of the screen</div>
 <div id="wide">
 <div class="ticker hidden" id="ticker"><div class="lbl bebas">Sponsors</div><div class="lane"><div class="track" id="track"></div></div></div>
 <div class="ad" id="ad"><span class="bebas">Proud Sponsor</span><img id="adimg" alt=""><div class="cap"><b class="bebas" id="adname"></b><i id="adline"></i></div></div>
@@ -85,7 +92,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="../firebase-config.js"></script>
-<script src="live.js?v=4"></script>
+<script src="live.js?v=5"></script>
 <script>
   const $ = id => document.getElementById(id);
   const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -99,6 +106,7 @@
     const scene = sceneOf(s);
     document.querySelectorAll('.scene').forEach(f => f.classList.toggle('on', f.dataset.scene === scene));
     $('wrap').classList.toggle('hidden', !s.show || scene !== 'match');
+    $('guide').classList.toggle('on', !!s.guide);
     $('ticker').classList.toggle('hidden', !s.ticker || scene !== 'match' || !$('track').children.length);  // break screens have their own footer
     const ad = s.ad && s.ad.until > serverNow();
     if (ad && $('adimg').getAttribute('src') !== s.ad.src) {

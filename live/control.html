@@ -135,6 +135,11 @@
       <button class="on" style="width:100%;margin-top:8px" onclick="newMatch()">Start new match (0-0, clock 00:00)</button>
       <p class="hint">Puts "Starting Soon" on air until you start the clock.</p>
     </div>
+    <h2>Line up the overlay in PRISM</h2>
+    <div class="card">
+      <button id="guide" style="width:100%" onclick="send({guide: !s.guide})"></button>
+      <p class="hint">Turn on, then in PRISM drag the web widget's corners until the orange frame touches all four edges of the screen. Turn off when done.</p>
+    </div>
     <h2>Kit colours</h2>
     <div class="card"><div class="row"><div class="kit" id="hkit"></div><div class="kit" id="akit"></div></div></div>
   </section>
@@ -150,7 +155,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="../firebase-config.js"></script>
-<script src="live.js?v=4"></script>
+<script src="live.js?v=5"></script>
 <script>
   const $ = id => document.getElementById(id);
   const PERIODS = ['1st Half', 'Half Time', '2nd Half', 'Full Time', 'Penalties'];
@@ -199,6 +204,8 @@
     $('onair').innerHTML = [['On air: ' + { soon: 'Starting Soon', match: 'Match', break: 'Break' }[scene], true],
       [s.show ? 'Score bug' : 'Score bug hidden', false], [s.ticker ? 'Ticker' : 'Ticker off', false], adOn && ['Ad showing', true]]
       .filter(Boolean).map(([t, lit]) => `<span class="${lit ? 'lit' : ''}">${t}</span>`).join('');
+    $('guide').textContent = s.guide ? 'Widget edges showing — tap to hide' : 'Show widget edges';
+    $('guide').classList.toggle('on', !!s.guide);
     $('tick').textContent = s.ticker ? 'Sponsor ticker showing — tap to hide' : 'Sponsor ticker hidden — tap to show';
     $('tick').classList.toggle('on', s.ticker);
     const live = s.ad && s.ad.until > serverNow();
