@@ -81,6 +81,7 @@
 
   /* results / fixtures list */
   .match { height: 96px; margin-bottom: 14px; padding: 0 20px; }
+  .many .match { height: 80px; margin-bottom: 10px; }  /* 8+ rows still fit under the header */
   .match .h, .match .a { text-wrap: balance; flex: 1; font-weight: 700; font-size: 28px; line-height: 1.1; letter-spacing: 1px; text-transform: uppercase; }
   .match .h { text-align: right; } .match .a { text-align: left; }
   .match .m { width: 170px; margin: 0 22px; flex: none; }
@@ -259,7 +260,7 @@
         return `
           ${get('subtitle') ? `<div class="label">${esc(get('subtitle'))}</div>` : ''}
           ${big(get('title', 'Results'), 120, 900)}
-          <div style="margin-top:40px">${rows.join('')}</div>`;
+          <div style="margin-top:40px" class="${rows.length > 7 ? 'many' : ''}">${rows.join('')}</div>`;
       },
 
       // Points table, computed from results ("Home 2-1 Away" lines; make.py fills it from results.txt).
