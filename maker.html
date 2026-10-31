@@ -500,7 +500,7 @@
     if (kind === 'table') render();
   };
   const canEdit = (el = $('rmsg')) => {
-    const why = sync.db && (!sync.user ? 'View only: tap "Sign in" at the top to make changes.' : !sync.ready && 'Still loading the live data, try again in a moment.');
+    const why = sync.db && (sync.db.failed ? 'No connection to the live data, so this would not be saved. Reload when you have signal.' : !sync.user ? 'View only: tap "Sign in" at the top to make changes.' : !sync.ready && 'Still loading the live data, try again in a moment.');
     return !why || (el.className = 'msg err', el.textContent = why, false);
   };
   const resultLines = () => $('results').value.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
@@ -648,7 +648,11 @@
 
   // ---- Live sharing: every phone sees the same results/goals/squads; only the signed-in organiser can change them ----
   function startSync() {
-    if (!FIREBASE || !window.firebase || location.search.includes('nosync')) return;  // ?nosync = local test without touching live data
+    if (location.search.includes('nosync')) return;  // ?nosync = local test without touching live data
+    if (typeof FIREBASE === 'undefined' || !window.firebase) {  // scripts didn't load (bad signal): block edits, they'd be lost on the next sync
+      sync.db = { failed: true };
+      return $('sync').textContent = 'No connection — reload to edit';
+    }
     firebase.initializeApp(FIREBASE);
     sync.db = firebase.database().ref('tsl');
     const auth = firebase.auth(), status = t => $('sync').textContent = t;
