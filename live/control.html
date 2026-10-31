@@ -6,94 +6,133 @@
 <title>TSL Scoreboard Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --navy: #0a1a3f; --navy-2: #12285c; --orange: #f58220; --muted: #9fb0d6; }
+  :root { --navy: #0a1a3f; --navy-2: #12285c; --card: #102352; --orange: #f58220; --muted: #9fb0d6; --line: rgba(255,255,255,.1); --tabs: 64px; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { margin: 0; padding: 16px; background: var(--navy); color: #fff; font-family: 'Barlow', sans-serif; }
-  h2 { margin: 22px 0 8px; font-size: 13px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; }
-  button, select { font: inherit; font-weight: 700; color: #fff; background: var(--navy-2); border: 0; border-radius: 10px; padding: 14px; }
-  button:active { filter: brightness(1.4); }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--navy); color: #fff; font-family: 'Barlow', sans-serif; padding-bottom: calc(var(--tabs) + env(safe-area-inset-bottom)); }
+  main { padding: 12px 14px 20px; max-width: 640px; margin: 0 auto; }
+  h2 { margin: 18px 0 8px; font-size: 12px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; }
+  h2:first-child { margin-top: 4px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
+  button, select { font: inherit; font-weight: 700; color: #fff; background: var(--navy-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-height: 48px; }
+  button:active { transform: scale(.97); filter: brightness(1.3); }
   .row { display: flex; gap: 8px; }
   .row > * { flex: 1; min-width: 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .bebas { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
+  .on { background: var(--orange); color: var(--navy); border-color: var(--orange); }
 
-  .live { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-radius: 12px;
-    background: var(--navy-2); border-left: 4px solid var(--orange); }
-  .live .sc { font-size: 44px; }
-  .live .tm { text-align: right; }
-  .live .tm b { display: block; font-size: 32px; font-weight: 400; }
-  .live .tm span { font-size: 12px; letter-spacing: 2px; color: var(--orange); text-transform: uppercase; }
+  /* Pinned live scoreboard: what the stream shows right now */
+  header { position: sticky; top: 0; z-index: 5; background: var(--navy-2); border-bottom: 3px solid var(--orange); padding: 8px 14px; padding-top: max(8px, env(safe-area-inset-top)); }
+  .top { display: flex; align-items: center; gap: 10px; max-width: 640px; margin: 0 auto; }
+  .top img { width: 34px; height: 34px; border-radius: 50%; box-shadow: 0 0 0 2px var(--orange); }
+  .live { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .live .sc { font-size: 34px; line-height: 1; white-space: nowrap; }
+  .live .tm { text-align: right; line-height: 1; }
+  .live .tm b { display: block; font-size: 30px; font-weight: 400; }
+  .live .tm span { font-size: 11px; letter-spacing: 2px; color: var(--orange); text-transform: uppercase; }
   .off { color: var(--muted); }
+  #who { min-height: 36px; padding: 6px 10px; font-size: 12px; border-radius: 99px; }
+  #onair { max-width: 640px; margin: 6px auto 0; font-size: 11px; font-weight: 700; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; display: flex; gap: 6px; flex-wrap: wrap; }
+  #onair span { padding: 2px 8px; border-radius: 99px; background: rgba(255,255,255,.08); }
+  #onair span.lit { background: #b00020; color: #fff; }
 
   .side { text-align: center; }
-  .side .name { min-height: 40px; font-weight: 700; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; }
-  .plus { width: 100%; height: 110px; font-size: 64px; background: var(--orange); color: var(--navy); }
-  .minus { width: 100%; margin-top: 8px; padding: 8px; font-size: 14px; color: var(--muted); }
-  .start { background: #1e8e3e; }
+  .side .name { min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 700; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; }
+  .side .name i { width: 12px; height: 12px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px rgba(255,255,255,.5); }
+  .plus { width: 100%; height: 120px; font-size: 64px; background: var(--orange); color: var(--navy); border: 0; }
+  .minus { width: 100%; margin-top: 8px; padding: 8px; min-height: 40px; font-size: 13px; color: var(--muted); }
+  .start { width: 100%; font-size: 20px; min-height: 60px; background: #1e8e3e; border: 0; }
   .start.running { background: #b00020; }
-  .on { background: var(--orange); color: var(--navy); }
   select { width: 100%; }
-  .kit { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-  .kit button { width: 38px; height: 38px; padding: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); }
+  .kit { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .kit button { width: 40px; height: 40px; min-height: 0; padding: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); }
   .kit button.on { outline: 3px solid var(--orange); outline-offset: 2px; }
-  .kit input { width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%; background: none; }
+  .kit input { width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: none; }
   .ads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
-  .ads button { padding: 6px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
-  .ads img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; }
+  .ads button { padding: 6px; min-height: 0; font-size: 12px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .ads img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
   .ads button.on { outline: 3px solid var(--orange); }
-  .err { display: none; margin-bottom: 12px; padding: 10px; border-radius: 8px; background: #b00020; font-weight: 700; }
+  .err { display: none; margin: 10px 14px 0; padding: 10px; border-radius: 10px; background: #b00020; font-weight: 700; }
+  .hint { font-size: 13px; color: var(--muted); margin: 6px 2px 0; }
+
+  nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; background: var(--navy-2); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+  nav button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: var(--tabs); border: 0; border-radius: 0; background: none; color: var(--muted); font-size: 12px; padding: 8px 0; }
+  nav button b { font-size: 20px; line-height: 1; }
+  nav button.on { color: var(--orange); background: none; box-shadow: inset 0 3px 0 var(--orange); }
 </style>
 </head>
 <body>
+<header>
+  <div class="top">
+    <img src="../logo.jpg" alt="">
+    <div class="live"><div class="sc bebas" id="sc"></div><div class="tm"><b class="bebas" id="time"></b><span id="per"></span></div></div>
+    <button id="who">Sign in</button>
+  </div>
+  <div id="onair"></div>
+</header>
 <div class="err" id="err"></div>
-<button id="who" style="width:100%;margin-bottom:12px">Sign in to control the scoreboard</button>
-<dialog id="login" style="background:var(--navy-2);color:#fff;border:0;border-radius:12px;width:min(340px,90vw)">
+<dialog id="login" style="background:var(--card);color:#fff;border:1px solid var(--line);border-radius:14px;width:min(340px,90vw)">
   <form id="loginform">
-    <h2 style="margin-top:0">Organiser sign-in</h2>
-    <input name="email" type="email" placeholder="Email" autocomplete="username" required style="width:100%;margin-bottom:8px;padding:12px;font:inherit">
-    <input name="password" type="password" placeholder="Password" autocomplete="current-password" required style="width:100%;margin-bottom:8px;padding:12px;font:inherit">
+    <h2>Organiser sign-in</h2>
+    <input name="email" type="email" placeholder="Email" autocomplete="username" required style="width:100%;margin-bottom:8px;padding:12px;font:inherit;border-radius:10px;border:1px solid var(--line)">
+    <input name="password" type="password" placeholder="Password" autocomplete="current-password" required style="width:100%;margin-bottom:8px;padding:12px;font:inherit;border-radius:10px;border:1px solid var(--line)">
     <div id="loginmsg" style="color:#ff6b6b;font-weight:700"></div>
-    <div class="row"><button class="on">Sign in</button><button type="button" onclick="$('login').close()">Cancel</button></div>
+    <div class="row"><button type="button" onclick="$('login').close()">Cancel</button><button class="on">Sign in</button></div>
   </form>
 </dialog>
 
-<div class="live">
-  <div class="sc bebas" id="sc"></div>
-  <div class="tm"><b class="bebas" id="time"></b><span id="per"></span></div>
-</div>
+<main>
+  <section data-tab="match">
+    <h2>Score</h2>
+    <div class="row">
+      <div class="side"><div class="name"><i id="hdot"></i><span id="hn"></span></div><button class="plus bebas" onclick="add('hs', 1)">+1</button><button class="minus" onclick="add('hs', -1)">Undo −1</button></div>
+      <div class="side"><div class="name"><i id="adot"></i><span id="an"></span></div><button class="plus bebas" onclick="add('as', 1)">+1</button><button class="minus" onclick="add('as', -1)">Undo −1</button></div>
+    </div>
 
-<h2>Score</h2>
-<div class="row">
-  <div class="side"><div class="name" id="hn"></div><button class="plus bebas" onclick="add('hs', 1)">+1</button><button class="minus" onclick="add('hs', -1)">Undo −1</button></div>
-  <div class="side"><div class="name" id="an"></div><button class="plus bebas" onclick="add('as', 1)">+1</button><button class="minus" onclick="add('as', -1)">Undo −1</button></div>
-</div>
+    <h2>Clock</h2>
+    <button class="start" id="start" onclick="send({clock: s.running ? 'stop' : 'start'})">Start</button>
+    <div class="grid3" style="margin-top:8px">
+      <button onclick="send({clock: s.clock - 10})">−10s</button>
+      <button onclick="send({clock: s.clock + 10})">+10s</button>
+      <button onclick="confirm('Reset clock to 00:00?') && send({clock: 'reset'})">Reset</button>
+    </div>
 
-<h2>Kit colours</h2>
-<div class="row"><div class="kit" id="hkit"></div><div class="kit" id="akit"></div></div>
+    <h2>Period</h2>
+    <div class="grid3" id="periods"></div>
 
-<h2>Clock</h2>
-<div class="row"><button class="start" id="start" onclick="send({clock: s.running ? 'stop' : 'start'})">Start</button></div>
-<div class="row" style="margin-top:8px">
-  <button onclick="send({clock: s.clock - 10})">−10s</button>
-  <button onclick="send({clock: s.clock + 10})">+10s</button>
-  <button onclick="confirm('Reset clock to 00:00?') && send({clock: 'reset'})">Reset</button>
-</div>
+    <h2>On air</h2>
+    <div class="grid2" id="scenes"></div>
+    <button id="show" style="width:100%;margin-top:8px" onclick="send({show: !s.show})"></button>
+    <p class="hint">Auto: score bug during play, Break screen at Half Time and Full Time.</p>
+  </section>
 
-<h2>Period</h2>
-<div class="row" id="periods"></div>
+  <section data-tab="sponsors" hidden>
+    <h2>Ticker</h2>
+    <button id="tick" style="width:100%" onclick="send({ticker: !s.ticker})"></button>
+    <h2>Pop an ad for 10 s</h2>
+    <button id="adoff" style="width:100%;background:#b00020;border:0" onclick="send({ad: null})">Hide ad now</button>
+    <div class="ads" id="ads"></div>
+  </section>
 
-<h2>On air</h2>
-<div class="row" id="scenes"></div>
-<div class="row" style="margin-top:8px"><button id="show" onclick="send({show: !s.show})"></button></div>
-
-<h2>Sponsors</h2>
-<div class="row"><button id="tick" onclick="send({ticker: !s.ticker})"></button></div>
-<div class="ads" id="ads"></div>
-<div class="row" style="margin-top:8px"><button id="adoff" onclick="send({ad: null})">Hide ad now</button></div>
-
-<h2>New match</h2>
-<div class="row"><select id="fx"></select></div>
-<div class="row" style="margin-top:8px"><select id="home"></select><select id="away"></select></div>
-<div class="row" style="margin-top:8px"><button onclick="newMatch()">Start new match (0-0, clock 00:00)</button></div>
+  <section data-tab="setup" hidden>
+    <h2>New match</h2>
+    <div class="card">
+      <select id="fx"></select>
+      <div class="row" style="margin-top:8px"><select id="home"></select><select id="away"></select></div>
+      <button class="on" style="width:100%;margin-top:8px" onclick="newMatch()">Start new match (0-0, clock 00:00)</button>
+      <p class="hint">Puts "Starting Soon" on air until you start the clock.</p>
+    </div>
+    <h2>Kit colours</h2>
+    <div class="card"><div class="row"><div class="kit" id="hkit"></div><div class="kit" id="akit"></div></div></div>
+  </section>
+</main>
+<nav>
+  <button data-go="match" class="on"><b>⚽</b>Match</button>
+  <button data-go="sponsors"><b>📣</b>Sponsors</button>
+  <button data-go="setup"><b>⚙️</b>Setup</button>
+</nav>
 
 <script src="../matchday/league.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -108,10 +147,16 @@
 
   // Scenes on the stream. Auto: score bug in play, Break screen at Half Time / Full Time.
   const SCENES = [['auto', 'Auto'], ['soon', 'Starting Soon'], ['match', 'Score bug'], ['break', 'Break']];
-  $('scenes').style.flexWrap = 'wrap';
-  $('scenes').innerHTML = SCENES.map(([k, l]) => `<button style="flex-basis:45%" data-scene="${k}" onclick="send({scene: '${k}'})">${l}</button>`).join('');
-  $('periods').style.flexWrap = 'wrap';
-  $('periods').innerHTML = PERIODS.map(p => `<button style="flex-basis:30%" onclick="send({period: '${p}'})">${p}</button>`).join('');
+  $('scenes').innerHTML = SCENES.map(([k, l]) => `<button data-scene="${k}" onclick="send({scene: '${k}'})">${l}</button>`).join('');
+  $('periods').innerHTML = PERIODS.map(p => `<button onclick="send({period: '${p}'})">${p}</button>`).join('');
+
+  // Tabs: Match (used all game), Sponsors, Setup (between games). The scoreboard stays pinned on top.
+  document.querySelector('nav').onclick = e => {
+    const t = e.target.closest('[data-go]')?.dataset.go; if (!t) return;
+    document.querySelectorAll('[data-tab]').forEach(x => x.hidden = x.dataset.tab !== t);
+    document.querySelectorAll('[data-go]').forEach(b => b.classList.toggle('on', b.dataset.go === t));
+    scrollTo(0, 0);
+  };
   const opts = TEAMS.map(t => `<option>${t.name}</option>`).join('');
   $('home').innerHTML = $('away').innerHTML = opts;
 
@@ -131,6 +176,13 @@
     $('show').classList.toggle('on', s.show);
     [...$('periods').children].forEach(b => b.classList.toggle('on', b.textContent === s.period));
     renderKits();
+    $('hdot').style.background = s.hc || 'transparent'; $('adot').style.background = s.ac || 'transparent';
+    // What viewers see right now, as chips under the score.
+    const scene = s.scene && s.scene !== 'auto' ? s.scene : /Half Time|Full Time/.test(s.period) ? 'break' : 'match';
+    const adOn = s.ad && s.ad.until > serverNow();
+    $('onair').innerHTML = [['On air: ' + { soon: 'Starting Soon', match: 'Match', break: 'Break' }[scene], true],
+      [s.show ? 'Score bug' : 'Score bug hidden', false], [s.ticker ? 'Ticker' : 'Ticker off', false], adOn && ['Ad showing', true]]
+      .filter(Boolean).map(([t, lit]) => `<span class="${lit ? 'lit' : ''}">${t}</span>`).join('');
     $('tick').textContent = s.ticker ? 'Sponsor ticker showing — tap to hide' : 'Sponsor ticker hidden — tap to show';
     $('tick').classList.toggle('on', s.ticker);
     const live = s.ad && s.ad.until > serverNow();
@@ -147,7 +199,7 @@
   // Writes go to Firebase (organiser only); every screen showing the overlay updates within a second.
   const auth = firebase.auth();
   let user = null;
-  auth.onAuthStateChanged(u => { user = u; $('who').textContent = u ? `Signed in ✓ (${u.email}) — tap to sign out` : 'Sign in to control the scoreboard'; });
+  auth.onAuthStateChanged(u => { user = u; $('who').textContent = u ? '✓ Signed in' : 'Sign in'; $('who').classList.toggle('on', !u); });
   $('who').onclick = () => user ? confirm('Sign out?') && auth.signOut() : $('login').showModal();
   $('loginform').onsubmit = e => {
     e.preventDefault();
@@ -168,15 +220,22 @@
   // Pick the match from the fixtures list (same list as the phone maker).
   const fixtures = text => text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map((l, i) => {
     const [g, vs, time = ''] = l.split(',').map(x => x.trim()), [h, a] = vs.split(/\s+v\s+/);
-    return { n: i + 1, home: team(h).name, away: team(a).name, time };
+    return { n: i + 1, g, home: team(h).name, away: team(a).name, time };
   });
+  const KO = ['QF', 'SF', 'Final'];
   firebase.database().ref('tsl/fixtures').on('value', snap => {
     (snap.val() ? Promise.resolve(snap.val()) : fetch('../matchday/fixtures.txt').then(r => r.text())).then(t => {
-      const fx = fixtures(t);
-      $('fx').innerHTML = '<option value="">Pick from fixtures…</option>' + fx.map(m => `<option value="${m.home}|${m.away}">${m.n}. ${m.time} · ${team(m.home).code} v ${team(m.away).code}</option>`).join('');
+      // Once knockouts are in the fixtures, list only those, and only their teams (same as the phone maker).
+      const all = fixtures(t), ko = all.filter(m => KO.includes(m.g)), fx = ko.length ? ko : all, seen = {};
+      $('fx').innerHTML = '<option value="">Pick from fixtures…</option>' + fx.map(m => { const k = seen[m.g] = (seen[m.g] || 0) + 1;
+        return `<option value="${m.home}|${m.away}">${KO.includes(m.g) ? (m.g === 'Final' ? 'Final' : m.g + k) : m.n + '.'} ${m.time ? m.time + ' · ' : ''}${team(m.home).code} v ${team(m.away).code}</option>`; }).join('');
+      const teams = ko.length ? TEAMS.filter(x => ko.some(m => m.home === x.name || m.away === x.name)) : TEAMS;
+      for (const id of ['home', 'away']) { const v = $(id).value; $(id).innerHTML = teams.map(x => `<option>${x.name}</option>`).join(''); if (v) $(id).value = v; }
+      if ($('home').value === $('away').value) $('away').selectedIndex = 1;
     });
   });
   $('fx').onchange = () => { if ($('fx').value) [$('home').value, $('away').value] = $('fx').value.split('|'); };
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const add = (k, n) => send({ [k]: s[k] + n });
 
   function newMatch() {
@@ -197,7 +256,7 @@
     if (key === kitKey) return;  // the clock re-renders 4x a second; rebuilding would close an open colour picker
     kitKey = key;
     for (const [side, key, name] of [['hkit', 'hc', s.home], ['akit', 'ac', s.away]]) {
-      $(side).innerHTML = KIT.map(c => `<button style="background:${c}" class="${s[key] === c ? 'on' : ''}" aria-label="${c}" onclick="kit('${key}', '${c}')"></button>`).join('')
+      $(side).innerHTML = `<div style="width:100%;font-weight:700;font-size:13px;letter-spacing:1px;text-transform:uppercase">${esc(name)}</div>` + KIT.map(c => `<button style="background:${c}" class="${s[key] === c ? 'on' : ''}" aria-label="${c}" onclick="kit('${key}', '${c}')"></button>`).join('')
         + `<input type="color" value="${s[key] || '#ffffff'}" aria-label="Any colour" onchange="kit('${key}', this.value)">`;
     }
   }
