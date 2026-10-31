@@ -314,8 +314,8 @@
           ${big(get('title', 'Top Scorers'), 110, 900)}
           ${get('subtitle') ? `<div class="label" style="margin-top:10px">${esc(get('subtitle'))}</div>` : ''}
           <div class="tbl" style="margin-top:36px">
-            ${ps.slice(0, 10).map((p, i) => { if (!i || p.g !== ps[i - 1].g) rank = i + 1;
-              return `<div class="row ${i ? '' : 'lead'}" style="height:78px"><span class="pos">${rank}</span>
+            ${ps.slice(0, 12).map((p, i) => { if (!i || p.g !== ps[i - 1].g) rank = i + 1;
+              return `<div class="row ${i ? '' : 'lead'}" style="height:${ps.length > 10 ? 66 : 78}px"><span class="pos">${rank}</span>
                 <span class="tm">${esc(p.name)}<span class="sub">${esc(p.team.name)}</span></span>
                 <span class="pts" style="width:130px;font-size:50px">${p.g}</span></div>`; }).join('')}
           </div>`;
