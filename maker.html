@@ -189,17 +189,19 @@
     format:    ['Format / draw', MD, ['groups~', 'label|Official Draw']],
     notice:    ['Notice',      MD, ['title*', 'label|Official Notice', 'sub', 'date', 'time', 'venue|Tamghas Futsal', 'rows~', 'body~', 'pill', 'qr', 'logo2', 'sign|Organizing Committee']],
     teams:     ['All teams',   MD, ['title|The Teams', 'subtitle']],
-    champions: ['Champions',   MD, ['team@*', 'season|Season 1', 'label|Champions']],
+    champions: ['Champions',   MD, ['team@*', 'photo!', 'focus^|Center', 'season|Season 1', 'label|Champions']],
+    award:     ['Award',       MD, ['award^|Best Goalkeeper', 'team@*', 'name#*', 'stat', 'photo!', 'focus^|Top', 'season|Season 1']],
     squad:     ['Team list',   'teamlist/teamlist.html', ['team@*', 'players~']],
     cover:     ['FB cover',    'teamlist/cover.html', []],
   };
   // Picker layout: [heading, kinds], each with an icon.
-  const KIND_GROUPS = [['Match day', 'goal event score fixture motm'], ['League', 'table results scorers bracket fixtures'],
-                       ['Other', 'notice squad teams format champions cover']];
-  const ICON = { goal: '⚽', event: '🟨', score: '🏁', fixture: '📅', motm: '🌟', table: '📊', results: '📋', scorers: '🥇', bracket: '🏆',
+  const KIND_GROUPS = [['Match day', 'goal event score fixture motm'], ['League', 'table results scorers bracket fixtures'], ['Awards', 'award champions'],
+                       ['Other', 'notice squad teams format cover']];
+  const ICON = { award: '🏅', goal: '⚽', event: '🟨', score: '🏁', fixture: '📅', motm: '🌟', table: '📊', results: '📋', scorers: '🥇', bracket: '🏆',
                  fixtures: '🗓', notice: '📢', squad: '📝', teams: '👥', format: '🧩', champions: '🏆', cover: '🖼' };
   const EVENTS = { 'Yellow Card': '🟨', 'Red Card': '🟥', 'Second Yellow': '🟨🟥', 'Penalty Missed': '❌', 'Penalty Saved': '🧤', 'Injury': '🩹' };
-  const OPTS = { 'event.event': Object.keys(EVENTS), 'score.label': ['Full Time', 'Half Time'], 'fixture.label': ['Next Match', 'Up Next', 'Kick-off'] };
+  const OPTS = { 'event.event': Object.keys(EVENTS), 'score.label': ['Full Time', 'Half Time'], 'fixture.label': ['Next Match', 'Up Next', 'Kick-off'],
+    'award.award': ['Best Goalkeeper', 'Player of the Tournament', 'Top Scorer'], 'award.focus': ['Top', 'Center', 'Bottom'], 'champions.focus': ['Top', 'Center', 'Bottom'] };
   const SIZE = { cover: [1640, 624] };
   const HINTS = { rows: 'Date=Saturday · Kartik 14 (one per line; replaces date/time/venue)', qr: 'https://facebook.com/... (link for a QR code)', logo2: '../14starlogo.jpg', pill: 'Follow Now', score: '2-1', minute: '12', homeScorers: "Mishan KC 12'|Arjun KC 30'", awayScorers: "Arjun KC 25'", stat: '2 Goals' };
   const files = {};  // groups.txt, fixtures.txt, results.txt, squads.txt as published
@@ -274,7 +276,7 @@
   $('kinds').innerHTML = KIND_GROUPS.map(([h, ks]) => `<h3${h === 'Match day' ? ' style="margin-top:0"' : ''}>${h}</h3><div class="kinds">${ks.split(' ').map(k =>
     `<button type="button" data-kind="${k}">${ICON[k]} ${KINDS[k][0]}</button>`).join('')}</div>`).join('');
   $('kinds').onclick = e => { const k = e.target.closest('[data-kind]')?.dataset.kind; if (k) { pick(k); $('form').scrollIntoView({ behavior: 'smooth', block: 'start' }); } };
-  const teamOptions = () => `<option value="">— pick —</option>` + activeTeams().map(t => `<option>${esc(t.name)}</option>`).join('');
+  const teamOptions = (all = false) => `<option value="">— pick —</option>` + (all ? TEAMS : activeTeams()).map(t => `<option>${esc(t.name)}</option>`).join('');
 
   // Bottom tabs. The preview needs to be visible to size itself, so it re-renders when Graphics opens.
   function tab(t) {
@@ -304,13 +306,15 @@
     document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('on', b.dataset.kind === k));
     const defs = defaults();
     $('fields').innerHTML = KINDS[k][2].map(f => {
-      const [name, def = defs[name.replace(/\W/g, '')] ?? ''] = f.replace(/[*~@#^=]/g, '').split('|'), req = f.includes('*');
+      const [name, def = defs[name.replace(/\W/g, '')] ?? ''] = f.replace(/[*~@#^=!]/g, '').split('|'), req = f.includes('*');
       if (f.includes('=')) return `<input type="hidden" name="${name}">`;  // filled from the logs below
       const lbl = `${name === 'pick' ? 'Match' : name.replace(/([A-Z])/g, ' $1')}${req ? ' *' : ''}`;
       const opts = OPTS[`${k}.${name}`];
       const input = name === 'score' ? `<input type="hidden" name="score">${boxRow('sb', 'h')}${boxRow('sb', 'a')}`
         : name === 'pick' ? `<select name="pick">${matchOptions()}<option value="">Other (pick teams below)</option></select>`
-        : f.includes('@') ? `<select name="${name}">${teamOptions()}</select>`
+        : f.includes('!') ? `<input type="hidden" name="photo"><input type="file" accept="image/*" data-photo style="padding:8px">
+            <span class="msg" id="phmsg" style="display:block;text-transform:none;letter-spacing:0"></span>`
+        : f.includes('@') ? `<select name="${name}">${teamOptions(['award', 'champions', 'squad'].includes(k))}</select>`  // awards: any team, not just those still in
         : f.includes('#') ? `<select name="${name}" data-players></select>`
         : opts ? `<select name="${name}">${opts.map(o => `<option>${esc(o)}</option>`).join('')}</select>`
         : k === 'squad' && name === 'players' ? `<textarea name="players" hidden></textarea><div id="sqlist"></div>`
@@ -326,7 +330,7 @@
     if (['goal', 'score', 'event'].includes(k)) $('fields').insertAdjacentHTML('beforeend', '<div id="glog"></div>');
     if (F().score) F().score.value = '0-0';
     if (F().pick) { F().pick.value = store.get('pick') ?? nextMatch(); applyMatch(); }
-    renderSquad(); renderMatchPick(); renderNoticeRows();
+    renderSquad(); renderMatchPick(); renderNoticeRows(); showPhoto();
     render();
   }
 
@@ -378,7 +382,7 @@
 
   // Player dropdowns list both teams' squads; picking a player sets their team (and the new score for a goal).
   function fillPlayers() {
-    const teams = [val('home'), val('away')].filter(Boolean);
+    const teams = F().home ? [val('home'), val('away')].filter(Boolean) : [val('team')].filter(Boolean);  // awards: the picked team's squad
     document.querySelectorAll('[data-players]').forEach(s => {
       const keep = s.value;
       s.innerHTML = '<option value="">— pick —</option>' + teams.map(t => `<optgroup label="${esc(t)}">
@@ -406,10 +410,12 @@
   $('form').onchange = e => {
     const n = e.target.name;
     if (n === 'pick') applyMatch();
-    if (n === 'home' || n === 'away') fillPlayers();
+    if (n === 'home' || n === 'away' || (kind === 'award' && n === 'team')) fillPlayers();
+    if (e.target.dataset.photo !== undefined) return addPhoto(e.target.files[0]);
     if (e.target.dataset.players !== undefined) {
       const t = e.target.selectedOptions[0]?.dataset.team;
-      if (t) set('team', t);
+      if (t && kind !== 'award') set('team', t);
+      if (kind === 'award' && val('award') === 'Top Scorer') set('stat', `${goals().filter(g => g.name === e.target.value && g.team === val('team')).length} Goals`);
       if (kind === 'goal' && t) {
         const [hs, as] = tally(val('pick'), val('home'), val('away'));
         set('score', `${hs + (t === val('home'))}-${as + (t === val('away'))}`);
@@ -481,6 +487,32 @@
         <button type="button" data-pedit="${i}" aria-label="Rename">✎</button><button type="button" data-up="${i}" aria-label="Move up">↑</button><button type="button" class="danger" data-pdel="${i}" aria-label="Remove">✕</button></div>`;
     }).join('') + `<div class="rrow"><input id="newp" placeholder="New player name" style="flex:1"><button type="button" class="primary" id="addp">Add</button></div>`;
   }
+
+  // Photos (awards, champions): shrunk on the phone, kept per graphic in this phone's storage, read by the template (photo=local).
+  const PHOTO = () => 'tsl-photo:' + kind;
+  const showPhoto = () => {
+    if (!F().photo) return;
+    const has = !!local.get(PHOTO());
+    set('photo', has ? 'local' : '');
+    $('phmsg').innerHTML = has ? 'Photo added ✓ <button type="button" class="danger" data-phdel style="min-height:32px;padding:4px 10px;margin-left:6px">Remove</button>'
+      : 'Add a photo (best: clear face, good light).';
+  };
+  async function addPhoto(file) {
+    if (!file) return;
+    $('phmsg').textContent = 'Adding photo…';
+    try {
+      const bmp = await createImageBitmap(file), k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      localStorage.setItem(PHOTO(), c.toDataURL('image/jpeg', .86));
+    } catch (e) { return $('phmsg').textContent = 'Could not use that photo: ' + (e.message || e); }
+    showPhoto(); $('frame').src = 'about:blank'; render();
+  }
+  document.addEventListener('click', e => {
+    if (e.target.dataset.phdel === undefined) return;
+    try { localStorage.removeItem(PHOTO()); } catch {}
+    showPhoto(); render();
+  });
 
   function params() {
     const p = { type: kind, ...Object.fromEntries(new FormData($('form'))) };
@@ -577,7 +609,7 @@
       fixtures: `📅 ${v('title')}\n${v('subtitle')}\n📍 Tamghas Futsal`,
       format: `🏆 TSL ${v('label')}: 13 teams, 4 groups — top 2 from each group go to the quarter-finals.`,
       notice: `📢 ${v('title')}${v('body') ? `\n\n${v('body')}` : ''}${v('qr') ? `\n\n👉 ${v('qr')}` : ''}`,
-      teams: `👥 ${v('title')} of the Tamghas Super League`, champions: `🏆 ${v('team')} — ${v('label')}!`, squad: `👥 ${v('team')} — official squad`,
+      teams: `👥 ${v('title')} of the Tamghas Super League`, champions: `🏆 ${v('team')} — ${v('label')}!`, award: `🏅 ${v('award')}: ${v('name')} (${v('team')})${v('stat') ? ` — ${v('stat')}` : ''}`, squad: `👥 ${v('team')} — official squad`,
     }[kind] || '';
     return `${c}\n\n#TSL #TamghasSuperLeague #Futsal #Gulmi`.trim();
   }
