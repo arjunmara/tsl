@@ -276,7 +276,8 @@
   firebase.database().ref('tsl/fixtures').on('value', snap => {
     (snap.val() ? Promise.resolve(snap.val()) : fetch('../matchday/fixtures.txt').then(r => r.text())).then(t => {
       // Once knockouts are in the fixtures, list only those, and only their teams (same as the phone maker).
-      const all = fixtures(t), ko = all.filter(m => KO.includes(m.g)), fx = ko.length ? ko : all, seen = {};
+      // Only the round being played (the latest knockout round in the fixtures).
+      const all = fixtures(t), cur = [...KO].reverse().find(g => all.some(m => m.g === g)), ko = all.filter(m => m.g === cur), fx = ko.length ? ko : all, seen = {};
       $('fx').innerHTML = '<option value="">Pick from fixtures…</option>' + fx.map(m => { const k = seen[m.g] = (seen[m.g] || 0) + 1;
         return `<option value="${m.home}|${m.away}">${KO.includes(m.g) ? (m.g === 'Final' ? 'Final' : m.g + k) : m.n + '.'} ${m.time ? m.time + ' · ' : ''}${team(m.home).code} v ${team(m.away).code}</option>`; }).join('');
       const teams = ko.length ? TEAMS.filter(x => ko.some(m => m.home === x.name || m.away === x.name)) : TEAMS;

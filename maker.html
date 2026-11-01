@@ -99,6 +99,7 @@
 
   <section data-tab="results" hidden>
     <div class="card">
+      <div id="nextround2"></div>
       <h2>Add a result</h2>
       <label>Match<select id="rm"></select></label>
       <div class="cols" style="gap:8px;grid-template-columns:1fr 1fr">
@@ -131,6 +132,7 @@
       <div class="actions"><button id="fcancel" hidden>Cancel</button><button class="primary" id="fadd">Add fixture</button></div>
       <div class="msg" id="fmsg"></div>
     </div>
+    <div class="card" id="nextround" hidden></div>
     <div class="card"><h2>Fixtures</h2><div id="flist"></div></div>
   </section>
 
@@ -230,8 +232,26 @@
   }); };
   // Once knockout fixtures exist, pickers show only those matches and the teams still in them.
   const koFixtures = () => fixtures().filter(isKO);
-  const liveFixtures = () => koFixtures().length ? koFixtures() : fixtures();
-  const activeTeams = () => { const ko = koFixtures(); return ko.length ? TEAMS.filter(t => ko.some(m => m.home === t.name || m.away === t.name)) : TEAMS; };
+  // The round being played = the latest knockout round in the fixtures; pickers show only its matches and teams.
+  const currentRound = () => [...KO].reverse().find(g => koFixtures().some(m => m.g === g));
+  const liveFixtures = () => { const g = currentRound(); return g ? koFixtures().filter(m => m.g === g) : fixtures(); };
+  const activeTeams = () => { const fx = liveFixtures(); return currentRound() ? TEAMS.filter(t => fx.some(m => m.home === t.name || m.away === t.name)) : TEAMS; };
+  // Knockout winner: the score, or the shootout line when it was a draw. null until decided.
+  const winner = m => {
+    const r = resultOf(m); if (!r) return null;
+    if (r.hg !== r.ag) return r.hg > r.ag ? r.home.name : r.away.name;
+    let all = []; try { all = parseResults($('results').value); } catch {}
+    const p = all.find(x => x.pens && samePair(x, m.home, m.away) && (x.round || '') === m.g);
+    return p ? (p.hg > p.ag ? p.home.name : p.away.name) : null;
+  };
+  // Next round once the current one is decided: QF1 v QF2 winners, QF3 v QF4 (SF); SF1 v SF2 (Final).
+  const nextRound = () => {
+    const g = currentRound(), fx = liveFixtures(), next = { QF: 'SF', SF: 'Final' }[g];
+    if (!next || fx.length % 2 || fx.some(m => !winner(m))) return null;
+    const w = fx.map(winner), pairs = [];
+    for (let i = 0; i < w.length; i += 2) pairs.push({ g: next, home: w[i], away: w[i + 1], time: '', n: null });
+    return pairs;
+  };
   const matchName = m => isKO(m) ? (m.g === 'Final' ? 'Final' : `${roundName(m.g)} ${m.tag.slice(2)}`) : `Match ${m.n} · ${roundName(m.g)}`;
   const squads = () => Object.fromEntries(((store.get('squads') ?? files.squads) || '').split('\n')
     .filter(l => l.includes(':') && !l.startsWith('#')).map(l => [l.slice(0, l.indexOf(':')).trim(), l.slice(l.indexOf(':') + 1).trim()]));
@@ -314,7 +334,7 @@
   function renderMatchPick() {
     if (!$('mlist')) return;
     const on = new Set(val('matches').split('\n'));
-    $('mlist').innerHTML = liveFixtures().map(m => `<label class="rrow" style="margin:0;text-transform:none;letter-spacing:0;font-size:15px;color:#fff">
+    $('mlist').innerHTML = (koFixtures().length ? koFixtures() : fixtures()).map(m => `<label class="rrow" style="margin:0;text-transform:none;letter-spacing:0;font-size:15px;color:#fff">
       <input type="checkbox" data-mline="${esc(matchLine(m))}" ${on.has(matchLine(m)) ? 'checked' : ''} style="width:22px;height:22px">
       <span style="flex:1">${m.n}. ${team(m.home).code} v ${team(m.away).code}</span><span class="msg" style="margin:0">${resultOf(m) ? matchLine(m).split(',')[2] : m.time}</span></label>`).join('');
   }
@@ -624,6 +644,7 @@
     $('rm').innerHTML = matchOptions() + '<option value="">Other (pick teams below)</option>';
     if (!editing) { $('rm').value = nextMatch(); fillResultMatch(); }  // don't wipe a half-done edit when another phone syncs
     renderResults();
+    renderNextRound();
   };
   $('rm').onchange = fillResultMatch;
   const resultNames = () => boxNames('rb', $('rh').value, $('ra').value);
@@ -657,7 +678,7 @@
     }
     if (remap.has(String(store.get('pick')))) store.set('pick', remap.get(String(store.get('pick'))));
     store.set('fixtures', '# Group, Home v Away, time — edited in the phone maker\n' + list.map(m => `${m.g}, ${m.home} v ${m.away}${m.time ? `, ${m.time}` : ''}`).join('\n') + '\n');
-    endFxEdit(); renderFixtures(); refreshResultMatches();
+    endFxEdit(); fillTeamSelects(); renderFixtures(); refreshResultMatches();
     if (['goal', 'score', 'event', 'fixture', 'motm', 'fixtures', 'results'].includes(kind)) pick(kind);
   }
   const endFxEdit = () => {
@@ -668,7 +689,24 @@
     $('ft').value = `${String(Math.floor(x / 60) % 24).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`;
   };
   // Knockout fixtures on top; the group stage folds away once knockouts exist.
+  // "Semi-finals are set" card (Fixtures and Results tabs) when every match of the round has a winner.
+  function renderNextRound() {
+    const nr = nextRound(), name = nr && (nr[0].g === 'Final' ? 'The Final' : 'Semi-finals');
+    const html = nr ? `<h2>🏆 ${name} ${nr.length > 1 ? 'are' : 'is'} set</h2>
+      ${nr.map((m, i) => `<div class="rrow"><span class="tag">${m.g === 'Final' ? 'Final' : m.g + (i + 1)}</span><span style="flex:1">${esc(m.home)} v ${esc(m.away)}</span></div>`).join('')}
+      <button class="primary wide" data-mkround style="margin-top:10px">Create ${name.toLowerCase()}</button>` : '';
+    $('nextround').innerHTML = html; $('nextround').hidden = !nr;
+    $('nextround2').innerHTML = nr ? `<div class="card" style="margin:0 0 14px;border-color:var(--orange)">${html}</div>` : '';
+  }
+  document.addEventListener('click', e => {
+    if (e.target.dataset.mkround === undefined) return;
+    const nr = nextRound(); if (!nr || !canEdit($('fmsg'))) return;
+    saveFixtures([...fixtures(), ...nr]);
+    $('fmsg').className = 'msg'; $('fmsg').textContent = `${nr[0].g === 'Final' ? 'Final' : 'Semi-finals'} created ✓`;
+  });
+
   function renderFixtures() {
+    renderNextRound();
     const row = m => `<div class="rrow" ${m.n === editingFx ? 'style="background:rgba(245,130,32,.15)"' : ''}>
         <span style="flex:1"><span class="tag">${isKO(m) ? m.tag : m.g}</span> ${team(m.home).code} v ${team(m.away).code}
           <span class="msg" style="display:inline;margin:0">${esc(m.time)}${resultOf(m) ? ' ✓' : ''}</span></span>
