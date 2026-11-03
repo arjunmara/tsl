@@ -21,3 +21,5 @@
 /highlights/*
 !/highlights/*.html
 !/highlights/*.py
+!/seasons/
+/seasons/*/graphics/

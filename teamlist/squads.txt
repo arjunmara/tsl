@@ -1,9 +1,9 @@
 # Latest squads, one team per line:  Team: Player|Player (C)|Player (GK)|Name (Coach)
-Junior Ballers Tamghas: Nabin Hitang|Rilesh Shrees (C)|Amit Shrees|Umesh Shrees|Pujan Bhandari|Bipin Gharti|Nishan Pun|Naizal Shrestha
+Junior Ballers Tamghas: Nabin Hitang|Rilesh Shrees (C)|Amit Shrees|Umesh Shrees|Pujan Bhandari|Bipin Gharti|Nishan Pun|Alone Thapa
 Resunga Eight: Vijay Bhujel (C)|Sandesh Bhalami|Mandeep Bhalami|Kalyan Bhujel|Pawan Pandey|Bishnu Shrees|Prabin Pandey|Amar Paharai
 Darbar Futsal Team: Abishkar Khatri (C)|Youbraj Paudel (GK)|Raju Aryal|Bishal Paudel|Bikram Basnet|Bishnu Bahadur Suryabanshi|Ashok Khanal|Ramesh Khadka
 Four Star Warriors: Hari Kunwar (C)|Dilson Sunar|Sushil Bohora|Ramesh Chudara|Bijay Kharel (GK)|Prakash Khatri|Ashish Shrees|Binod Sen (Coach)|Bijay Pandey (Manager)
-Bhadgaun Ward No. 3: Arjun KC (C)|Jeevan KC|Mohan Pun|Prakash Sunar|Bharat KC|Sujan Basnet|Nabin KC|Bikalpa KC (Coach)
+Bhadgaun Ward No. 3: Arjun KC (C)|Jeevan KC|Mohan Pun|Prakash Sunar|Bharat KC|Sujan Basnet|Himmat Shrees|Umesh KC|Bikalpa KC (Coach)
 Real Tamghas: Prakash GC (C)|Arjun KC|Arjun Marasini|Vinod KC (GK)|Kshitiz Rana|Anish Sada|Sushil KC|Tridev KC
 Kapey Tribe: Rhythm Basnet (C)|Aayush Bishowkarma|Gaurav Bishowkarma|Ajay Darji|Manish Darji|Lopson Somai|Bibas Pariyar|Bipin Khanal
 Khukuri Youth Club: Sagar Thapa|Ashish Thapa|Pawan Raut (C)|Sujan Somai|Dipendra Thapa|Amrit Thapa|Jomes Gharti|Amit Bhandari

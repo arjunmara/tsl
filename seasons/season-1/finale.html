@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Season finale poster: full-bleed champions photo, gold lettering. One-off, rendered with headless Chrome (see bottom). -->
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --navy: #0a1a3f; --orange: #f58220; --gold: #f6c453; --gold2: #d9952b; }
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 1080px; height: 1350px; overflow: hidden; position: relative; background: var(--navy); color: #fff; font-family: 'Barlow', sans-serif; }
+  .bebas { font-family: 'Bebas Neue', sans-serif; font-weight: 400; letter-spacing: 3px; line-height: .9; }
+  /* Photo fills the poster; the squad sits in the middle third. */
+  .photo { position: absolute; left: 0; top: -318px; width: 1080px; height: 1440px; object-fit: cover; }
+  .shade { position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(10,26,63,.97) 0%, rgba(10,26,63,.86) 22%, rgba(10,26,63,.15) 40%, rgba(10,26,63,0) 52%,
+                                        rgba(10,26,63,0) 68%, rgba(10,26,63,.7) 75%, rgba(10,26,63,1) 81%); }
+  .frame { position: absolute; inset: 22px; border: 3px solid rgba(246,196,83,.65); border-radius: 6px; pointer-events: none; }
+  .frame::before { content: ''; position: absolute; inset: 8px; border: 1px solid rgba(246,196,83,.3); border-radius: 3px; }
+  .gold { background: linear-gradient(180deg, #fff3c4 0%, var(--gold) 38%, var(--gold2) 70%, #fbe39a 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 8px 24px rgba(0,0,0,.55)); }
+
+  .top { position: absolute; top: 50px; left: 0; right: 0; text-align: center; }
+  .brand { display: inline-flex; align-items: center; gap: 16px; font-weight: 700; font-size: 20px; letter-spacing: 9px; color: var(--gold); }
+  .brand img { width: 70px; height: 70px; border-radius: 50%; box-shadow: 0 0 0 3px var(--gold); }
+  .season { margin-top: 18px; display: inline-flex; align-items: center; gap: 20px; font-weight: 800; font-size: 24px; letter-spacing: 12px; color: #fff; }
+  .season::before, .season::after { content: ''; width: 70px; height: 2px; background: var(--gold); }
+  .title { font-size: 176px; margin-top: 2px; }
+  .stars { font-size: 30px; letter-spacing: 18px; color: var(--gold); margin-top: 2px; }
+
+  .bottom { position: absolute; left: 0; right: 0; bottom: 52px; text-align: center; }
+  .team { display: flex; align-items: center; justify-content: center; gap: 22px; font-size: 100px; text-shadow: 0 6px 30px rgba(0,0,0,.6); }
+  .team i { width: 70px; height: 3px; background: linear-gradient(90deg, transparent, var(--gold)); }
+  .team i:last-child { transform: scaleX(-1); }
+
+  .path { position: relative; display: flex; justify-content: space-between; width: 900px; margin: 22px auto 0; }
+  .path::before { content: ''; position: absolute; left: 90px; right: 90px; top: 47px; height: 3px;
+    background: linear-gradient(90deg, rgba(246,196,83,.35), var(--gold)); }
+  .node { position: relative; width: 180px; display: flex; flex-direction: column; align-items: center; }
+  .node span { font-weight: 700; font-size: 14px; letter-spacing: 3px; color: var(--gold); text-transform: uppercase; height: 20px; }
+  .node em { width: 26px; height: 26px; margin: 13px 0 15px; border-radius: 50%; background: var(--navy); box-shadow: 0 0 0 3px var(--gold); font-style: normal; }
+  .node b { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 36px; letter-spacing: 2px; line-height: 1; }
+  .node b small { font-size: 24px; color: #c9d3ee; }
+  .node.win em { width: 48px; height: 48px; margin: 2px 0 4px; display: flex; align-items: center; justify-content: center; font-size: 24px;
+    background: linear-gradient(180deg, var(--gold), var(--gold2)); box-shadow: 0 0 0 4px rgba(246,196,83,.3), 0 0 26px rgba(246,196,83,.6); }
+  .node.win b { color: var(--gold); }
+
+  .nums { display: flex; justify-content: center; margin-top: 22px; }
+  .nums div { width: 230px; display: flex; flex-direction: column; align-items: center; }
+  .nums div + div { border-left: 1px solid rgba(246,196,83,.4); }
+  .nums b { font-size: 64px; line-height: .95; }
+  .nums span { font-weight: 700; font-size: 14px; letter-spacing: 4px; color: #dfe6f7; text-transform: uppercase; }
+  .thanks { margin-top: 18px; font-weight: 600; font-size: 17px; letter-spacing: 3px; color: rgba(223,230,247,.75); }
+</style>
+</head>
+<body>
+  <img class="photo" src="../fsw.jpeg" alt="">
+  <div class="shade"></div>
+  <div class="frame"></div>
+
+  <div class="top">
+    <div class="brand"><img src="../logo.jpg" alt="">TAMGHAS SUPER LEAGUE</div>
+    <div><div class="season">Season 1</div></div>
+    <div class="title bebas gold">Champions</div>
+    <div class="stars">★ ★ ★ ★</div>
+  </div>
+
+  <div class="bottom">
+    <div class="team bebas"><i></i>Four Star Warriors<i></i></div>
+    <!-- Path to the title: gold line with a node per stage; the Final node is filled gold. -->
+    <div class="path">
+      <div class="node"><span>Group C</span><em></em><b>Winners</b></div>
+      <div class="node"><span>Quarter-Final</span><em></em><b>7–0 <small>BW3</small></b></div>
+      <div class="node"><span>Semi-Final</span><em></em><b>4–2 <small>14SYC</small></b></div>
+      <div class="node win"><span>Final</span><em>🏆</em><b>4–1 <small>RE8</small></b></div>
+    </div>
+    <div class="nums">
+      <div><b class="bebas gold">5/5</b><span>Wins</span></div>
+      <div><b class="bebas gold">22</b><span>Goals scored</span></div>
+      <div><b class="bebas gold">0</b><span>Defeats</span></div>
+    </div>
+    <div class="thanks">Thank you to every team, sponsor &amp; fan · See you in Season 2</div>
+  </div>
+</body>
+</html>
+<!-- Render: google-chrome --headless=new --hide-scrollbars --allow-file-access-from-files --virtual-time-budget=6000 --window-size=1080,1350 --screenshot=out/fsw-champions-season-1.png finale.html -->
