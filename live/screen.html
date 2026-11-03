@@ -70,10 +70,9 @@
   <div class="stripe bottom"></div>
 
 <script src="../matchday/league.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="../firebase-config.js"></script>
-<script src="live.js?v=6"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../db.js"></script>
+<script src="live.js?v=7"></script>
 <script>
   // Background: the team-list swooshes and edge stars, stretched to 16:9.
   const NS = 'http://www.w3.org/2000/svg', $ = id => document.getElementById(id);
@@ -100,14 +99,12 @@
   const crest = (el, t) => { el.textContent = t.code; el.style.fontSize = `${80 * Math.min(1, 3.4 / t.code.length)}px`; };
 
   // Fixtures + goal log (same data as the phone maker) add the match number, kick-off time and scorers.
-  let fx = [], goals = [];
+  let fx = [], goals = [], ids = [];
   const parseFx = t => t.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map((l, i) => {
     const [g, vs, time = ''] = l.split(',').map(x => x.trim()), [h, a] = vs.split(/\s+v\s+/);
     return { n: i + 1, g, home: find(h).name, away: find(a).name, time };
   });
-  fetch('../matchday/fixtures.txt').then(r => r.text()).then(t => fx.length || (fx = parseFx(t)));  // published copy first; Firebase (edits) wins
-  firebase.database().ref('tsl/fixtures').on('value', snap => { if (snap.val()) fx = parseFx(snap.val()); });
-  firebase.database().ref('tsl/goals').on('value', snap => { try { goals = JSON.parse(snap.val() || '[]'); } catch { goals = []; } });
+  onSeason(d => { fx = parseFx(d.text.fixtures); goals = JSON.parse(d.text.goals); ids = d.matches.map(m => m.id); });
   const round = g => /^[A-D]$/.test(g) ? `Group ${g}` : { QF: 'Quarter-Final', SF: 'Semi-Final' }[g] || g;
 
   function render(s) {
@@ -116,9 +113,8 @@
     const ring = c => `0 0 0 7px ${c || 'var(--orange)'}, 0 16px 40px rgba(0,0,0,.4)`;  // kit colours on the rings
     $('hc').style.boxShadow = ring(s.hc); $('ac').style.boxShadow = ring(s.ac);
     $('hn').textContent = h.name; $('an').textContent = a.name;
-    // Latest fixture between the two: a knockout rematch of a group game is the one being played.
-    const m = fx.findLast(f => f.home === h.name && f.away === a.name || f.home === a.name && f.away === h.name);
-    const list = t => !m ? '' : goals.filter(g => g.n == m.n && g.team === t).sort((x, y) => x.min - y.min)
+    const m = fx[ids.indexOf(s.match)];  // the match on air (picked on the control page)
+    const list = t => !m ? '' : goals.filter(g => g.n == m.n && g.team === t && g.name).sort((x, y) => x.min - y.min)
       .map(g => `${g.name === 'Own Goal' ? 'OG' : esc(g.name)}${g.min ? ` ${g.min}'` : ''}`).join('<br>');
     $('hsc').innerHTML = mode === 'soon' ? '' : list(h.name); $('asc').innerHTML = mode === 'soon' ? '' : list(a.name);
     if (mode === 'soon') {

@@ -10,7 +10,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 ROOT = pathlib.Path(__file__).resolve().parent.parent  # Futsal/, so logo.jpg and matchday/league.js are served too
 state = {'home': 'Junior Ballers Tamghas', 'away': 'Resunga Eight', 'hs': 0, 'as': 0,
          'period': '1st Half', 'show': True, 'elapsed': 0.0, 'since': None}
-EDITABLE = ('results.txt', 'groups.txt')  # sync.py uploads these edits to the phone maker  # the only files the hub may overwrite
+EDITABLE = ('results.txt', 'groups.txt')  # the only files the hub may overwrite (laptop only: the database is edited from the phone maker)
 LAN = '<laptop-ip>'  # set at startup, shown on the hub so phones know where to connect
 
 def view():
@@ -71,9 +71,4 @@ if __name__ == '__main__':
     except OSError:
         pass
     print(f'Hub (open this):  http://localhost:8000/\nControl (phone):  http://{LAN}:8000/live/control.html')
-    sys.path.insert(0, str(ROOT)); import sync, threading
-    if sync.TOKEN_FILE.exists():  # keep matchday files and the phone maker in sync while the hub runs
-        threading.Thread(target=sync.watch, daemon=True).start(); print('Phone sync: on')
-    else:
-        print('Phone sync: off (run ./sync.py login once to turn it on)')
     ThreadingHTTPServer(('0.0.0.0', 8000), Handler).serve_forever()

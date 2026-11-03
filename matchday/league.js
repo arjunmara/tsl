@@ -15,6 +15,8 @@ const TEAMS = [
   ['PTB Guys', 'PTB'],
   ['Navayug Yuwa Club', 'NYC'],
 ].map(([name, code]) => ({ name, code }));
+// This season's teams, saved by db.js when a page loads the data; the list above is the fallback (laptop renders, tests).
+try { const t = JSON.parse(localStorage.getItem('tsl-teams')); if (t?.length) TEAMS.splice(0, TEAMS.length, ...t); } catch {}
 
 // Accept a full name or short code, any case. Unknown names throw so typos show up instead of a wrong table.
 function team(s) {

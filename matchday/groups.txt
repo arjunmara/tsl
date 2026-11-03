@@ -1,4 +1,3 @@
-# Official draw (tie sheet, 30 Oct 2026). One "Group" line, then its teams (names or codes).
 Group A
 Navayug Yuwa Club
 Da Boys

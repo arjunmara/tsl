@@ -154,23 +154,27 @@
 
 <script src="matchday/league.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="db.js"></script>
 <script>
   const $ = id => document.getElementById(id);
-  // FIREBASE comes from firebase-config.js.
-  // results, goals and squads are shared through Firebase when signed in; localStorage is the offline copy.
-  const SHARED = ['results', 'goals', 'events', 'squads', 'fixtures', 'groups'], sync = { db: null, user: null };
+  // The data lives in the database (db.js). This phone keeps a read-only copy of it in localStorage, in the text/JSON
+  // shapes the graphics read; every change is written as one row (a goal, a result, a fixture...), never a whole list.
+  const SHARED = ['results', 'goals', 'events', 'squads', 'fixtures', 'groups'], sync = { user: null, ready: false, failed: false };
   const local = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
                   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-  // Shared keys only go up once this phone has the live data: a phone with an empty/stale copy used to overwrite everyone's.
-  // Every upload is also kept in tsl/history, so a bad write can be rolled back.
-  const store = { get: local.get, set: (k, v) => { local.set(k, v); if (sync.user && sync.ready && SHARED.includes(k)) {
-    sync.db.child(k).set(v); sync.db.child('history').push({ k, v, at: firebase.database.ServerValue.TIMESTAMP, by: sync.user.email });
-  } } };
-  const text = f => fetch(`${f}?t=${Date.now()}`).then(r => r.ok ? r.text() : '');
+  const store = local;
+  let D = null;  // the season as loaded (rows with ids)
+  const mid = n => D.matches[n - 1]?.id;  // match number (position in the fixtures) → row id
+  const tidOf = name => D.teams.find(t => t.name === name)?.id;
+  const sqRows = teamName => D.squad.filter(x => x.team === tidOf(teamName));
+  const pidOf = (teamName, name) => sqRows(teamName).find(x => x.players.name === name)?.player;
+  // Run a write; show "done" or the database's refusal in el. Every phone (this one too) then reloads from the database.
+  async function dbDo(el, f, done = '') {
+    if (!canEdit(el)) return false;
+    try { await f(); el.className = 'msg'; if (done) el.textContent = done; refresh(); return true; }
+    catch (e) { el.className = 'msg err'; el.textContent = e.message; refresh(); return false; }
+  }
 
   // Fields per graphic. Markers: * required, ~ textarea, @ team dropdown, # player dropdown (from the match's two teams),
   // ^ dropdown from OPTS, |default. "pick" is the match picker: it fills teams/time/score and isn't sent to the template.
@@ -204,7 +208,7 @@
     'award.award': ['Best Goalkeeper', 'Player of the Tournament', 'Top Scorer'], 'award.focus': ['Top', 'Center', 'Bottom'], 'champions.focus': ['Top', 'Center', 'Bottom'] };
   const SIZE = { cover: [1640, 624] };
   const HINTS = { rows: 'Date=Saturday · Kartik 14 (one per line; replaces date/time/venue)', qr: 'https://facebook.com/... (link for a QR code)', logo2: '../14starlogo.jpg', pill: 'Follow Now', score: '2-1', minute: '12', homeScorers: "Mishan KC 12'|Arjun KC 30'", awayScorers: "Arjun KC 25'", stat: '2 Goals' };
-  const files = {};  // groups.txt, fixtures.txt, results.txt, squads.txt as published
+  const files = {};  // fallback text when this phone has no copy yet (empty: the database is the source)
   let kind = 'goal', editLog = null;  // { key: 'goals' | 'events', json } of the log entry being edited
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   const F = () => $('form').elements, val = n => F()[n]?.value ?? '';
@@ -290,7 +294,7 @@
   const matchLine = m => { const r = resultOf(m); return `${team(m.home).code},${team(m.away).code},${r ? (r.home.name === m.home ? `${r.hg}-${r.ag}` : `${r.ag}-${r.hg}`) : m.time}`; };
 
   function defaults() {
-    const fx = fixtures(), tally5 = Object.values(goals().filter(g => g.name !== 'Own Goal').reduce((m, g) => {
+    const fx = fixtures(), tally5 = Object.values(goals().filter(g => g.name && g.name !== 'Own Goal').reduce((m, g) => {
       (m[g.name + g.team] ??= { name: g.name, team: g.team, n: 0 }).n++; return m; }, {})).sort((a, b) => b.n - a.n).slice(0, 12);
     return {
       fixtures: fxText(), groups: grText(),
@@ -373,7 +377,7 @@
   // Final score lists come straight from the goal and card logs.
   function fillFromLogs() {
     const n = val('pick'), min = x => x.min ? ` ${x.min}'` : '';
-    const scorers = t => matchGoals(n).filter(g => g.team === t).map(g => g.name === 'Own Goal' ? `OG${min(g)}` : g.name + min(g)).join('|');
+    const scorers = t => matchGoals(n).filter(g => g.team === t && g.name).map(g => g.name === 'Own Goal' ? `OG${min(g)}` : g.name + min(g)).join('|');
     const cards = t => events().filter(x => x.n == n && x.team === t && /card|yellow/i.test(x.type))
       .map(x => `${/yellow card/i.test(x.type) ? 'Y' : 'R'} ${x.name}${min(x)}`).join('|');
     set('homeScorers', scorers(val('home'))); set('awayScorers', scorers(val('away')));
@@ -399,7 +403,7 @@
     return `<label style="margin-top:12px">${L.title} this match</label>`
       + (items.map(x => { const j = esc(JSON.stringify(x)), on = editLog?.key === key && editLog.json === JSON.stringify(x);
           return `<div class="rrow" ${on ? 'style="background:rgba(245,130,32,.15)"' : ''}>
-            <span style="flex:1">${key === 'goals' ? '⚽' : EVENTS[x.type] || '•'} ${x.min ? x.min + "' " : ''}${esc(x.name)} <span class="msg">(${team(x.team).code})${key === 'events' ? ' · ' + esc(x.type) : ''}</span></span>
+            <span style="flex:1">${key === 'goals' ? '⚽' : EVENTS[x.type] || '•'} ${x.min ? x.min + "' " : ''}${esc(x.name || 'Unknown scorer — tap ✎')} <span class="msg">(${team(x.team).code})${key === 'events' ? ' · ' + esc(x.type) : ''}</span></span>
             <button type="button" data-ledit="${key}" data-lj="${j}" aria-label="Edit">✎</button><button type="button" class="danger" data-ldel="${key}" data-lj="${j}" aria-label="Delete">✕</button></div>`; }).join('')
         || `<p class="msg">None logged yet.</p>`)
       + (kind !== L.kind ? '' : editLog?.key === key
@@ -423,10 +427,12 @@
     }
     if (kind === 'squad' && n === 'team') { set('players', (squads()[e.target.value] || '').split('|').join('\n')); renderSquad(); }
     if (e.target.dataset.role) {
-      let ps = squadList(), i = +e.target.dataset.role;
-      if (e.target.value.includes('(C)')) ps = ps.map(p => p.replace(/\s*\(C\)/i, ''));  // one captain per team
-      ps[i] = `${ps[i].replace(/\(.*?\)/g, '').trim()} ${e.target.value}`.trim();
-      return setSquad(ps);
+      const r = sqRows(val('team'))[+e.target.dataset.role], v = e.target.value;
+      const captain = v.includes('(C)'), role = (v.match(/\((GK|Coach|Manager)\)/) || [])[1] || null;
+      return dbDo($('msg'), async () => {
+        if (captain) ok(await sb.from('squad').update({ captain: false }).eq('season', D.season.id).eq('team', r.team).neq('player', r.player));  // one captain per team
+        await write(sb.from('squad').update({ captain, role }).eq('season', D.season.id).eq('player', r.player));
+      }, 'Saved ✓');
     }
     render();
   };
@@ -443,8 +449,7 @@
     if (ld.ldel) {
       if (!canEdit($('msg')) || !confirm(`Delete this ${LOG[ld.ldel].what}?`)) return;
       if (editLog?.json === ld.lj) editLog = null;
-      store.set(ld.ldel, JSON.stringify(LOG[ld.ldel].all().filter(x => JSON.stringify(x) !== ld.lj)));
-      return applyMatch(), fillResultMatch(), render();
+      return dbDo($('msg'), () => write(sb.from(ld.ldel).delete().eq('id', JSON.parse(ld.lj).id)), 'Deleted ✓');
     }
     if (ld.ledit) {  // load the entry into its form; "Update" (or Save image) writes it back
       const L = LOG[ld.ledit], x = JSON.parse(ld.lj);
@@ -454,29 +459,36 @@
       fillPlayers(); set(L.who, x.name); set('minute', x.min); set('team', x.team); if (x.type) set('event', x.type);
       return fillPlayers(), render();
     }
-    if (ld.lsave) return logEntry(ld.lsave);
+    if (ld.lsave) return logEntry(ld.lsave, true);
     if (ld.lcancel !== undefined) return editLog = null, fillPlayers();
     if (e.target.id === 'naddrow') { setNoticeRows([...noticeRowsFromDom(), ['', '']]); renderNoticeRows(); return [...document.querySelectorAll('[data-nk]')].at(-1)?.focus(); }
     if (e.target.dataset.ndel) { const r = noticeRowsFromDom(); r.splice(e.target.dataset.ndel, 1); setNoticeRows(r); renderNoticeRows(); return render(); }
     // Squad editor buttons
-    const d = e.target.dataset, ps = squadList();
-    if (d.pdel) { if (confirm(`Remove ${ps[d.pdel].replace(/\(.*?\)/g, '').trim()}?`)) { ps.splice(d.pdel, 1); setSquad(ps); } }
-    if (d.pedit) {
-      const role = (ps[d.pedit].match(/\(.*\)/) || [''])[0], name = prompt('Player name', ps[d.pedit].replace(/\(.*?\)/g, '').trim());
-      if (name?.trim()) { ps[d.pedit] = `${name.trim()} ${role}`.trim(); setSquad(ps); }
+    const d = e.target.dataset, rows = val('team') && D ? sqRows(val('team')) : [], sm = $('msg');
+    if (d.pdel && confirm(`Remove ${rows[d.pdel].players.name} from the squad?`))
+      dbDo(sm, () => write(sb.from('squad').delete().eq('season', D.season.id).eq('player', rows[d.pdel].player)), 'Removed ✓');
+    if (d.pedit) {  // a rename keeps their goals: they're the same player
+      const name = prompt('Player name', rows[d.pedit].players.name)?.trim();
+      if (name) dbDo(sm, () => write(sb.from('players').update({ name }).eq('id', rows[d.pedit].player)), 'Renamed ✓');
     }
-    if (d.up && +d.up > 0) { ps.splice(d.up - 1, 0, ps.splice(d.up, 1)[0]); setSquad(ps); }
-    if (e.target.id === 'addp' && $('newp').value.trim()) { ps.push($('newp').value.trim()); setSquad(ps); $('newp').focus(); }
+    if (d.up && +d.up > 0) {
+      const order = [...rows]; order.splice(d.up - 1, 0, order.splice(d.up, 1)[0]);
+      dbDo(sm, () => Promise.all(order.map((r, i) => r.sort !== i + 1 && write(sb.from('squad').update({ sort: i + 1 }).eq('season', D.season.id).eq('player', r.player)))));
+    }
+    const name = e.target.id === 'addp' && $('newp').value.trim();
+    if (name) {
+      if (rows.some(r => r.players.name.toLowerCase() === name.toLowerCase())) { sm.className = 'msg err'; return sm.textContent = `${name} is already in this squad.`; }
+      dbDo(sm, async () => {
+        const [pl] = await write(sb.from('players').insert({ name }));
+        await write(sb.from('squad').insert({ season: D.season.id, team: tidOf(val('team')), player: pl.id, sort: rows.length + 1 }));
+        $('newp').value = '';
+      }, `${name} added ✓`);
+    }
   };
 
   // ---- Squad editor: rows with role, edit, move up, remove; every change is saved (and shared when signed in) ----
   const ROLES = [['', 'Player'], ['(C)', 'C'], ['(GK)', 'GK'], ['(C) (GK)', 'C + GK'], ['(Coach)', 'Coach'], ['(Manager)', 'Mgr']];
   const squadList = () => val('players').split('\n').map(s => s.trim()).filter(Boolean);
-  function setSquad(ps) {
-    set('players', ps.join('\n'));
-    if (val('team')) { const all = squads(); all[val('team')] = ps.join('|'); store.set('squads', Object.entries(all).map(([t, p]) => `${t}: ${p}`).join('\n')); }
-    renderSquad(); render();
-  }
   function renderSquad() {
     if (!$('sqlist')) return;
     $('sqlist').innerHTML = squadList().map((p, i) => {
@@ -614,33 +626,30 @@
     return `${c}\n\n#TSL #TamghasSuperLeague #Futsal #Gulmi`.trim();
   }
 
-  // Adds the goal/event in the form, or replaces the one being edited.
-  function logEntry(key) {
-    const L = LOG[key], msg = $('msg'), base = { n: val('pick'), team: val('team'), name: val(L.who), min: val('minute') };
-    const x = key === 'goals' ? base : { n: base.n, type: val('event'), team: base.team, name: base.name, min: base.min };
-    if (!x.n || !x.name || !x.team) { msg.className = 'msg err'; return msg.textContent = 'Pick the match and player first.'; }
-    if (!canEdit(msg)) return;
-    const all = L.all(), j = JSON.stringify(x);
-    if (editLog?.key === key) store.set(key, JSON.stringify(all.map(y => JSON.stringify(y) === editLog.json ? x : y)));
-    else if (!all.some(y => JSON.stringify(y) === j)) store.set(key, JSON.stringify([...all, x]));
-    msg.className = 'msg'; msg.textContent += editLog ? ` ${L.what[0].toUpperCase() + L.what.slice(1)} updated.` : ` ${L.what[0].toUpperCase() + L.what.slice(1)} logged.`;
+  // Adds the goal/event in the form, or updates the one being edited. fromButton = "Log … without image" (always a new entry);
+  // after Save image, the same player in the same match within 2 minutes is taken as the entry the console already logged.
+  function logEntry(key, fromButton = false) {
+    const L = LOG[key], msg = $('msg'), n = val('pick'), team = val('team'), name = val(L.who), min = val('minute');
+    if (!n || !name || !team) { msg.className = 'msg err'; return msg.textContent = 'Pick the match and player first.'; }
+    const og = name === 'Own Goal', player = og ? null : pidOf(team, name);
+    if (!og && !player) { msg.className = 'msg err'; return msg.textContent = `${name} isn't in the ${team} squad.`; }
+    const minute = min === '' ? null : Math.max(0, Math.min(60, +min));
+    const row = key === 'goals' ? { team: tidOf(team), player, og, minute } : { team: tidOf(team), player, kind: val('event'), minute };
+    const same = editLog?.key === key ? JSON.parse(editLog.json).id : !fromButton && L.all().find(x => x.n == n && x.team === team && x.name === name
+      && (key === 'goals' || x.type === val('event')) && (x.min === '' || min === '' || Math.abs(x.min - min) <= 2))?.id;
     editLog = null;
-    fillPlayers(); fillResultMatch();
+    const what = L.what[0].toUpperCase() + L.what.slice(1);
+    dbDo(msg, () => write(same ? sb.from(key).update(row).eq('id', same) : sb.from(key).insert({ ...row, match: mid(n) })),
+      `${msg.textContent.startsWith('Done') ? 'Done ✓ ' : ''}${what} ${same ? 'updated' : 'logged'}.`);
   }
 
   // ---- Results: kept on this phone; the table preview updates as you type ----
-  const saveResults = () => {
-    try { parseResults($('results').value); $('rmsg').className = 'msg'; $('rmsg').textContent = sync.user ? 'Saved & shared ✓' : 'Saved on this phone ✓'; }
-    catch (e) { $('rmsg').className = 'msg err'; $('rmsg').textContent = e.message; }
-    store.set('results', $('results').value);
-    if (kind === 'table') render();
-  };
   const canEdit = (el = $('rmsg')) => {
-    const why = sync.db && (sync.db.failed ? 'No connection to the live data, so this would not be saved. Reload when you have signal.' : !sync.user ? 'View only: tap "Sign in" at the top to make changes.' : !sync.ready && 'Still loading the live data, try again in a moment.');
+    const why = sync.failed ? 'No connection to the live data, so this would not be saved. Reload when you have signal.' : !sync.user ? 'View only: tap "Sign in" at the top to make changes.' : !sync.ready && 'Still loading the live data, try again in a moment.';
     return !why || (el.className = 'msg err', el.textContent = why, false);
   };
   const resultLines = () => $('results').value.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-  const removeLine = l => $('results').value = resultLines().filter(x => x !== l).join('\n') + '\n';
+  const fixtureOf = r => fixtures().find(m => samePair(r, m.home, m.away) && (isKO(m) ? m.g : '') === (r.round || ''));
   let editing = null;  // the result line being edited
   const endEdit = () => { editing = null; $('radd').textContent = 'Add result'; $('rcancel').hidden = true; };
   // Knockout results on top; the finished group stage folds away.
@@ -654,11 +663,18 @@
   }
   $('rlist').onclick = e => {
     const { edit, rdel } = e.target.closest('button')?.dataset || {};
-    if (rdel && canEdit() && confirm(`Delete this result?\n${rdel}`)) { removeLine(rdel); endEdit(); saveResults(); refreshResultMatches(); }
+    if (rdel && canEdit() && confirm(`Delete this result?\n${rdel}`)) {
+      const [r] = parseResults(rdel), id = mid(fixtureOf(r)?.n);
+      endEdit();
+      dbDo($('rmsg'), async () => {  // named scorers stay logged; only the typed-in (unknown) goals go
+        await write(sb.from('matches').update(r.pens ? { hp: null, ap: null } : { status: 'scheduled', hp: null, ap: null }).eq('id', id));
+        if (!r.pens) ok(await sb.from('goals').delete().eq('match', id).is('player', null).eq('og', false));
+      }, 'Result deleted ✓');
+    }
     if (edit) {
       const [r] = parseResults(edit);
       editing = edit;
-      $('rm').value = fixtures().find(m => samePair(r, m.home, m.away) && (r.round || '') === (isKO(m) ? m.g : ''))?.n || '';
+      $('rm').value = fixtureOf(r)?.n || '';
       $('rh').value = r.home.name; $('ra').value = r.away.name; boxesFrom('rb', `${r.hg}-${r.ag}`); $('rp').checked = r.pens; resultNames();
       $('radd').textContent = 'Update result'; $('rcancel').hidden = false;
       $('rm').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -683,12 +699,13 @@
   $('rh').onchange = $('ra').onchange = resultNames;
   // One result per match: a corrected score replaces the old line instead of counting twice.
   const roundOf = n => { const m = fixtures()[n - 1]; return m && isKO(m) ? m.g : ''; };
+  // The score is the goals: the database adds/removes "unknown scorer" goals to match a typed score, never named ones.
   function setResult(h, sc, a, pens = false, round = '') {
-    if (!canEdit()) return;
-    if (editing) { removeLine(editing); endEdit(); }
-    const same = l => { try { const [r] = parseResults(l); return r && r.pens === pens && (r.round || '') === round && samePair(r, h, a); } catch { return false; } };
-    $('results').value = $('results').value.split('\n').filter(l => !same(l)).join('\n').replace(/\n*$/, '\n') + `${round ? round + ': ' : ''}${h} ${sc} ${a}${pens ? ' (pens)' : ''}\n`;
-    saveResults(); store.set('pick', nextMatch()); refreshResultMatches();
+    const m = fixtureOf({ home: { name: h }, away: { name: a }, round }), el = $('rmsg');
+    if (!m) { el.className = 'msg err'; return el.textContent = `There's no ${round || 'group'} fixture ${h} v ${a}: add it in Fixtures first.`; }
+    const [x, y] = sc.split('-').map(Number), [hg, ag] = m.home === h ? [x, y] : [y, x], id = mid(m.n);
+    endEdit();
+    return dbDo(el, () => pens ? write(sb.from('matches').update({ hp: hg, ap: ag }).eq('id', id)) : rpc('set_result', { m: id, h: hg, a: ag }), 'Saved ✓');
   }
   $('radd').onclick = () => {
     const s = boxesTo('rb'), h = $('rh').value, a = $('ra').value;
@@ -700,18 +717,24 @@
   // ---- Fixtures: add / edit / move / delete. Times stay with their slot; logged goals follow their match. ----
   const ROUNDS = ['A', 'B', 'C', 'D', 'QF', 'SF', 'Final'];
   const to24 = t => { const m = String(t).match(/(\d+):(\d+)\s*(AM|PM)/i); return m ? `${String(+m[1] % 12 + (m[3].toUpperCase() === 'PM' ? 12 : 0)).padStart(2, '0')}:${m[2]}` : ''; };
-  const to12 = v => { if (!v) return ''; const [h, mi] = v.split(':').map(Number); return `${h % 12 || 12}:${String(mi).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
   let editingFx = null;  // match number being edited
-  function saveFixtures(list) {  // list items keep their old .n (null = new) so goals and the picked match can follow them
-    const remap = new Map(list.map((m, i) => [String(m.n), String(i + 1)]));
-    for (const key of ['goals', 'events']) {
-      const gs = LOG[key].all(), kept = gs.filter(g => remap.has(String(g.n))).map(g => ({ ...g, n: remap.get(String(g.n)) }));
-      if (JSON.stringify(kept) !== JSON.stringify(gs)) store.set(key, JSON.stringify(kept));
-    }
-    if (remap.has(String(store.get('pick')))) store.set('pick', remap.get(String(store.get('pick'))));
-    store.set('fixtures', '# Group, Home v Away, time — edited in the phone maker\n' + list.map(m => `${m.g}, ${m.home} v ${m.away}${m.time ? `, ${m.time}` : ''}`).join('\n') + '\n');
-    endFxEdit(); fillTeamSelects(); renderFixtures(); refreshResultMatches();
-    if (['goal', 'score', 'event', 'fixture', 'motm', 'fixtures', 'results'].includes(kind)) pick(kind);
+  // list = the fixtures in their new order; items keep their old .n (null = new). Goals belong to the match row, so they follow it.
+  function saveFixtures(list, done) {
+    const at = list.findIndex(m => m.n == store.get('pick'));
+    if (at >= 0) store.set('pick', at + 1);
+    endFxEdit();
+    return dbDo($('fmsg'), async () => {
+      const keep = new Set(list.map(m => m.n).filter(Boolean)), gone = D.matches.filter((x, i) => !keep.has(i + 1)), ids = [];
+      if (gone.length) await write(sb.from('matches').delete().in('id', gone.map(x => x.id)));  // their goals/events go too (confirmed)
+      for (const [i, m] of list.entries()) {
+        const row = { round: isKO(m) ? m.g : 'Group', home: tidOf(m.home), away: tidOf(m.away), kickoff: to24(m.time) || null }, old = m.n && D.matches[m.n - 1];
+        if (!old) { ids.push((await write(sb.from('matches').insert({ ...row, season: D.season.id, n: 1000 + i })))[0].id); continue; }
+        if (old.round !== row.round || old.home !== row.home || old.away !== row.away || (old.kickoff || '').slice(0, 5) !== (row.kickoff || ''))
+          await write(sb.from('matches').update(row).eq('id', old.id));
+        ids.push(old.id);
+      }
+      await rpc('set_order', { ids });
+    }, done);
   }
   const endFxEdit = () => {
     editingFx = null; $('fadd').textContent = 'Add fixture'; $('fcancel').hidden = true;
@@ -733,8 +756,7 @@
   document.addEventListener('click', e => {
     if (e.target.dataset.mkround === undefined) return;
     const nr = nextRound(); if (!nr || !canEdit($('fmsg'))) return;
-    saveFixtures([...fixtures(), ...nr]);
-    $('fmsg').className = 'msg'; $('fmsg').textContent = `${nr[0].g === 'Final' ? 'Final' : 'Semi-finals'} created ✓`;
+    saveFixtures([...fixtures(), ...nr], `${nr[0].g === 'Final' ? 'Final' : 'Semi-finals'} created ✓`);
   });
 
   function renderFixtures() {
@@ -759,11 +781,11 @@
     if (d.fup && d.fup > 1) {  // swap the matchups, keep the kick-off times in their slots
       const i = d.fup - 1, [a, b] = [list[i - 1], list[i]];
       [a.time, b.time] = [b.time, a.time]; list[i - 1] = b; list[i] = a;
-      saveFixtures(list);
+      saveFixtures(list, 'Moved ✓');
     }
     if (d.fdel) {
       const m = list[d.fdel - 1], ng = matchGoals(m.n).length + events().filter(x => x.n == m.n).length;
-      if (confirm(`Delete match ${m.n}: ${m.home} v ${m.away}?${ng ? `\nIts ${ng} logged goal(s)/event(s) will be deleted too.` : ''}`)) saveFixtures(list.filter(x => x !== m));
+      if (confirm(`Delete match ${m.n}: ${m.home} v ${m.away}?${ng ? `\nIts ${ng} logged goal(s)/event(s) will be deleted too.` : ''}`)) saveFixtures(list.filter(x => x !== m), 'Deleted ✓');
     }
   };
   $('fadd').onclick = () => {
@@ -771,9 +793,9 @@
     if (!h || !a || h === a) { fmsg.className = 'msg err'; return fmsg.textContent = 'Pick two different teams.'; }
     if (!canEdit(fmsg)) return;
     const list = fixtures(), m = { n: editingFx, g: $('fg').value, home: h, away: a, time: to12($('ft').value) };
+    const msg = editingFx ? 'Fixture updated ✓' : 'Fixture added ✓';
     if (editingFx) list[editingFx - 1] = m; else list.push(m);
-    fmsg.className = 'msg'; fmsg.textContent = editingFx ? 'Fixture updated ✓' : 'Fixture added ✓';
-    saveFixtures(list);
+    saveFixtures(list, msg);
   };
   $('fcancel').onclick = () => { endFxEdit(); renderFixtures(); };
 
@@ -787,26 +809,19 @@
   }
   $('grlist').onchange = e => {
     if (!e.target.dataset.gmove || !canEdit($('grmsg'))) return renderGroups();
-    const gs = parseGroups(grText()), name = e.target.dataset.gmove;
-    gs.forEach(g => g.teams = g.teams.filter(t => t.name !== name));
-    gs[e.target.value].teams.push(team(name));
-    store.set('groups', gs.map(g => `${g.name}\n${g.teams.map(t => t.name).join('\n')}`).join('\n\n') + '\n');
-    $('grmsg').className = 'msg'; $('grmsg').textContent = `${name} moved to ${gs[e.target.value].name} ✓`;
-    renderGroups();
-    if (['table', 'format'].includes(kind)) pick(kind);
+    const g = parseGroups(grText())[e.target.value], name = e.target.dataset.gmove;
+    dbDo($('grmsg'), () => write(sb.from('season_teams').update({ grp: g.name.split(/\s+/).pop() }).eq('season', D.season.id).eq('team', tidOf(name))), `${name} moved to ${g.name} ✓`);
   };
 
-  Promise.all(['matchday/groups.txt', 'matchday/fixtures.txt', 'matchday/results.txt', 'teamlist/squads.txt'].map(text)).then(([g, f, r, sq]) => {
-    Object.assign(files, { groups: g, fixtures: f, results: r, squads: sq });
-    $('results').value = store.get('results') ?? r;
-    $('rbox').innerHTML = boxRow('rb', 'h') + boxRow('rb', 'a');
-    fillTeamSelects();
-    $('fg').innerHTML = ROUNDS.map(r => `<option value="${r}">${r}</option>`).join('');
-    endFxEdit(); renderFixtures(); renderGroups();
-    refreshResultMatches();
-    pick('goal'); tab(local.get('tab') || 'make');
-    startSync();
-  });
+  // Start from this phone's last copy (works offline), then the database takes over.
+  $('results').value = store.get('results') ?? '';
+  $('rbox').innerHTML = boxRow('rb', 'h') + boxRow('rb', 'a');
+  fillTeamSelects();
+  $('fg').innerHTML = ROUNDS.map(r => `<option value="${r}">${r}</option>`).join('');
+  endFxEdit(); renderFixtures(); renderGroups();
+  refreshResultMatches();
+  pick('goal'); tab(local.get('tab') || 'make');
+  startSync();
 
   const status = (t, cls = '') => { $('sync').textContent = t; $('sync').className = cls; };
   // Team dropdowns outside the graphic form; refreshed when fixtures change (knockouts narrow the list).
@@ -814,40 +829,33 @@
     for (const id of ['rh', 'ra', 'fh', 'fa']) { const v = $(id).value; $(id).innerHTML = teamOptions(); $(id).value = v; }
   }
 
-  // ---- Live sharing: every phone sees the same results/goals/squads; only the signed-in organiser can change them ----
+  // ---- Live data: every phone sees the same season; only signed-in editors can change it ----
+  const label = () => sync.user ? 'Live · organiser ✓' : 'Live · view only — Sign in';
+  function apply(d) {  // a fresh copy of the season arrived (first load, or any phone changed something)
+    D = d; sync.ready = true; sync.failed = false;
+    for (const k of SHARED) local.set(k, d.text[k]);
+    status(label(), sync.user && 'ok');
+    if (document.activeElement !== $('results')) $('results').value = d.text.results;
+    fillTeamSelects(); refreshResultMatches(); if (!editingFx) endFxEdit(); renderFixtures(); renderGroups();
+    if (kind === 'squad' && val('team')) { set('players', (squads()[val('team')] || '').split('|').join('\n')); renderSquad(); }
+    if ($('glog')) fillPlayers();
+    if (['table', 'results', 'scorers', 'fixtures', 'format', 'bracket'].includes(kind) && !$('png').innerHTML) pick(kind);  // keep a saved image on screen
+    else if (kind === 'squad' && !$('png').innerHTML) render();
+  }
+  const refresh = () => loadSeason().then(apply, () => {});
   function startSync() {
     if (location.search.includes('nosync')) return;  // ?nosync = local test without touching live data
-    if (typeof FIREBASE === 'undefined' || !window.firebase) {  // scripts didn't load (bad signal): block edits, they'd be lost on the next sync
-      sync.db = { failed: true };
-      return status('No connection — reload to edit', 'bad');
-    }
-    firebase.initializeApp(FIREBASE);
-    sync.db = firebase.database().ref('tsl');
-    const auth = firebase.auth();
-    let remote = {};
-    const label = () => sync.user ? 'Live · organiser ✓' : 'Live · view only — Sign in';
-    const seed = () => sync.user && sync.ready && SHARED.forEach(k => remote[k] == null && local.get(k) != null && sync.db.child(k).set(local.get(k)));
-    auth.onAuthStateChanged(u => { sync.user = u; status(label(), u && 'ok'); seed(); });
-    // One listener per shared key (not the whole tsl tree, which now holds the history too).
-    SHARED.forEach(k => sync.db.child(k).on('value', snap => {
-      remote[k] = snap.val();
-      if (remote[k] != null) local.set(k, remote[k]);
-      if (!sync.ready && !SHARED.every(x => x in remote)) return;  // wait until every key has loaded once
-      sync.ready = true;
-      seed();
-      if (document.activeElement !== $('results')) $('results').value = local.get('results') ?? files.results;
-      fillTeamSelects(); refreshResultMatches(); if (!editingFx) endFxEdit(); renderFixtures(); renderGroups();
-      if ($('glog')) fillPlayers();
-      if (['table', 'results', 'scorers', 'fixtures', 'format'].includes(kind) && !$('png').innerHTML) pick(kind);  // keep a saved image on screen
-    }));
-    firebase.database().ref('.info/connected').on('value', c => c.val() ? status(label(), sync.user && 'ok') : status('Offline — will sync when back', 'bad'));
-    $('sync').onclick = () => sync.user ? confirm('Sign out of organiser mode on this phone?') && auth.signOut() : $('login').showModal();
+    if (!window.supabase) { sync.failed = true; return status('No connection — reload to edit', 'bad'); }  // scripts didn't load (bad signal)
+    onSeason(apply, () => { if (!sync.ready) status('Offline — showing this phone\'s copy', 'bad'); });
+    onUser(u => { sync.user = u; status(sync.ready ? label() : 'Loading…', u && sync.ready && 'ok'); });
+    addEventListener('offline', () => status('Offline — changes won\'t save', 'bad'));
+    addEventListener('online', () => { status(label(), sync.user && 'ok'); refresh(); });
+    $('sync').onclick = () => sync.user ? confirm('Sign out of organiser mode on this phone?') && signOut() : $('login').showModal();
     $('loginform').onsubmit = e => {
       if (e.submitter?.value !== 'ok') return;
       e.preventDefault();
       const f = e.target.elements;
-      auth.signInWithEmailAndPassword(f.email.value.trim(), f.password.value)
-        .then(() => $('login').close()).catch(err => $('loginmsg').textContent = err.message);
+      signIn(f.email.value.trim(), f.password.value).then(() => $('login').close()).catch(err => $('loginmsg').textContent = err.message);
     };
   }
 </script>

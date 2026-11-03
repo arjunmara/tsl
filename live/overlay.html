@@ -89,10 +89,9 @@
 <div class="ad" id="ad"><span class="bebas">Proud Sponsor</span><img id="adimg" alt=""><div class="cap"><b class="bebas" id="adname"></b><i id="adline"></i></div></div>
 </div>
 <script src="../matchday/league.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="../firebase-config.js"></script>
-<script src="live.js?v=6"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../db.js"></script>
+<script src="live.js?v=7"></script>
 <script>
   const $ = id => document.getElementById(id);
   const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -185,6 +184,7 @@
       requestAnimationFrame(() => $('track').style.animationDuration = $('track').scrollWidth / 2 / 90 + 's');  // ~90 px/s
     });
   }
+  loadSeason().catch(() => {});  // this season's team codes for the bug
   onLive(render);
 </script>
 </body>

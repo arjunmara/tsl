@@ -7,7 +7,8 @@
 !/logo.jpg
 !/14starlogo.jpg
 !/sync.py
-!/firebase-config.js
+!/db.js
+!/.github/
 !/matchday/
 !/teamlist/
 !/live/

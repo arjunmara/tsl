@@ -1,114 +1,76 @@
 #!/usr/bin/env python3
-"""Keep the laptop files and the phone maker (Firebase) in sync.
+"""Copy the database (Supabase) down to the laptop. Read-only: all editing happens in the phone maker / control page.
 
-  ./sync.py login     sign in once with the organiser email/password (needed to upload)
-  ./sync.py           pull + push once
-  ./sync.py watch     keep syncing: phone changes land in the files within a second,
-                      file edits go up within ~2s (live/server.py runs this for you after login)
-
-Last change wins. Reading is public, so make.py pulls the latest before every render even without login.
+  ./sync.py           write the latest season into matchday/*.txt, goals.json, events.json, teamlist/squads.txt
+                      (what make.py renders from) and every public table into seasons/db.json (the nightly backup)
+  ./sync.py N         the same for season N
 """
-import getpass, json, pathlib, sys, threading, time, urllib.request
+import json, pathlib, sys, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent
-DB = 'https://tamghassuperleague-4242a-default-rtdb.asia-southeast1.firebasedatabase.app/tsl'
-KEY = 'AIzaSyAicg1RfR7xmmfdyxDhWD0wib-TjVLO6Bs'  # public web API key (same as maker.html)
-FILES = {'results': 'matchday/results.txt', 'fixtures': 'matchday/fixtures.txt', 'groups': 'matchday/groups.txt',
-         'squads': 'teamlist/squads.txt', 'goals': 'matchday/goals.json', 'events': 'matchday/events.json'}
-TOKEN_FILE = pathlib.Path.home() / '.config' / 'tsl-sync.json'
-_auth = {}  # idToken + expiry, refreshed from the saved refresh token
-_wrote = {}  # what we last wrote/read per key, so our own writes don't bounce back as "edits"
+URL = 'https://bicxaypaaawrvzfeptjp.supabase.co/rest/v1'
+KEY = 'sb_publishable_1uLQL2J9c3_eVAnplpvslg_yGWPZvBR'  # public read key (same as db.js)
+TABLES = ['seasons', 'teams', 'players', 'season_teams', 'squad', 'matches', 'goals', 'events', 'sponsors', 'live']
 
 
-def http(url, data=None, method=None):
-    req = urllib.request.Request(url, None if data is None else json.dumps(data).encode(), method=method,
-                                 headers={'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=15) as r:
+def get(table):
+    req = urllib.request.Request(f'{URL}/{table}?select=*&order={"id" if table not in ("season_teams", "squad") else "season"}',
+                                 headers={'apikey': KEY, 'Authorization': f'Bearer {KEY}'})
+    with urllib.request.urlopen(req, timeout=20) as r:
         return json.load(r)
 
 
-def token():
-    if _auth.get('exp', 0) > time.time() + 60:
-        return _auth['id']
-    if not TOKEN_FILE.exists():
-        return None
-    r = http(f'https://securetoken.googleapis.com/v1/token?key={KEY}',
-             {'grant_type': 'refresh_token', 'refresh_token': json.loads(TOKEN_FILE.read_text())['refresh']})
-    _auth.update(id=r['id_token'], exp=time.time() + int(r['expires_in']))
-    return _auth['id']
+def to12(t):
+    if not t: return ''
+    h, m = map(int, t.split(':')[:2])
+    return f'{h % 12 or 12}:{m:02d} {"AM" if h < 12 else "PM"}'
 
 
-def login():
-    email, pw = input('Organiser email: ').strip(), getpass.getpass('Password: ')
-    r = http(f'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={KEY}',
-             {'email': email, 'password': pw, 'returnSecureToken': True})
-    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN_FILE.write_text(json.dumps({'refresh': r['refreshToken']}))
-    TOKEN_FILE.chmod(0o600)
-    print('Signed in ✓ — uploads enabled.')
+def texts(db, season=None):
+    """The season in the text/JSON shapes the templates read. Same rules as loadSeason() in db.js."""
+    sid = season or db['seasons'][-1]['id']
+    st = [x for x in db['season_teams'] if x['season'] == sid]
+    T = {t['id']: t for t in db['teams']}
+    grp = {x['team']: x['grp'] for x in st}
+    teams = [T[i] for i in sorted(grp)]
+    names = {p['id']: p['name'] for p in db['players']}
+    squad = sorted((x for x in db['squad'] if x['season'] == sid), key=lambda x: x['sort'])
+    ms = sorted((m for m in db['matches'] if m['season'] == sid), key=lambda m: m['n'])
+    pos = {m['id']: str(i + 1) for i, m in enumerate(ms)}
+    name = lambda i: T[i]['name']
+    pre = lambda m: '' if m['round'] == 'Group' else m['round'] + ': '
+    minute = lambda x: '' if x['minute'] is None else str(x['minute'])
+    results = []
+    for m in ms:
+        if m['status'] != 'done': continue
+        results.append(f"{pre(m)}{name(m['home'])} {m['hg']}-{m['ag']} {name(m['away'])}")
+        if m['hp'] is not None: results.append(f"{pre(m)}{name(m['home'])} {m['hp']}-{m['ap']} {name(m['away'])} (pens)")
+    return {
+        'matchday/fixtures.txt': '# Group, Home v Away, time\n' + ''.join(
+            f"{grp.get(m['home']) or '' if m['round'] == 'Group' else m['round']}, {name(m['home'])} v {name(m['away'])}"
+            f"{', ' + to12(m['kickoff']) if m['kickoff'] else ''}\n" for m in ms),
+        'matchday/results.txt': '\n'.join(results) + '\n',
+        'matchday/groups.txt': '\n\n'.join(f'Group {g}\n' + '\n'.join(name(x['team']) for x in sorted(st, key=lambda x: (x.get('sort', 0), x['team'])) if x['grp'] == g)
+                                           for g in sorted({x['grp'] for x in st if x['grp']})) + '\n',
+        'teamlist/squads.txt': ''.join(f"{t['name']}: " + '|'.join(names[x['player']] + (' (C)' if x['captain'] else '') + (f" ({x['role']})" if x['role'] else '')
+                                                               for x in squad if x['team'] == t['id']) + '\n' for t in teams),
+        'matchday/goals.json': json.dumps([{'id': g['id'], 'n': pos[g['match']], 'team': name(g['team']),
+                                            'name': 'Own Goal' if g['og'] else names.get(g['player'], ''), 'min': minute(g)}
+                                           for g in db['goals'] if g['match'] in pos], separators=(',', ':')),
+        'matchday/events.json': json.dumps([{'id': e['id'], 'n': pos[e['match']], 'type': e['kind'], 'team': name(e['team']),
+                                             'name': names[e['player']], 'min': minute(e)} for e in db['events'] if e['match'] in pos], separators=(',', ':')),
+    }
 
 
-def read(key):
-    f = ROOT / FILES[key]
-    return f.read_text() if f.exists() else None
-
-
-def pull(remote=None):
-    """Write every key Firebase has into its file. Returns the remote dict."""
-    remote = http(f'{DB}.json') if remote is None else remote
-    for key, val in (remote or {}).items():
-        if key in FILES and isinstance(val, str) and val != read(key):
-            (ROOT / FILES[key]).write_text(val)
-            print(f'  ← {FILES[key]} (from phone)')
-        if key in FILES:
-            _wrote[key] = val
-    return remote or {}
-
-
-def push(keys=FILES):
-    if not keys:
-        return
-    t = token()
-    if not t:
-        return print('  (not signed in: run ./sync.py login to upload laptop edits)')
-    for key in keys:
-        val = read(key)
-        if val is not None and val != _wrote.get(key):
-            http(f'{DB}/{key}.json?auth={t}', val, 'PUT')
-            http(f'{DB}/history.json?auth={t}', {'k': key, 'v': val, 'at': {'.sv': 'timestamp'}, 'by': 'laptop'}, 'POST')
-            _wrote[key] = val
-            print(f'  → {FILES[key]} (to phone)')
-
-
-def once():
-    remote = pull()
-    push([k for k in FILES if k not in remote])  # first run: upload files the phone doesn't have yet
-
-
-def watch():
-    once()
-
-    def stream():  # Firebase streams every change as server-sent events; re-pull on each one
-        while True:
-            try:
-                req = urllib.request.Request(f'{DB}.json', headers={'Accept': 'text/event-stream'})
-                with urllib.request.urlopen(req, timeout=90) as r:
-                    for line in r:
-                        if line.startswith(b'data:') and line.strip() not in (b'data: null', b'data:null'):
-                            pull()
-            except Exception as e:
-                print('  sync stream reconnecting:', e)
-                time.sleep(3)
-
-    threading.Thread(target=stream, daemon=True).start()
-    while True:  # ponytail: 2s polling of 5 small files; inotify if this ever matters
-        time.sleep(2)
-        try:
-            push([k for k in FILES if read(k) is not None and read(k) != _wrote.get(k)])
-        except Exception as e:
-            print('  sync upload failed, will retry:', e)
+def pull(season=None):
+    db = {t: get(t) for t in TABLES}
+    (ROOT / 'seasons/db.json').write_text(json.dumps(db, indent=1, ensure_ascii=False) + '\n')
+    for f, text in texts(db, season).items():
+        if (ROOT / f).exists() and (ROOT / f).read_text() == text: continue
+        (ROOT / f).write_text(text)
+        print('  ←', f)
 
 
 if __name__ == '__main__':
-    cmd = sys.argv[1] if len(sys.argv) > 1 else 'once'
-    {'login': login, 'once': once, 'watch': watch}.get(cmd, lambda: sys.exit(__doc__))()
+    if len(sys.argv) > 1 and not sys.argv[1].isdigit(): sys.exit(__doc__)
+    pull(int(sys.argv[1]) if len(sys.argv) > 1 else None)

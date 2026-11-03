@@ -65,6 +65,21 @@
   .lrow { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
   .lrow span { flex: 1; font-weight: 700; font-size: 14px; }
   .lrow button { min-width: 52px; padding: 10px; }
+  .sheet { background: var(--card); color: #fff; border: 1px solid var(--line); border-radius: 16px; width: min(460px, 94vw); max-height: 86vh; padding: 14px; }
+  .sheet::backdrop { background: rgba(0,0,0,.6); }
+  .sheet h3 { margin: 0 0 10px; font-size: 18px; }
+  .sheet .pl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+  .sheet .pl button { min-height: 56px; font-size: 15px; }
+  .sheet .pl button.cur { outline: 3px solid var(--orange); }
+  .sheet input { width: 80px; padding: 10px; font: inherit; font-size: 20px; text-align: center; border-radius: 10px; border: 1px solid var(--line); }
+  .kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+  .kinds button { min-height: 40px; padding: 8px 10px; font-size: 13px; }
+  .log div { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .log div:last-child { border: 0; }
+  .log span { flex: 1; font-weight: 700; font-size: 15px; }
+  .log span i { font-style: normal; color: var(--muted); font-weight: 600; }
+  .log span.unknown { color: #ffb347; }
+  .log button { min-height: 40px; padding: 6px 12px; }
   .err { display: none; margin: 10px 14px 0; padding: 10px; border-radius: 10px; background: #b00020; font-weight: 700; }
   .hint { font-size: 13px; color: var(--muted); margin: 6px 2px 0; }
 
@@ -97,13 +112,23 @@
   </form>
 </dialog>
 
+<dialog class="sheet" id="sheet">
+  <h3 id="shead"></h3>
+  <div class="kinds" id="skinds"></div>
+  <label style="display:flex;align-items:center;gap:10px;margin-top:8px;font-weight:700">Minute <input id="smin" type="number" inputmode="numeric" min="0" max="60"></label>
+  <div class="pl" id="splayers"></div>
+  <button style="width:100%" onclick="$('sheet').close()">Cancel</button>
+</dialog>
+
 <main>
   <section data-tab="match">
     <h2>Score</h2>
     <div class="row">
-      <div class="side"><div class="name"><i id="hdot"></i><span id="hn"></span></div><button class="plus bebas" onclick="add('hs', 1)">+1</button><button class="minus" onclick="add('hs', -1)">Undo −1</button></div>
-      <div class="side"><div class="name"><i id="adot"></i><span id="an"></span></div><button class="plus bebas" onclick="add('as', 1)">+1</button><button class="minus" onclick="add('as', -1)">Undo −1</button></div>
+      <div class="side"><div class="name"><i id="hdot"></i><span id="hn"></span></div><button class="plus bebas" onclick="sheet('goal', s.home)">Goal</button><button class="minus" onclick="sheet('event', s.home)">🟨 Card / event</button></div>
+      <div class="side"><div class="name"><i id="adot"></i><span id="an"></span></div><button class="plus bebas" onclick="sheet('goal', s.away)">Goal</button><button class="minus" onclick="sheet('event', s.away)">🟨 Card / event</button></div>
     </div>
+    <p class="hint">A goal updates the stream, the result, the scorers and the table at once. Wrong one? Fix or delete it below.</p>
+    <div class="card log" id="log" style="margin-top:8px"></div>
 
     <h2>Clock</h2>
     <button class="start" id="start" onclick="send({clock: s.running ? 'stop' : 'start'})">Start</button>
@@ -134,9 +159,8 @@
     <h2>New match</h2>
     <div class="card">
       <select id="fx"></select>
-      <div class="row" style="margin-top:8px"><select id="home"></select><select id="away"></select></div>
-      <button class="on" style="width:100%;margin-top:8px" onclick="newMatch()">Start new match (0-0, clock 00:00)</button>
-      <p class="hint">Puts "Starting Soon" on air until you start the clock.</p>
+      <button class="on" style="width:100%;margin-top:8px" onclick="newMatch()">Put this match on air (clock 00:00)</button>
+      <p class="hint">Puts "Starting Soon" on air until you start the clock. Missing a match? Add it in the maker's Fixtures tab.</p>
     </div>
     <h2>Line up the overlay in PRISM</h2>
     <div class="card">
@@ -164,11 +188,9 @@
 </nav>
 
 <script src="../matchday/league.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="../firebase-config.js"></script>
-<script src="live.js?v=6"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../db.js"></script>
+<script src="live.js?v=7"></script>
 <script>
   const $ = id => document.getElementById(id);
   const PERIODS = ['1st Half', 'Half Time', '2nd Half', 'Full Time', 'Penalties'];
@@ -177,7 +199,7 @@
   // Scenes on the stream. Auto: score bug in play, Break screen at Half Time / Full Time.
   const SCENES = [['auto', 'Auto'], ['soon', 'Starting Soon'], ['match', 'Score bug'], ['break', 'Break']];
   $('scenes').innerHTML = SCENES.map(([k, l]) => `<button data-scene="${k}" onclick="send({scene: '${k}'})">${l}</button>`).join('');
-  $('periods').innerHTML = PERIODS.map(p => `<button onclick="send({period: '${p}'})">${p}</button>`).join('');
+  $('periods').innerHTML = PERIODS.map(p => `<button onclick="period('${p}')">${p}</button>`).join('');
 
   // Stream preview on/off (remembered on this phone).
   const pv = on => { $('pv').hidden = !on; $('eye').classList.toggle('on', on); try { localStorage.setItem('pv', on ? '1' : '0'); } catch {} };
@@ -203,8 +225,6 @@
     document.querySelectorAll('[data-go]').forEach(b => b.classList.toggle('on', b.dataset.go === t));
     scrollTo(0, 0);
   };
-  const opts = TEAMS.map(t => `<option>${t.name}</option>`).join('');
-  $('home').innerHTML = $('away').innerHTML = opts;
 
   function render(next) {
     s = next;
@@ -221,7 +241,7 @@
     [...$('scenes').children].forEach(b => b.classList.toggle('on', b.dataset.scene === (s.scene || 'auto')));
     $('show').classList.toggle('on', s.show);
     [...$('periods').children].forEach(b => b.classList.toggle('on', b.textContent === s.period));
-    renderKits();
+    renderKits(); if (d) renderLog();
     $('hdot').style.background = s.hc || 'transparent'; $('adot').style.background = s.ac || 'transparent';
     // What viewers see right now, as chips under the score.
     const scene = s.scene && s.scene !== 'auto' ? s.scene : /Half Time|Full Time/.test(s.period) ? 'break' : 'match';
@@ -246,61 +266,88 @@
     `<button data-src="${x.ad}" onclick="send({ad: {src: this.dataset.src, until: serverNow() + ${AD_SECONDS * 1000}}})"><img src="${x.ad}" alt="" loading="lazy">${x.name === '-' ? 'Image' : x.name}</button>`).join('')
     || '<p style="color:var(--muted);grid-column:1/-1">No ads yet — add them to Sponsors/sponsors.txt.</p>');
 
-  // Writes go to Firebase (organiser only); every screen showing the overlay updates within a second.
-  const auth = firebase.auth();
+  // Sign-in (editor accounts in Supabase). Writes from anyone else are refused by the database.
   let user = null;
-  auth.onAuthStateChanged(u => { user = u; $('who').textContent = u ? '✓ Signed in' : 'Sign in'; $('who').classList.toggle('on', !u); });
-  $('who').onclick = () => user ? confirm('Sign out?') && auth.signOut() : $('login').showModal();
+  onUser(u => { user = u; $('who').textContent = u ? '✓ Signed in' : 'Sign in'; $('who').classList.toggle('on', !u); });
+  $('who').onclick = () => user ? confirm('Sign out?') && signOut() : $('login').showModal();
   $('loginform').onsubmit = e => {
     e.preventDefault();
-    auth.signInWithEmailAndPassword(e.target.email.value.trim(), e.target.password.value)
-      .then(() => $('login').close()).catch(err => $('loginmsg').textContent = err.message);
+    signIn(e.target.email.value.trim(), e.target.password.value).then(() => $('login').close()).catch(err => $('loginmsg').textContent = err.message);
   };
-  let offline;  // only warn after a few seconds: every page load starts "disconnected" for a moment
-  firebase.database().ref('.info/connected').on('value', c => {
-    clearTimeout(offline);
-    if (c.val()) return $('err').style.display = 'none';
-    offline = setTimeout(() => { $('err').textContent = 'No connection — changes will send when the signal is back.'; $('err').style.display = 'block'; }, 4000);
-  });
-  function send(patch) {
-    if (!user) return $('login').showModal();
-    return patchLive(s, patch).catch(e => { $('err').textContent = e.message; $('err').style.display = 'block'; });
-  }
+  const fail = e => { $('err').textContent = e.message || e; $('err').style.display = 'block'; };
+  addEventListener('offline', () => fail('No connection: changes won\'t save until the signal is back.'));
+  addEventListener('online', () => $('err').style.display = 'none');
+  const guard = f => (...a) => user ? Promise.resolve(f(...a)).then(() => $('err').style.display = 'none', fail) : $('login').showModal();
+  const send = guard(patch => patchLive(s, patch));
 
-  // Pick the match from the fixtures list (same list as the phone maker).
-  const fixtures = text => text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map((l, i) => {
-    const [g, vs, time = ''] = l.split(',').map(x => x.trim()), [h, a] = vs.split(/\s+v\s+/);
-    return { n: i + 1, g, home: team(h).name, away: team(a).name, time };
+  // ---- Season data (fixtures, squads, goals) from the database, refreshed on every change from any phone ----
+  let d = null;
+  const tid = name => d.teams.find(t => t.name === name)?.id;
+  const onAir = () => d?.matches.find(m => m.id === s.match);
+  const tag = (m, i) => m.round === 'Group' ? `${i + 1}.` : m.round === 'Final' ? 'Final' : m.round + (d.matches.filter(x => x.round === m.round && x.n <= m.n).length);
+  onSeason(next => {
+    d = next;
+    const keep = $('fx').value, todo = d.matches.find(m => m.status !== 'done');
+    $('fx').innerHTML = d.matches.map((m, i) => `<option value="${m.id}">${tag(m, i)} ${m.kickoff ? to12(m.kickoff) + ' · ' : ''}${d.T[m.home].code} v ${d.T[m.away].code}${m.status === 'done' ? ' ✓' : ''}</option>`).join('');
+    $('fx').value = keep || s.match || todo?.id || '';
+    renderLog();
+  }, fail);
+
+  // This match's goals and events, newest first. Tap ✎ to fix the scorer/minute, ✕ to delete.
+  let logKey;
+  function renderLog() {
+    const m = onAir();
+    const key = JSON.stringify([m, d?.goals.filter(g => g.match === m?.id), d?.events.filter(e => e.match === m?.id)]);
+    if (key === logKey) return;  // render() runs 4x a second
+    logKey = key;
+    if (!m) return $('log').innerHTML = '<p class="hint">No match on air: pick one in Setup.</p>';
+    const who = x => x.og ? 'Own goal' : d.P[x.player] || '';
+    const rows = [...d.goals.filter(g => g.match === m.id).map(g => ({ ...g, t: 'goals', icon: '⚽' })),
+                  ...d.events.filter(e => e.match === m.id).map(e => ({ ...e, t: 'events', icon: { 'Yellow Card': '🟨', 'Red Card': '🟥', 'Second Yellow': '🟨🟥', 'Penalty Missed': '❌', 'Penalty Saved': '🧤', 'Injury': '🩹' }[e.kind] }))]
+      .sort((x, y) => (y.minute ?? -1) - (x.minute ?? -1) || y.id - x.id);
+    $('log').innerHTML = rows.map(x => `<div><span class="${who(x) ? '' : 'unknown'}">${x.icon} ${x.minute != null ? x.minute + "' " : ''}${esc(who(x) || 'Unknown scorer — tap ✎')}
+        <i>${d.T[x.team].code}${x.kind && x.kind !== 'Yellow Card' && x.kind !== 'Red Card' ? ' · ' + x.kind : ''}</i></span>
+        <button onclick="sheet('${x.t === 'goals' ? 'goal' : 'event'}', '${esc(d.T[x.team].name)}', ${x.id})" aria-label="Fix">✎</button>
+        <button onclick="del('${x.t}', ${x.id})" aria-label="Delete">✕</button></div>`).join('') || '<p class="hint" style="margin:0">No goals yet.</p>';
+  }
+  const del = guard((t, id) => confirm(t === 'goals' ? 'Delete this goal? The score goes down by one.' : 'Delete this event?') && write(sb.from(t).delete().eq('id', id)));
+
+  // Sheet: who scored / got carded. New entries take the minute from the match clock.
+  const KINDS = ['Yellow Card', 'Red Card', 'Second Yellow', 'Penalty Missed', 'Penalty Saved', 'Injury'];
+  let sh = {};
+  function sheet(what, teamName, id) {
+    if (!user) return $('login').showModal();
+    const m = onAir(); if (!m) return alert('Pick the match in Setup first.');
+    const t = tid(teamName), old = id && d[what === 'goal' ? 'goals' : 'events'].find(x => x.id === id);
+    sh = { what, t, id, kind: old?.kind || 'Yellow Card' };
+    $('shead').textContent = `${old ? 'Fix' : what === 'goal' ? '⚽ Goal' : 'Card / event'} · ${teamName}`;
+    $('smin').value = old ? old.minute ?? '' : Math.min(60, Math.floor(s.clock / 60) + 1);
+    $('skinds').innerHTML = what === 'event' ? KINDS.map(k => `<button class="${k === sh.kind ? 'on' : ''}" onclick="sh.kind='${k}';[...this.parentNode.children].forEach(b=>b.classList.toggle('on',b===this))">${k}</button>`).join('') : '';
+    const squad = d.squad.filter(x => x.team === t && x.role !== 'Coach' && x.role !== 'Manager');
+    $('splayers').innerHTML = squad.map(x => `<button class="${old?.player === x.player ? 'cur' : ''}" onclick="save(${x.player})">${esc(x.players.name)}${x.role === 'GK' ? ' 🧤' : ''}</button>`).join('')
+      + (what === 'goal' ? `<button class="${old?.og ? 'cur' : ''}" onclick="save(null, true)">Own goal (by the other team)</button><button onclick="save(null)">Don't know yet</button>` : '');
+    $('sheet').showModal();
+  }
+  const save = guard((player, og = false) => {
+    const minute = $('smin').value === '' ? null : Math.max(0, Math.min(60, +$('smin').value)), table = sh.what === 'goal' ? 'goals' : 'events';
+    const row = sh.what === 'goal' ? { team: sh.t, player, og, minute } : { team: sh.t, player, kind: sh.kind, minute };
+    $('sheet').close();
+    return write(sh.id ? sb.from(table).update(row).eq('id', sh.id) : sb.from(table).insert({ ...row, match: s.match }));
   });
-  const KO = ['QF', 'SF', 'Final'];
-  firebase.database().ref('tsl/fixtures').on('value', snap => {
-    (snap.val() ? Promise.resolve(snap.val()) : fetch('../matchday/fixtures.txt').then(r => r.text())).then(t => {
-      // Once knockouts are in the fixtures, list only those, and only their teams (same as the phone maker).
-      // Only the round being played (the latest knockout round in the fixtures).
-      const all = fixtures(t), cur = [...KO].reverse().find(g => all.some(m => m.g === g)), ko = all.filter(m => m.g === cur), fx = ko.length ? ko : all, seen = {};
-      $('fx').innerHTML = '<option value="">Pick from fixtures…</option>' + fx.map(m => { const k = seen[m.g] = (seen[m.g] || 0) + 1;
-        return `<option value="${m.home}|${m.away}">${KO.includes(m.g) ? (m.g === 'Final' ? 'Final' : m.g + k) : m.n + '.'} ${m.time ? m.time + ' · ' : ''}${team(m.home).code} v ${team(m.away).code}</option>`; }).join('');
-      const teams = ko.length ? TEAMS.filter(x => ko.some(m => m.home === x.name || m.away === x.name)) : TEAMS;
-      for (const id of ['home', 'away']) { const v = $(id).value; $(id).innerHTML = teams.map(x => `<option>${x.name}</option>`).join(''); if (v) $(id).value = v; }
-      if ($('home').value === $('away').value) $('away').selectedIndex = 1;
-    });
-  });
-  $('fx').onchange = () => { if ($('fx').value) [$('home').value, $('away').value] = $('fx').value.split('|'); };
-  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  const add = (k, n) => send({ [k]: s[k] + n });
 
   function newMatch() {
-    const home = $('home').value, away = $('away').value;
-    if (home === away) return alert('Pick two different teams.');
-    if (confirm(`New match: ${home} vs ${away}?\nScore and clock go back to zero.`))
-      send({ home, away, hs: 0, as: 0, clock: 'reset', period: '1st Half', scene: 'soon', hc: kits[team(home).code] || '', ac: kits[team(away).code] || '' });
+    const m = d?.matches.find(x => x.id === +$('fx').value); if (!m) return;
+    const home = d.T[m.home], away = d.T[m.away];
+    if (!confirm(`Put on air: ${home.name} vs ${away.name}?\nClock goes back to 00:00.`)) return;
+    send({ match: m.id, home: home.name, away: away.name, hs: m.hg, as: m.ag, clock: 'reset', period: '1st Half', scene: 'soon', hc: home.kit || '', ac: away.kit || '' });
+    if (m.status === 'scheduled') guard(() => write(sb.from('matches').update({ status: 'live' }).eq('id', m.id)))();
   }
+  // Full Time also closes the match: it counts as a result in the tables.
+  const period = p => { send({ period: p }); if (p === 'Full Time' && onAir()?.status !== 'done') guard(() => write(sb.from('matches').update({ status: 'done' }).eq('id', s.match)))(); };
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/'/g, '&#39;');
 
-  // Kit colours: tap a swatch (or the picker for any colour). Each team's last colour is remembered for its next match.
+  // Kit colours: tap a swatch (or the picker for any colour). Saved on the team, so its next match starts with it.
   const KIT = ['#d71920', '#1f4fd8', '#6cc3f0', '#ffffff', '#111111', '#ffd400', '#1e9e3e', '#f58220', '#7a1f3d', '#6a2fb5'];
-  const kitsRef = firebase.database().ref('tsl/kits');
-  let kits = {};
-  kitsRef.on('value', snap => { kits = snap.val() || {}; });
   let kitKey;
   function renderKits() {
     const key = [s.home, s.away, s.hc, s.ac].join('|');
@@ -311,11 +358,7 @@
         + `<input type="color" value="${s[key] || '#ffffff'}" aria-label="Any colour" onchange="kit('${key}', this.value)">`;
     }
   }
-  function kit(key, c) {
-    if (!user) return $('login').showModal();
-    send({ [key]: c });
-    kitsRef.child(team(key === 'hc' ? s.home : s.away).code).set(c);
-  }
+  const kit = guard((key, c) => Promise.all([patchLive(s, { [key]: c }), write(sb.from('teams').update({ kit: c }).eq('id', tid(key === 'hc' ? s.home : s.away)))]));
 
   onLive(render);
 </script>

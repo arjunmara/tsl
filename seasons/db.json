@@ -1,0 +1,3221 @@
+{
+ "seasons": [
+  {
+   "id": 1,
+   "name": "Season 1",
+   "champion": 4
+  }
+ ],
+ "teams": [
+  {
+   "id": 1,
+   "code": "JBT",
+   "name": "Junior Ballers Tamghas",
+   "kit": "#f58220"
+  },
+  {
+   "id": 2,
+   "code": "RE8",
+   "name": "Resunga Eight",
+   "kit": "#d71920"
+  },
+  {
+   "id": 3,
+   "code": "DFT",
+   "name": "Darbar Futsal Team",
+   "kit": "#1e9e3e"
+  },
+  {
+   "id": 4,
+   "code": "FSW",
+   "name": "Four Star Warriors",
+   "kit": "#ffffff"
+  },
+  {
+   "id": 5,
+   "code": "CYC",
+   "name": "Cocktails Youth Club",
+   "kit": "#f58220"
+  },
+  {
+   "id": 6,
+   "code": "BW3",
+   "name": "Bhadgaun Ward No. 3",
+   "kit": "#6cc3f0"
+  },
+  {
+   "id": 7,
+   "code": "RTM",
+   "name": "Real Tamghas",
+   "kit": "#1f4fd8"
+  },
+  {
+   "id": 8,
+   "code": "KPT",
+   "name": "Kapey Tribe",
+   "kit": "#f58220"
+  },
+  {
+   "id": 9,
+   "code": "KYC",
+   "name": "Khukuri Youth Club",
+   "kit": "#ffffff"
+  },
+  {
+   "id": 10,
+   "code": "14SYC",
+   "name": "14 Star Youth Club",
+   "kit": "#1f4fd8"
+  },
+  {
+   "id": 11,
+   "code": "DAB",
+   "name": "Da Boys",
+   "kit": "#ffffff"
+  },
+  {
+   "id": 12,
+   "code": "PTB",
+   "name": "PTB Guys",
+   "kit": "#f58220"
+  },
+  {
+   "id": 13,
+   "code": "NYC",
+   "name": "Navayug Yuwa Club",
+   "kit": "#ffffff"
+  }
+ ],
+ "players": [
+  {
+   "id": 1,
+   "name": "Nabin Hitang"
+  },
+  {
+   "id": 2,
+   "name": "Rilesh Shrees"
+  },
+  {
+   "id": 3,
+   "name": "Amit Shrees"
+  },
+  {
+   "id": 4,
+   "name": "Umesh Shrees"
+  },
+  {
+   "id": 5,
+   "name": "Pujan Bhandari"
+  },
+  {
+   "id": 6,
+   "name": "Bipin Gharti"
+  },
+  {
+   "id": 7,
+   "name": "Nishan Pun"
+  },
+  {
+   "id": 8,
+   "name": "Alone Thapa"
+  },
+  {
+   "id": 9,
+   "name": "Vijay Bhujel"
+  },
+  {
+   "id": 10,
+   "name": "Sandesh Bhalami"
+  },
+  {
+   "id": 11,
+   "name": "Mandeep Bhalami"
+  },
+  {
+   "id": 12,
+   "name": "Kalyan Bhujel"
+  },
+  {
+   "id": 13,
+   "name": "Pawan Pandey"
+  },
+  {
+   "id": 14,
+   "name": "Bishnu Shrees"
+  },
+  {
+   "id": 15,
+   "name": "Prabin Pandey"
+  },
+  {
+   "id": 16,
+   "name": "Amar Paharai"
+  },
+  {
+   "id": 17,
+   "name": "Abishkar Khatri"
+  },
+  {
+   "id": 18,
+   "name": "Youbraj Paudel"
+  },
+  {
+   "id": 19,
+   "name": "Raju Aryal"
+  },
+  {
+   "id": 20,
+   "name": "Bishal Paudel"
+  },
+  {
+   "id": 21,
+   "name": "Bikram Basnet"
+  },
+  {
+   "id": 22,
+   "name": "Bishnu Bahadur Suryabanshi"
+  },
+  {
+   "id": 23,
+   "name": "Ashok Khanal"
+  },
+  {
+   "id": 24,
+   "name": "Ramesh Khadka"
+  },
+  {
+   "id": 25,
+   "name": "Hari Kunwar"
+  },
+  {
+   "id": 26,
+   "name": "Dilson Sunar"
+  },
+  {
+   "id": 27,
+   "name": "Sushil Bohora"
+  },
+  {
+   "id": 28,
+   "name": "Ramesh Chudara"
+  },
+  {
+   "id": 29,
+   "name": "Bijay Kharel"
+  },
+  {
+   "id": 30,
+   "name": "Prakash Khatri"
+  },
+  {
+   "id": 31,
+   "name": "Ashish Shrees"
+  },
+  {
+   "id": 32,
+   "name": "Binod Sen"
+  },
+  {
+   "id": 33,
+   "name": "Bijay Pandey"
+  },
+  {
+   "id": 34,
+   "name": "Arjun KC"
+  },
+  {
+   "id": 35,
+   "name": "Jeevan KC"
+  },
+  {
+   "id": 36,
+   "name": "Mohan Pun"
+  },
+  {
+   "id": 37,
+   "name": "Prakash Sunar"
+  },
+  {
+   "id": 38,
+   "name": "Bharat KC"
+  },
+  {
+   "id": 39,
+   "name": "Sujan Basnet"
+  },
+  {
+   "id": 40,
+   "name": "Himmat Shrees"
+  },
+  {
+   "id": 41,
+   "name": "Umesh KC"
+  },
+  {
+   "id": 42,
+   "name": "Bikalpa KC"
+  },
+  {
+   "id": 43,
+   "name": "Prakash GC"
+  },
+  {
+   "id": 44,
+   "name": "Arjun KC"
+  },
+  {
+   "id": 45,
+   "name": "Arjun Marasini"
+  },
+  {
+   "id": 46,
+   "name": "Vinod KC"
+  },
+  {
+   "id": 47,
+   "name": "Kshitiz Rana"
+  },
+  {
+   "id": 48,
+   "name": "Anish Sada"
+  },
+  {
+   "id": 49,
+   "name": "Sushil KC"
+  },
+  {
+   "id": 50,
+   "name": "Tridev KC"
+  },
+  {
+   "id": 51,
+   "name": "Rhythm Basnet"
+  },
+  {
+   "id": 52,
+   "name": "Aayush Bishowkarma"
+  },
+  {
+   "id": 53,
+   "name": "Gaurav Bishowkarma"
+  },
+  {
+   "id": 54,
+   "name": "Ajay Darji"
+  },
+  {
+   "id": 55,
+   "name": "Manish Darji"
+  },
+  {
+   "id": 56,
+   "name": "Lopson Somai"
+  },
+  {
+   "id": 57,
+   "name": "Bibas Pariyar"
+  },
+  {
+   "id": 58,
+   "name": "Bipin Khanal"
+  },
+  {
+   "id": 59,
+   "name": "Sagar Thapa"
+  },
+  {
+   "id": 60,
+   "name": "Ashish Thapa"
+  },
+  {
+   "id": 61,
+   "name": "Pawan Raut"
+  },
+  {
+   "id": 62,
+   "name": "Sujan Somai"
+  },
+  {
+   "id": 63,
+   "name": "Dipendra Thapa"
+  },
+  {
+   "id": 64,
+   "name": "Amrit Thapa"
+  },
+  {
+   "id": 65,
+   "name": "Jomes Gharti"
+  },
+  {
+   "id": 66,
+   "name": "Amit Bhandari"
+  },
+  {
+   "id": 67,
+   "name": "Sagar Basnet"
+  },
+  {
+   "id": 68,
+   "name": "Sagar Thapa"
+  },
+  {
+   "id": 69,
+   "name": "Sudarshan Thapa"
+  },
+  {
+   "id": 70,
+   "name": "Rijan Paudyal"
+  },
+  {
+   "id": 71,
+   "name": "Shishir Thapa"
+  },
+  {
+   "id": 72,
+   "name": "Dipendra Tandan"
+  },
+  {
+   "id": 73,
+   "name": "Susan Somai"
+  },
+  {
+   "id": 74,
+   "name": "Ashok Rana"
+  },
+  {
+   "id": 75,
+   "name": "Bisho Basnet"
+  },
+  {
+   "id": 76,
+   "name": "Anup Karki"
+  },
+  {
+   "id": 77,
+   "name": "Yugal KC"
+  },
+  {
+   "id": 78,
+   "name": "Dipu Gautam"
+  },
+  {
+   "id": 79,
+   "name": "Dinesh Shrees"
+  },
+  {
+   "id": 80,
+   "name": "Dinesh Pandey"
+  },
+  {
+   "id": 81,
+   "name": "Basant Chhetri"
+  },
+  {
+   "id": 82,
+   "name": "Sushil Pariyar"
+  },
+  {
+   "id": 83,
+   "name": "Bishesh Shrestha"
+  },
+  {
+   "id": 84,
+   "name": "Ayush Rana"
+  },
+  {
+   "id": 85,
+   "name": "Mishan KC"
+  },
+  {
+   "id": 86,
+   "name": "Suraj Xettri"
+  },
+  {
+   "id": 87,
+   "name": "Saimon Thapa"
+  },
+  {
+   "id": 88,
+   "name": "Ritik Gurung"
+  },
+  {
+   "id": 89,
+   "name": "Nishan Sunar"
+  },
+  {
+   "id": 90,
+   "name": "Milan Magar"
+  },
+  {
+   "id": 91,
+   "name": "Arpit Chhetri"
+  },
+  {
+   "id": 92,
+   "name": "Ipson Shrestha"
+  },
+  {
+   "id": 93,
+   "name": "Manas Shrestha"
+  },
+  {
+   "id": 94,
+   "name": "Parbesh KC"
+  },
+  {
+   "id": 95,
+   "name": "Rijan Saru"
+  },
+  {
+   "id": 96,
+   "name": "Anmol Pariyar"
+  },
+  {
+   "id": 97,
+   "name": "Yubraj Gharti Magar"
+  },
+  {
+   "id": 98,
+   "name": "Sijan Saru"
+  },
+  {
+   "id": 99,
+   "name": "Deepak Mukhiya"
+  },
+  {
+   "id": 100,
+   "name": "Khimraj Chalise"
+  },
+  {
+   "id": 101,
+   "name": "Sajan Thapa"
+  },
+  {
+   "id": 102,
+   "name": "Santosh Basnet"
+  },
+  {
+   "id": 103,
+   "name": "Aaviskar GC"
+  },
+  {
+   "id": 104,
+   "name": "Uttsop Pun Magar"
+  },
+  {
+   "id": 105,
+   "name": "Niraj Thapa"
+  },
+  {
+   "id": 106,
+   "name": "Pragit Poudel"
+  },
+  {
+   "id": 107,
+   "name": "Manoj Ghimire"
+  }
+ ],
+ "season_teams": [
+  {
+   "season": 1,
+   "team": 1,
+   "grp": "D",
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 2,
+   "grp": "C",
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 3,
+   "grp": "D",
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "grp": "C",
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 5,
+   "grp": "B",
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "grp": "D",
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 7,
+   "grp": "B",
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 8,
+   "grp": "C",
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 9,
+   "grp": "D",
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 10,
+   "grp": "B",
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 11,
+   "grp": "A",
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 12,
+   "grp": "A",
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "grp": "A",
+   "sort": 1
+  }
+ ],
+ "squad": [
+  {
+   "season": 1,
+   "team": 1,
+   "player": 1,
+   "role": null,
+   "captain": false,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 1,
+   "player": 2,
+   "role": null,
+   "captain": true,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 1,
+   "player": 3,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 1,
+   "player": 4,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 1,
+   "player": 5,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 1,
+   "player": 6,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 1,
+   "player": 7,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 1,
+   "player": 8,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 2,
+   "player": 9,
+   "role": null,
+   "captain": true,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 2,
+   "player": 10,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 2,
+   "player": 11,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 2,
+   "player": 12,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 2,
+   "player": 13,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 2,
+   "player": 14,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 2,
+   "player": 15,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 2,
+   "player": 16,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 3,
+   "player": 17,
+   "role": null,
+   "captain": true,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 3,
+   "player": 18,
+   "role": "GK",
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 3,
+   "player": 19,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 3,
+   "player": 20,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 3,
+   "player": 21,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 3,
+   "player": 22,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 3,
+   "player": 23,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 3,
+   "player": 24,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "player": 25,
+   "role": null,
+   "captain": true,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "player": 26,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "player": 27,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "player": 28,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "player": 29,
+   "role": "GK",
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "player": 30,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "player": 31,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "player": 32,
+   "role": "Coach",
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 4,
+   "player": 33,
+   "role": "Manager",
+   "captain": false,
+   "sort": 9
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "player": 34,
+   "role": null,
+   "captain": true,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "player": 35,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "player": 36,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "player": 37,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "player": 38,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "player": 39,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "player": 40,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "player": 41,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 6,
+   "player": 42,
+   "role": "Coach",
+   "captain": false,
+   "sort": 9
+  },
+  {
+   "season": 1,
+   "team": 7,
+   "player": 43,
+   "role": null,
+   "captain": true,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 7,
+   "player": 44,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 7,
+   "player": 45,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 7,
+   "player": 46,
+   "role": "GK",
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 7,
+   "player": 47,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 7,
+   "player": 48,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 7,
+   "player": 49,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 7,
+   "player": 50,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 8,
+   "player": 51,
+   "role": null,
+   "captain": true,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 8,
+   "player": 52,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 8,
+   "player": 53,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 8,
+   "player": 54,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 8,
+   "player": 55,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 8,
+   "player": 56,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 8,
+   "player": 57,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 8,
+   "player": 58,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 9,
+   "player": 59,
+   "role": null,
+   "captain": false,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 9,
+   "player": 60,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 9,
+   "player": 61,
+   "role": null,
+   "captain": true,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 9,
+   "player": 62,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 9,
+   "player": 63,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 9,
+   "player": 64,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 9,
+   "player": 65,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 9,
+   "player": 66,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 5,
+   "player": 67,
+   "role": null,
+   "captain": false,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 5,
+   "player": 68,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 5,
+   "player": 69,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 5,
+   "player": 70,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 5,
+   "player": 71,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 5,
+   "player": 72,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 5,
+   "player": 73,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 5,
+   "player": 74,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 10,
+   "player": 75,
+   "role": null,
+   "captain": true,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 10,
+   "player": 76,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 10,
+   "player": 77,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 10,
+   "player": 78,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 10,
+   "player": 79,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 10,
+   "player": 80,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 10,
+   "player": 81,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 10,
+   "player": 82,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 11,
+   "player": 83,
+   "role": null,
+   "captain": true,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 11,
+   "player": 84,
+   "role": "GK",
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 11,
+   "player": 85,
+   "role": "GK",
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 11,
+   "player": 86,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 11,
+   "player": 87,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 11,
+   "player": 88,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 11,
+   "player": 89,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 11,
+   "player": 90,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 12,
+   "player": 91,
+   "role": null,
+   "captain": false,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 12,
+   "player": 92,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 12,
+   "player": 93,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 12,
+   "player": 94,
+   "role": null,
+   "captain": true,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 12,
+   "player": 95,
+   "role": null,
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 12,
+   "player": 96,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 12,
+   "player": 97,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 12,
+   "player": 98,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "player": 99,
+   "role": null,
+   "captain": true,
+   "sort": 1
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "player": 100,
+   "role": null,
+   "captain": false,
+   "sort": 2
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "player": 101,
+   "role": null,
+   "captain": false,
+   "sort": 3
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "player": 102,
+   "role": null,
+   "captain": false,
+   "sort": 4
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "player": 103,
+   "role": "GK",
+   "captain": false,
+   "sort": 5
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "player": 104,
+   "role": null,
+   "captain": false,
+   "sort": 6
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "player": 105,
+   "role": null,
+   "captain": false,
+   "sort": 7
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "player": 106,
+   "role": null,
+   "captain": false,
+   "sort": 8
+  },
+  {
+   "season": 1,
+   "team": 13,
+   "player": 107,
+   "role": "Coach",
+   "captain": false,
+   "sort": 9
+  }
+ ],
+ "matches": [
+  {
+   "id": 1,
+   "season": 1,
+   "n": 1,
+   "round": "Group",
+   "home": 13,
+   "away": 11,
+   "day": null,
+   "kickoff": "07:00:00",
+   "status": "done",
+   "hg": 8,
+   "ag": 2,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 2,
+   "season": 1,
+   "n": 2,
+   "round": "Group",
+   "home": 7,
+   "away": 10,
+   "day": null,
+   "kickoff": "07:35:00",
+   "status": "done",
+   "hg": 6,
+   "ag": 4,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 3,
+   "season": 1,
+   "n": 3,
+   "round": "Group",
+   "home": 4,
+   "away": 2,
+   "day": null,
+   "kickoff": "08:10:00",
+   "status": "done",
+   "hg": 2,
+   "ag": 1,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 4,
+   "season": 1,
+   "n": 4,
+   "round": "Group",
+   "home": 1,
+   "away": 3,
+   "day": null,
+   "kickoff": "08:45:00",
+   "status": "done",
+   "hg": 9,
+   "ag": 1,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 5,
+   "season": 1,
+   "n": 5,
+   "round": "Group",
+   "home": 9,
+   "away": 6,
+   "day": null,
+   "kickoff": "09:20:00",
+   "status": "done",
+   "hg": 1,
+   "ag": 7,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 6,
+   "season": 1,
+   "n": 6,
+   "round": "Group",
+   "home": 13,
+   "away": 12,
+   "day": null,
+   "kickoff": "09:55:00",
+   "status": "done",
+   "hg": 0,
+   "ag": 0,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 7,
+   "season": 1,
+   "n": 7,
+   "round": "Group",
+   "home": 7,
+   "away": 5,
+   "day": null,
+   "kickoff": "10:30:00",
+   "status": "done",
+   "hg": 6,
+   "ag": 2,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 8,
+   "season": 1,
+   "n": 8,
+   "round": "Group",
+   "home": 4,
+   "away": 8,
+   "day": null,
+   "kickoff": "11:05:00",
+   "status": "done",
+   "hg": 5,
+   "ag": 1,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 9,
+   "season": 1,
+   "n": 9,
+   "round": "Group",
+   "home": 1,
+   "away": 9,
+   "day": null,
+   "kickoff": "11:40:00",
+   "status": "done",
+   "hg": 3,
+   "ag": 1,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 10,
+   "season": 1,
+   "n": 10,
+   "round": "Group",
+   "home": 3,
+   "away": 6,
+   "day": null,
+   "kickoff": "12:15:00",
+   "status": "done",
+   "hg": 3,
+   "ag": 4,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 11,
+   "season": 1,
+   "n": 11,
+   "round": "Group",
+   "home": 11,
+   "away": 12,
+   "day": null,
+   "kickoff": "12:50:00",
+   "status": "done",
+   "hg": 3,
+   "ag": 7,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 12,
+   "season": 1,
+   "n": 12,
+   "round": "Group",
+   "home": 10,
+   "away": 5,
+   "day": null,
+   "kickoff": "13:25:00",
+   "status": "done",
+   "hg": 8,
+   "ag": 2,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 13,
+   "season": 1,
+   "n": 13,
+   "round": "Group",
+   "home": 2,
+   "away": 8,
+   "day": null,
+   "kickoff": "14:00:00",
+   "status": "done",
+   "hg": 2,
+   "ag": 1,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 14,
+   "season": 1,
+   "n": 14,
+   "round": "Group",
+   "home": 1,
+   "away": 6,
+   "day": null,
+   "kickoff": "14:35:00",
+   "status": "done",
+   "hg": 2,
+   "ag": 1,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 15,
+   "season": 1,
+   "n": 15,
+   "round": "Group",
+   "home": 3,
+   "away": 9,
+   "day": null,
+   "kickoff": "15:10:00",
+   "status": "done",
+   "hg": 4,
+   "ag": 2,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 16,
+   "season": 1,
+   "n": 16,
+   "round": "QF",
+   "home": 13,
+   "away": 10,
+   "day": null,
+   "kickoff": null,
+   "status": "done",
+   "hg": 5,
+   "ag": 7,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 17,
+   "season": 1,
+   "n": 17,
+   "round": "QF",
+   "home": 4,
+   "away": 6,
+   "day": null,
+   "kickoff": null,
+   "status": "done",
+   "hg": 7,
+   "ag": 0,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 18,
+   "season": 1,
+   "n": 18,
+   "round": "QF",
+   "home": 7,
+   "away": 12,
+   "day": null,
+   "kickoff": null,
+   "status": "done",
+   "hg": 6,
+   "ag": 2,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 19,
+   "season": 1,
+   "n": 19,
+   "round": "QF",
+   "home": 1,
+   "away": 2,
+   "day": null,
+   "kickoff": null,
+   "status": "done",
+   "hg": 1,
+   "ag": 3,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 20,
+   "season": 1,
+   "n": 20,
+   "round": "SF",
+   "home": 10,
+   "away": 4,
+   "day": null,
+   "kickoff": null,
+   "status": "done",
+   "hg": 2,
+   "ag": 4,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 21,
+   "season": 1,
+   "n": 21,
+   "round": "SF",
+   "home": 7,
+   "away": 2,
+   "day": null,
+   "kickoff": null,
+   "status": "done",
+   "hg": 2,
+   "ag": 3,
+   "hp": null,
+   "ap": null
+  },
+  {
+   "id": 22,
+   "season": 1,
+   "n": 22,
+   "round": "Final",
+   "home": 4,
+   "away": 2,
+   "day": null,
+   "kickoff": "06:00:00",
+   "status": "done",
+   "hg": 4,
+   "ag": 1,
+   "hp": null,
+   "ap": null
+  }
+ ],
+ "goals": [
+  {
+   "id": 1,
+   "match": 1,
+   "team": 13,
+   "player": 99,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 2,
+   "match": 1,
+   "team": 13,
+   "player": 99,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 3,
+   "match": 1,
+   "team": 13,
+   "player": 99,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 4,
+   "match": 1,
+   "team": 13,
+   "player": 99,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 5,
+   "match": 1,
+   "team": 13,
+   "player": 100,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 6,
+   "match": 1,
+   "team": 13,
+   "player": 101,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 7,
+   "match": 1,
+   "team": 13,
+   "player": 101,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 8,
+   "match": 1,
+   "team": 13,
+   "player": 101,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 9,
+   "match": 1,
+   "team": 11,
+   "player": 86,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 10,
+   "match": 1,
+   "team": 11,
+   "player": 83,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 11,
+   "match": 2,
+   "team": 7,
+   "player": 50,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 12,
+   "match": 2,
+   "team": 7,
+   "player": 50,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 13,
+   "match": 2,
+   "team": 7,
+   "player": 46,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 14,
+   "match": 2,
+   "team": 7,
+   "player": 47,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 15,
+   "match": 2,
+   "team": 7,
+   "player": 44,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 16,
+   "match": 2,
+   "team": 7,
+   "player": 48,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 17,
+   "match": 2,
+   "team": 10,
+   "player": 79,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 18,
+   "match": 2,
+   "team": 10,
+   "player": 79,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 19,
+   "match": 2,
+   "team": 10,
+   "player": 82,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 20,
+   "match": 2,
+   "team": 10,
+   "player": 75,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 21,
+   "match": 3,
+   "team": 4,
+   "player": 26,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 22,
+   "match": 3,
+   "team": 4,
+   "player": 26,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 23,
+   "match": 3,
+   "team": 2,
+   "player": 10,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 24,
+   "match": 4,
+   "team": 1,
+   "player": 8,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 25,
+   "match": 4,
+   "team": 1,
+   "player": 8,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 26,
+   "match": 4,
+   "team": 1,
+   "player": 8,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 27,
+   "match": 4,
+   "team": 1,
+   "player": 4,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 28,
+   "match": 4,
+   "team": 1,
+   "player": 4,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 29,
+   "match": 4,
+   "team": 1,
+   "player": 4,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 30,
+   "match": 4,
+   "team": 1,
+   "player": 3,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 31,
+   "match": 4,
+   "team": 1,
+   "player": 3,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 32,
+   "match": 4,
+   "team": 1,
+   "player": 2,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 33,
+   "match": 4,
+   "team": 3,
+   "player": 20,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 34,
+   "match": 5,
+   "team": 9,
+   "player": 63,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 35,
+   "match": 5,
+   "team": 6,
+   "player": 35,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 36,
+   "match": 5,
+   "team": 6,
+   "player": 35,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 37,
+   "match": 5,
+   "team": 6,
+   "player": 35,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 38,
+   "match": 5,
+   "team": 6,
+   "player": 40,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 39,
+   "match": 5,
+   "team": 6,
+   "player": 40,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 40,
+   "match": 5,
+   "team": 6,
+   "player": 39,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 41,
+   "match": 5,
+   "team": 6,
+   "player": 36,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 42,
+   "match": 7,
+   "team": 7,
+   "player": 50,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 43,
+   "match": 7,
+   "team": 7,
+   "player": 50,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 44,
+   "match": 7,
+   "team": 7,
+   "player": 49,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 45,
+   "match": 7,
+   "team": 7,
+   "player": 49,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 46,
+   "match": 7,
+   "team": 7,
+   "player": 45,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 47,
+   "match": 7,
+   "team": 7,
+   "player": 48,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 48,
+   "match": 7,
+   "team": 5,
+   "player": 72,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 49,
+   "match": 7,
+   "team": 5,
+   "player": 69,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 50,
+   "match": 8,
+   "team": 4,
+   "player": 25,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 51,
+   "match": 8,
+   "team": 4,
+   "player": 25,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 52,
+   "match": 8,
+   "team": 4,
+   "player": 25,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 53,
+   "match": 8,
+   "team": 4,
+   "player": 26,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 54,
+   "match": 8,
+   "team": 4,
+   "player": 28,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 55,
+   "match": 8,
+   "team": 8,
+   "player": 53,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 56,
+   "match": 9,
+   "team": 1,
+   "player": 8,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 57,
+   "match": 9,
+   "team": 1,
+   "player": 8,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 58,
+   "match": 9,
+   "team": 1,
+   "player": 1,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 59,
+   "match": 9,
+   "team": 9,
+   "player": 63,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 60,
+   "match": 10,
+   "team": 3,
+   "player": 20,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 61,
+   "match": 10,
+   "team": 3,
+   "player": 20,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 62,
+   "match": 10,
+   "team": 3,
+   "player": 17,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 63,
+   "match": 10,
+   "team": 6,
+   "player": 40,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 64,
+   "match": 10,
+   "team": 6,
+   "player": 39,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 65,
+   "match": 10,
+   "team": 6,
+   "player": 39,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 66,
+   "match": 10,
+   "team": 6,
+   "player": 39,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 67,
+   "match": 11,
+   "team": 11,
+   "player": 83,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 68,
+   "match": 11,
+   "team": 11,
+   "player": 83,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 69,
+   "match": 11,
+   "team": 11,
+   "player": 90,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 70,
+   "match": 11,
+   "team": 12,
+   "player": 96,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 71,
+   "match": 11,
+   "team": 12,
+   "player": 96,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 72,
+   "match": 11,
+   "team": 12,
+   "player": 96,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 73,
+   "match": 11,
+   "team": 12,
+   "player": 96,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 74,
+   "match": 11,
+   "team": 12,
+   "player": 97,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 75,
+   "match": 11,
+   "team": 12,
+   "player": 97,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 76,
+   "match": 11,
+   "team": 12,
+   "player": 95,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 77,
+   "match": 12,
+   "team": 10,
+   "player": 79,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 78,
+   "match": 12,
+   "team": 10,
+   "player": 79,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 79,
+   "match": 12,
+   "team": 10,
+   "player": 79,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 80,
+   "match": 12,
+   "team": 10,
+   "player": 79,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 81,
+   "match": 12,
+   "team": 10,
+   "player": 81,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 82,
+   "match": 12,
+   "team": 10,
+   "player": 81,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 83,
+   "match": 12,
+   "team": 10,
+   "player": 75,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 84,
+   "match": 12,
+   "team": 10,
+   "player": 77,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 85,
+   "match": 12,
+   "team": 5,
+   "player": 71,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 86,
+   "match": 12,
+   "team": 5,
+   "player": 69,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 87,
+   "match": 13,
+   "team": 2,
+   "player": 15,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 88,
+   "match": 13,
+   "team": 2,
+   "player": 15,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 89,
+   "match": 13,
+   "team": 8,
+   "player": 56,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 90,
+   "match": 14,
+   "team": 1,
+   "player": 4,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 91,
+   "match": 14,
+   "team": 1,
+   "player": 4,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 92,
+   "match": 14,
+   "team": 6,
+   "player": null,
+   "minute": null,
+   "og": true
+  },
+  {
+   "id": 93,
+   "match": 15,
+   "team": 3,
+   "player": 20,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 94,
+   "match": 15,
+   "team": 3,
+   "player": 20,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 95,
+   "match": 15,
+   "team": 3,
+   "player": 20,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 96,
+   "match": 15,
+   "team": 3,
+   "player": 21,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 97,
+   "match": 15,
+   "team": 9,
+   "player": 63,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 98,
+   "match": 15,
+   "team": 9,
+   "player": 63,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 99,
+   "match": 16,
+   "team": 10,
+   "player": 75,
+   "minute": 5,
+   "og": false
+  },
+  {
+   "id": 100,
+   "match": 16,
+   "team": 13,
+   "player": 99,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 101,
+   "match": 16,
+   "team": 10,
+   "player": 75,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 102,
+   "match": 16,
+   "team": 10,
+   "player": 79,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 103,
+   "match": 16,
+   "team": 13,
+   "player": 105,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 104,
+   "match": 17,
+   "team": 4,
+   "player": 28,
+   "minute": 1,
+   "og": false
+  },
+  {
+   "id": 105,
+   "match": 17,
+   "team": 4,
+   "player": 25,
+   "minute": 8,
+   "og": false
+  },
+  {
+   "id": 106,
+   "match": 17,
+   "team": 4,
+   "player": 30,
+   "minute": 11,
+   "og": false
+  },
+  {
+   "id": 107,
+   "match": 17,
+   "team": 4,
+   "player": 26,
+   "minute": 12,
+   "og": false
+  },
+  {
+   "id": 108,
+   "match": 17,
+   "team": 4,
+   "player": 31,
+   "minute": 14,
+   "og": false
+  },
+  {
+   "id": 109,
+   "match": 17,
+   "team": 4,
+   "player": 31,
+   "minute": 15,
+   "og": false
+  },
+  {
+   "id": 110,
+   "match": 17,
+   "team": 4,
+   "player": 31,
+   "minute": 24,
+   "og": false
+  },
+  {
+   "id": 111,
+   "match": 18,
+   "team": 7,
+   "player": 50,
+   "minute": 1,
+   "og": false
+  },
+  {
+   "id": 112,
+   "match": 18,
+   "team": 7,
+   "player": 50,
+   "minute": 3,
+   "og": false
+  },
+  {
+   "id": 113,
+   "match": 18,
+   "team": 12,
+   "player": 95,
+   "minute": 5,
+   "og": false
+  },
+  {
+   "id": 114,
+   "match": 18,
+   "team": 12,
+   "player": 95,
+   "minute": 8,
+   "og": false
+  },
+  {
+   "id": 115,
+   "match": 18,
+   "team": 7,
+   "player": 50,
+   "minute": 12,
+   "og": false
+  },
+  {
+   "id": 116,
+   "match": 18,
+   "team": 7,
+   "player": 50,
+   "minute": 14,
+   "og": false
+  },
+  {
+   "id": 117,
+   "match": 18,
+   "team": 7,
+   "player": 50,
+   "minute": 16,
+   "og": false
+  },
+  {
+   "id": 118,
+   "match": 18,
+   "team": 7,
+   "player": 50,
+   "minute": 18,
+   "og": false
+  },
+  {
+   "id": 119,
+   "match": 19,
+   "team": 2,
+   "player": 16,
+   "minute": 1,
+   "og": false
+  },
+  {
+   "id": 120,
+   "match": 19,
+   "team": 2,
+   "player": 9,
+   "minute": 3,
+   "og": false
+  },
+  {
+   "id": 121,
+   "match": 19,
+   "team": 1,
+   "player": 4,
+   "minute": 17,
+   "og": false
+  },
+  {
+   "id": 122,
+   "match": 19,
+   "team": 2,
+   "player": 15,
+   "minute": 19,
+   "og": false
+  },
+  {
+   "id": 123,
+   "match": 20,
+   "team": 4,
+   "player": 28,
+   "minute": 14,
+   "og": false
+  },
+  {
+   "id": 124,
+   "match": 20,
+   "team": 4,
+   "player": 26,
+   "minute": 15,
+   "og": false
+  },
+  {
+   "id": 125,
+   "match": 20,
+   "team": 10,
+   "player": 79,
+   "minute": 27,
+   "og": false
+  },
+  {
+   "id": 126,
+   "match": 20,
+   "team": 4,
+   "player": 26,
+   "minute": 28,
+   "og": false
+  },
+  {
+   "id": 127,
+   "match": 20,
+   "team": 10,
+   "player": 78,
+   "minute": 32,
+   "og": false
+  },
+  {
+   "id": 128,
+   "match": 20,
+   "team": 4,
+   "player": 28,
+   "minute": 33,
+   "og": false
+  },
+  {
+   "id": 129,
+   "match": 21,
+   "team": 2,
+   "player": 10,
+   "minute": 17,
+   "og": false
+  },
+  {
+   "id": 130,
+   "match": 21,
+   "team": 2,
+   "player": 10,
+   "minute": 22,
+   "og": false
+  },
+  {
+   "id": 131,
+   "match": 21,
+   "team": 2,
+   "player": 12,
+   "minute": 26,
+   "og": false
+  },
+  {
+   "id": 132,
+   "match": 21,
+   "team": 7,
+   "player": 45,
+   "minute": 29,
+   "og": false
+  },
+  {
+   "id": 133,
+   "match": 21,
+   "team": 7,
+   "player": 50,
+   "minute": 37,
+   "og": false
+  },
+  {
+   "id": 134,
+   "match": 22,
+   "team": 4,
+   "player": 26,
+   "minute": 2,
+   "og": false
+  },
+  {
+   "id": 135,
+   "match": 16,
+   "team": 13,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 136,
+   "match": 16,
+   "team": 13,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 137,
+   "match": 16,
+   "team": 13,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 138,
+   "match": 16,
+   "team": 10,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 139,
+   "match": 16,
+   "team": 10,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 140,
+   "match": 16,
+   "team": 10,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 141,
+   "match": 16,
+   "team": 10,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 142,
+   "match": 22,
+   "team": 4,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 143,
+   "match": 22,
+   "team": 4,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 144,
+   "match": 22,
+   "team": 4,
+   "player": null,
+   "minute": null,
+   "og": false
+  },
+  {
+   "id": 145,
+   "match": 22,
+   "team": 2,
+   "player": null,
+   "minute": null,
+   "og": false
+  }
+ ],
+ "events": [
+  {
+   "id": 1,
+   "match": 6,
+   "team": 12,
+   "player": 97,
+   "kind": "Yellow Card",
+   "minute": 18
+  },
+  {
+   "id": 2,
+   "match": 6,
+   "team": 12,
+   "player": 96,
+   "kind": "Yellow Card",
+   "minute": 20
+  },
+  {
+   "id": 3,
+   "match": 9,
+   "team": 1,
+   "player": 1,
+   "kind": "Red Card",
+   "minute": null
+  },
+  {
+   "id": 4,
+   "match": 13,
+   "team": 8,
+   "player": 52,
+   "kind": "Yellow Card",
+   "minute": 22
+  },
+  {
+   "id": 5,
+   "match": 14,
+   "team": 1,
+   "player": 2,
+   "kind": "Yellow Card",
+   "minute": 18
+  },
+  {
+   "id": 6,
+   "match": 16,
+   "team": 13,
+   "player": 99,
+   "kind": "Yellow Card",
+   "minute": null
+  }
+ ],
+ "sponsors": [
+  {
+   "id": 1,
+   "season": 1,
+   "name": "District Hospital Doctors Team",
+   "logo": null,
+   "ad": "web/district-hospital-doctors-team.jpg",
+   "line": "District Hospital, Gulmi",
+   "sort": 0
+  },
+  {
+   "id": 2,
+   "season": 1,
+   "name": "Mayadevi Breast Care Center",
+   "logo": null,
+   "ad": "web/mayadevi-breast-care-center.jpg",
+   "line": "Dr. Sanjay Pandey · Breast cancer awareness",
+   "sort": 1
+  },
+  {
+   "id": 3,
+   "season": 1,
+   "name": "Sagar Thapa",
+   "logo": null,
+   "ad": "web/sagar-thapa.jpg",
+   "line": "Long-term supporter, from Australia",
+   "sort": 2
+  },
+  {
+   "id": 4,
+   "season": 1,
+   "name": "Sarwan Chand",
+   "logo": null,
+   "ad": "web/sarwan-chand.jpg",
+   "line": "Continuous long-term supporter",
+   "sort": 3
+  },
+  {
+   "id": 5,
+   "season": 1,
+   "name": "Santosh Serchan",
+   "logo": null,
+   "ad": null,
+   "line": "Former player & sports supporter",
+   "sort": 4
+  },
+  {
+   "id": 6,
+   "season": 1,
+   "name": "Rajan Pandey",
+   "logo": null,
+   "ad": null,
+   "line": null,
+   "sort": 5
+  },
+  {
+   "id": 7,
+   "season": 1,
+   "name": "Hridaya Girls Hostel",
+   "logo": null,
+   "ad": "web/hridaya-girls-hostel.jpg",
+   "line": "Satdobato, Lalitpur & Baneshwor, Kathmandu",
+   "sort": 6
+  },
+  {
+   "id": 8,
+   "season": 1,
+   "name": "Karan Kaji",
+   "logo": null,
+   "ad": null,
+   "line": "Former local athlete, from Japan",
+   "sort": 7
+  },
+  {
+   "id": 9,
+   "season": 1,
+   "name": "Ashraf Ali",
+   "logo": null,
+   "ad": "web/ashraf-ali.jpg",
+   "line": null,
+   "sort": 8
+  },
+  {
+   "id": 10,
+   "season": 1,
+   "name": "Noya Super Mart",
+   "logo": null,
+   "ad": "web/noya-super-mart.jpg",
+   "line": "For your daily shopping needs",
+   "sort": 9
+  },
+  {
+   "id": 11,
+   "season": 1,
+   "name": "Gaule Hair Salon",
+   "logo": null,
+   "ad": "web/gaule-hair-salon.jpg",
+   "line": null,
+   "sort": 10
+  },
+  {
+   "id": 12,
+   "season": 1,
+   "name": "Sagarmatha Recondition",
+   "logo": null,
+   "ad": "web/sagarmatha-recondition.jpg",
+   "line": null,
+   "sort": 11
+  },
+  {
+   "id": 13,
+   "season": 1,
+   "name": "Siddhababa Enterprises",
+   "logo": null,
+   "ad": "web/siddhababa-enterprises.jpg",
+   "line": null,
+   "sort": 12
+  },
+  {
+   "id": 14,
+   "season": 1,
+   "name": "Global Motorcycle Workshop",
+   "logo": null,
+   "ad": "web/global-motorcycle-workshop.jpg",
+   "line": "Resunga Municipality-1",
+   "sort": 13
+  },
+  {
+   "id": 15,
+   "season": 1,
+   "name": "NST Electronic & Mobile Service Center",
+   "logo": null,
+   "ad": null,
+   "line": "Special Sponsor · Resunga-8, Khanigaun",
+   "sort": 14
+  },
+  {
+   "id": 16,
+   "season": 1,
+   "name": "Pathway Research & Training Center",
+   "logo": null,
+   "ad": "web/pathway-research-training-center.jpg",
+   "line": "Special Sponsor · STEAM education, Kathmandu",
+   "sort": 15
+  },
+  {
+   "id": 17,
+   "season": 1,
+   "name": "Urban Yuwa Clothing House & Urban Kids Mart",
+   "logo": null,
+   "ad": "web/urban-yuwa-clothing-house-urban-kids-mart.jpg",
+   "line": "Championship Trophy Sponsor",
+   "sort": 16
+  },
+  {
+   "id": 18,
+   "season": 1,
+   "name": "Hari Kunwar",
+   "logo": null,
+   "ad": "web/hari-kunwar.jpg",
+   "line": "Best Goalkeeper Trophy Sponsor",
+   "sort": 17
+  },
+  {
+   "id": 19,
+   "season": 1,
+   "name": "Aman Chhetri",
+   "logo": null,
+   "ad": null,
+   "line": "Best Player Trophy Sponsor",
+   "sort": 18
+  },
+  {
+   "id": 20,
+   "season": 1,
+   "name": "Topendra Magar",
+   "logo": null,
+   "ad": null,
+   "line": "Drinking Water Sponsor",
+   "sort": 19
+  },
+  {
+   "id": 21,
+   "season": 1,
+   "name": "Saphal Diaries Cafeteria",
+   "logo": null,
+   "ad": null,
+   "line": "Team Drinks (Coffee) Sponsor",
+   "sort": 20
+  }
+ ],
+ "live": [
+  {
+   "id": 1,
+   "state": {
+    "ac": "#d71920",
+    "ad": null,
+    "as": 1,
+    "hc": "#ffffff",
+    "hs": 4,
+    "lay": {
+     "x": 130,
+     "y": 20,
+     "tb": 60,
+     "side": 180,
+     "zoom": 1.05
+    },
+    "away": "Resunga Eight",
+    "home": "Four Star Warriors",
+    "show": true,
+    "guide": false,
+    "match": 22,
+    "scene": "auto",
+    "since": null,
+    "period": "Full Time",
+    "ticker": true,
+    "elapsed": 0
+   }
+  }
+ ]
+}
