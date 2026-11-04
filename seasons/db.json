@@ -1780,7 +1780,7 @@
    "day": null,
    "kickoff": "06:00:00",
    "status": "done",
-   "hg": 5,
+   "hg": 7,
    "ag": 0,
    "hp": null,
    "ap": null
@@ -2946,6 +2946,22 @@
    "player": 27,
    "minute": 10,
    "og": false
+  },
+  {
+   "id": 152,
+   "match": 22,
+   "team": 4,
+   "player": 28,
+   "minute": 1,
+   "og": false
+  },
+  {
+   "id": 153,
+   "match": 22,
+   "team": 4,
+   "player": 25,
+   "minute": 1,
+   "og": false
   }
  ],
  "events": [
@@ -3194,10 +3210,13 @@
    "id": 1,
    "state": {
     "ac": "#d71920",
-    "ad": null,
+    "ad": {
+     "src": "../Sponsors/web/sarwan-chand.jpg",
+     "until": 1793762754816
+    },
     "as": 0,
     "hc": "#ffffff",
-    "hs": 5,
+    "hs": 7,
     "lay": {
      "x": 130,
      "y": 20,
@@ -3211,8 +3230,8 @@
     "guide": false,
     "match": 22,
     "scene": "auto",
-    "since": null,
-    "period": "Full Time",
+    "since": 1793762771417,
+    "period": "1st Half",
     "ticker": true,
     "elapsed": 0
    }
