@@ -25,3 +25,9 @@
 !/seasons/
 /seasons/*/graphics/
 !/supabase/
+!/CLAUDE.md
+# BMAD method and skills (planning output stays private, in its own repo)
+!/_bmad/
+!/.claude/
+/.claude/*
+!/.claude/skills/
