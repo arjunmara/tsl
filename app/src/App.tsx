@@ -8,11 +8,13 @@ import { SignIn } from './features/auth/SignIn'
 import { SignUp } from './features/auth/SignUp'
 import { MyTournaments } from './features/tournaments/MyTournaments'
 import { NewTournament } from './features/tournaments/NewTournament'
+import { SaveStatusBar } from './features/save-status/SaveStatusBar'
 
 export function App() {
   return (
     <BrowserRouter>
       <SessionProvider>
+        <SaveStatusBar />
         <Routes>
           <Route path="/sign-up" element={<SignUp />} />
           <Route path="/sign-in" element={<SignIn />} />

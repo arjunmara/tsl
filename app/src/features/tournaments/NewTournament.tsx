@@ -1,23 +1,18 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { runCommand } from '../../domain/commands'
+import { forgetRefused, send } from '../../domain/commands'
 import { messageFor, messages } from '../../domain/messages'
 import { PrimaryButton } from '../../ui/Button'
 import { Field } from '../../ui/Field'
 import { blocked, noop, useForm } from '../auth/form'
 import { Problem, Screen } from '../auth/Screen'
 
-const newIds = () => ({ command: crypto.randomUUID(), tournament: crypto.randomUUID(), season: crypto.randomUUID() })
 // Code points, as the server's char_length counts them.
 const checkName = (v: string) => ([...v.trim()].length <= 80 ? null : messages.name_long)
-// The command may have run: retry with the same ids. Any other code is a definite refusal.
-const maybeRan = ['offline', 'unknown', 'in_progress']
 
 export function NewTournament() {
   const navigate = useNavigate()
   const { ref, showErrors, values } = useForm()
-  // Kept across retries that may have reached the server, so a create is never made twice.
-  const ids = useRef(newIds())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -26,11 +21,14 @@ export function NewTournament() {
     if (!v || busy) return
     setBusy(true)
     setError(null)
-    const { command, tournament, season } = ids.current
-    const r = await runCommand('create_tournament', { tournament_id: tournament, season_id: season, name: v.name }, command)
+    // send() retries with the same ids, so each submit is a new tournament.
+    const tournament = crypto.randomUUID()
+    const r = await send('create_tournament', { tournament_id: tournament, season_id: crypto.randomUUID(), name: v.name }, { scope: tournament })
     setBusy(false)
-    if (r.ok) return navigate('/', { replace: true })
-    if (!maybeRan.includes(r.code ?? '')) ids.current = newIds()
+    // Queued: it sends when the signal is back; My tournaments shows it as waiting.
+    if (r.ok || r.code === 'queued') return navigate('/', { replace: true })
+    // A definite refusal: shown here, so it needn't wait in the queue as failed.
+    if (r.commandId) void forgetRefused(r.commandId)
     setError(messageFor(r.code))
   }
 

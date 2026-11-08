@@ -74,6 +74,18 @@ Local builds without `VITE_TURNSTILE_SITE_KEY` skip the widget; sign-up then onl
 
 The theme override (account menu: Device / Light / Dark) is stored per device in `localStorage` key `theme` and applied before first paint by the inline script in `index.html`.
 
+## Outbox (Story 1.7)
+
+Every change goes through `send(name, args, { scope })` from `src/domain/commands.ts`; features never call `runCommand` or import `src/outbox`. `send` stores the command on the device (Dexie/IndexedDB) before any network call, replays in order with the same `command_id` on every attempt, and resolves with the server's answer or `{ ok: false, code: 'queued' }` when it couldn't reach the server (treat that as accepted: it sends later).
+
+- Give a scope: the Tournament or Season id the change belongs to, or `'global'`. A refused change stops later changes in its scope only.
+- Add a `commandLabels` entry in `src/features/save-status/labels.ts` for every new command, in plain words ("Create tournament ‘Gulmi Cup’"); the Save status lists waiting changes with it.
+- Network failures, `unknown` (5xx), `in_progress` and `not_signed_in` retry (2 s doubling to 60 s, and at once on reconnect, any auth change and app start); any other code (4xx is `request_failed`) marks the change failed until "Try saving again". Nothing is dropped without the user: a screen that shows a refusal itself (like the create form) calls `forgetRefused(commandId)`.
+- Only the signed-in user's entries replay and count for the Save status, the leave warning and the update gate. `send` with nobody signed in returns `not_signed_in` and stores nothing.
+- A new service worker activates only once this user has nothing pending and the page is hidden (or right at app start); closing the tab with changes waiting asks first.
+- `npm run check:outbox` (needs Google Chrome) runs every case against a mocked server.
+- The server-corrected `enteredAt` needs Supabase to expose the `Date` response header to the browser (CORS); without it the offset is 0 and the device clock is used.
+
 ## Make the release gate block merges
 
 GitHub > `arjunmara/tsl` > Settings > Rules > Rulesets (or Branches > Branch protection) > target `main` > Require status checks to pass > add `gate` (from `.github/workflows/release-gate.yml`). Also require a pull request before merging.

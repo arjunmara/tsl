@@ -122,7 +122,8 @@ async function pass(page) {
   await page.evaluate(() => window.__pass())
 }
 const sentToken = (p) => called(p).at(-1)?.body.gotrue_meta_security?.captcha_token
-const alertText = async (page) => (await page.getByRole('alert').textContent()).trim()
+// The page's own alert; the Save status header (outside main) may hold another.
+const alertText = async (page) => (await page.locator('main').getByRole('alert').textContent()).trim()
 
 async function signedIn(email = 'org@example.com', opts) {
   const { context, page } = await fresh({ stored: session(email), ...opts })
@@ -170,7 +171,7 @@ try {
     // Wrong/expired OTP: words + Send a new code.
     await code.fill('000000')
     await button(page, 'Verify email').click()
-    await page.getByRole('alert').waitFor()
+    await page.locator('main').getByRole('alert').waitFor()
     assert.equal(await alertText(page), "That code didn't work or has expired.")
     await pass(page)
     await button(page, 'Send a new code').click()
@@ -199,7 +200,7 @@ try {
     assert.deepEqual([called('/verify')[0].body.token_hash, called('/verify')[0].body.type], ['good', 'signup'])
     await page.evaluate(() => localStorage.clear())
     await page.goto(base + '/auth/callback?token_hash=bad&type=signup')
-    await page.getByRole('alert').waitFor()
+    await page.locator('main').getByRole('alert').waitFor()
     assert.equal(await alertText(page), "That link didn't work or has expired.")
     await button(page, 'Send a new code').click()
     await waitPath(page, '/check-email')
@@ -219,7 +220,7 @@ try {
     assert.equal((await page.locator(`[id="${why}"]`).textContent()).trim(), "Checking you're not a robot…")
     await pass(page)
     await signInButton.click()
-    await page.getByRole('alert').waitFor()
+    await page.locator('main').getByRole('alert').waitFor()
     assert.equal(await alertText(page), 'Email or password is wrong.')
     assert.equal(sentToken('/token?password'), 'tok', 'sign in without captcha token')
 
@@ -264,7 +265,7 @@ try {
     await page.getByLabel('Code').fill('000000')
     await page.getByLabel('New password').fill('brand-new-pass')
     await button(page, 'Save new password').click()
-    await page.getByRole('alert').waitFor()
+    await page.locator('main').getByRole('alert').waitFor()
     assert.equal(await alertText(page), "That code didn't work or has expired.")
     await pass(page)
     await button(page, 'Send a new code').click()
@@ -335,39 +336,35 @@ try {
     await context.close()
   }
 
-  // --- Create refused: offline keeps the same command (no double create); a code shows its text.
+  // --- Create refused: the code's text stays on the form; the next try is a new command with new ids.
+  // (Offline and lost answers go through the outbox: scripts/outbox.check.mjs.)
   {
-    const answers = ['offline', { ok: false, code: 'email_not_verified', message: 'Not allowed.' }]
+    const answers = [{ ok: false, code: 'email_not_verified', message: 'Not allowed.' }]
     const { context, page } = await signedIn('org@example.com', { rpc: () => answers.shift() })
     await page.goto(base + '/new')
     await page.getByLabel('Tournament name').fill('Gulmi Cup')
     await button(page, 'Create tournament').click()
-    await page.getByRole('alert').waitFor()
-    assert.equal(await alertText(page), "Can't reach the server. Check your signal and try again.")
-    await button(page, 'Create tournament').click()
     await page.getByText('Verify your email first, then try again.').waitFor()
     assert.equal(await alertText(page), 'Verify your email first, then try again.')
     assert.equal(path(page), '/new')
-    // After a definite refusal, the next try is a new command with new ids.
     await button(page, 'Create tournament').click()
     await waitPath(page, '/')
-    const [first, second, third] = called('/rest/v1/rpc/create_tournament').map((c) => c.body)
-    assert.deepEqual(second, first, 'offline retry changed the command')
-    for (const k of ['command_id', 'tournament_id', 'season_id']) assert.notEqual(third[k], second[k], `${k} reused after a refusal`)
+    const [first, second] = called('/rest/v1/rpc/create_tournament').map((c) => c.body)
+    for (const k of ['command_id', 'tournament_id', 'season_id']) assert.notEqual(second[k], first[k], `${k} reused after a refusal`)
     await context.close()
   }
 
-  // --- Create hits a server error: unknown text; the retry may have run, so it reuses the ids.
+  // --- Create hits a server error: queued, shown as waiting, retried with the same ids, then listed.
   {
     const answers = [500]
     const { context, page } = await signedIn('org@example.com', { rpc: () => answers.shift() })
     await page.goto(base + '/new')
     await page.getByLabel('Tournament name').fill('Gulmi Cup')
     await button(page, 'Create tournament').click()
-    await page.getByRole('alert').waitFor()
-    assert.equal(await alertText(page), 'Something went wrong. Try again.')
-    await button(page, 'Create tournament').click()
     await waitPath(page, '/')
+    await page.locator('.card-waiting', { hasText: 'Waiting to send' }).waitFor()
+    await page.locator('.card').waitFor({ timeout: 8000 })
+    assert.equal(await page.locator('.card-waiting').count(), 0, 'waiting card left after sending')
     const [first, second] = called('/rest/v1/rpc/create_tournament').map((c) => c.body)
     assert.deepEqual(second, first, 'retry after a server error changed the command')
     await context.close()
@@ -378,7 +375,7 @@ try {
     const reads = ['error']
     const { context, page } = await fresh({ stored: session('org@example.com'), listRead: () => reads.shift() })
     await page.goto(base + '/')
-    await page.getByRole('alert').waitFor()
+    await page.locator('main').getByRole('alert').waitFor()
     assert.equal(await alertText(page), "Couldn't load your tournaments. Try loading them again.")
     assert.ok(await button(page, 'Create new tournament').isVisible(), 'error: no Create')
     await button(page, 'Try loading again').click()
@@ -391,7 +388,7 @@ try {
     const seed = [{ id: 't1', name: 'Gulmi Cup', season: [{ number: 1, status: 'setup' }] }]
     const { context, page } = await fresh({ stored: session('org@example.com'), listRead: () => (down ? 'offline' : undefined), seed })
     await page.goto(base + '/')
-    await page.getByRole('alert').waitFor({ timeout: 15000 })
+    await page.locator('main').getByRole('alert').waitFor({ timeout: 15000 })
     assert.equal(await alertText(page), "Can't reach the server. Check your signal and try again.")
     assert.ok(await button(page, 'Create new tournament').isVisible(), 'offline: no Create')
     await context.setOffline(true)
@@ -399,7 +396,7 @@ try {
     await context.setOffline(false)
     await page.locator('.card').waitFor()
     assert.match(await page.locator('.card').textContent(), /Gulmi Cup/)
-    assert.equal(await page.getByRole('alert').count(), 0, 'error still shown after reload')
+    assert.equal(await page.locator('main').getByRole('alert').count(), 0, 'error still shown after reload')
     await context.close()
   }
 
@@ -463,7 +460,7 @@ try {
     await page.getByLabel('Password').fill('long-enough-1')
     await pass(page)
     await button(page, 'Create account').click()
-    await page.getByRole('alert').waitFor()
+    await page.locator('main').getByRole('alert').waitFor()
     assert.equal(await alertText(page), 'An account with this email already exists.')
     assert.equal(path(page), '/sign-up')
     assert.ok(await page.getByRole('link', { name: 'reset your password' }).isVisible())
@@ -492,7 +489,7 @@ try {
   {
     const { context, page } = await fresh({ offlineVerifies: 1 })
     await page.goto(base + '/auth/callback?token_hash=good&type=signup')
-    await page.getByRole('alert').waitFor()
+    await page.locator('main').getByRole('alert').waitFor()
     assert.match(await alertText(page), /^Can't reach the server/)
     await button(page, 'Try the link again').click()
     await waitPath(page, '/')

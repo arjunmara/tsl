@@ -31,6 +31,7 @@ export const messages = {
   season_registration: "This can't change once registration has opened.",
   season_started: "This can't change once the season has started.",
   season_finished: "This can't change because the season has finished.",
+  request_failed: "This change was refused. It's kept so you can try again.",
   tournaments_unknown: "Couldn't load your tournaments. Try loading them again.",
   // Form checks
   email_format: 'Enter an email address like name@example.com.',

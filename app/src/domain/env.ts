@@ -19,3 +19,5 @@ export function databaseRef(): string | null {
 export const turnstileSiteKey: string = import.meta.env.VITE_TURNSTILE_SITE_KEY ?? ''
 /** Optional fixed base for links in emails; empty means the page's own origin (see appUrl.ts). */
 export const appUrlEnv: string = import.meta.env.VITE_APP_URL ?? ''
+/** package.json version, recorded on every outbox entry. */
+export const appVersion: string = __APP_VERSION__

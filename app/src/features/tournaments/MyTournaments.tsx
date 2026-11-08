@@ -1,22 +1,14 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { useOutbox } from '../../domain/commands'
 import { messages } from '../../domain/messages'
 import { myTournaments, type SeasonStatus, type TournamentSummary } from '../../domain/tournaments'
 import { PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { StatusPill } from '../../ui/StatusPill'
 import { Problem } from '../auth/Screen'
+import { useOnline } from '../app/online'
 import { useSession } from '../auth/session'
 import { AccountMenu } from './AccountMenu'
-
-function subscribe(cb: () => void) {
-  window.addEventListener('online', cb)
-  window.addEventListener('offline', cb)
-  return () => {
-    window.removeEventListener('online', cb)
-    window.removeEventListener('offline', cb)
-  }
-}
-const useOnline = () => useSyncExternalStore(subscribe, () => navigator.onLine)
 
 const statusLabel: Record<SeasonStatus, string> = { setup: 'Setup', registration: 'Registration', started: 'Started', finished: 'Finished' }
 
@@ -28,6 +20,8 @@ export function MyTournaments() {
   const [list, setList] = useState<TournamentSummary[] | undefined>()
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
+  // This user's creates still on the device; the list reloads as each one is sent.
+  const queued = useOutbox().entries.filter((e) => e.name === 'create_tournament')
 
   // Loads on open, on "Try loading again", and again when the signal comes back.
   useEffect(() => {
@@ -44,8 +38,17 @@ export function MyTournaments() {
       setError(r.code === 'offline' ? messages.offline : messages.tournaments_unknown)
     })
     return () => { live = false }
-  }, [attempt])
+  }, [attempt, queued.length])
 
+  // A create already in the loaded list (sent, answer lost) shows once, as the real card.
+  const waiting = queued.filter((e) => !list?.some((t) => t.id === e.args.tournament_id)).map((e) => (
+    <li key={e.seq} className="card-waiting">
+      <h2 className="body-strong">{String(e.args.name ?? '')}</h2>
+      <p className="body">
+        <StatusPill state="pending" label={e.state === 'failed' ? "Couldn't save" : 'Waiting to send'} />
+      </p>
+    </li>
+  ))
   const create = <PrimaryButton label="Create new tournament" onClick={() => navigate('/new')} />
   return (
     <main className="screen">
@@ -57,15 +60,16 @@ export function MyTournaments() {
       {list === undefined ? (
         <div aria-busy="true">
           <p className="ui-visually-hidden">Loading</p>
-          <ul className="cards">{[0, 1, 2].map((i) => <li key={i} className="skeleton-card" />)}</ul>
+          <ul className="cards">{waiting}{[0, 1, 2].map((i) => <li key={i} className="skeleton-card" />)}</ul>
         </div>
       ) : error ? (
         <>
           <Problem text={error} />
           <SecondaryButton label="Try loading again" onClick={() => (setList(undefined), setError(null), setAttempt((n) => n + 1))} />
+          {waiting.length > 0 && <ul className="cards">{waiting}</ul>}
           {create}
         </>
-      ) : list.length === 0 ? (
+      ) : list.length === 0 && waiting.length === 0 ? (
         <div className="empty">
           <p className="body-strong">No tournaments yet.</p>
           {create}
@@ -73,6 +77,7 @@ export function MyTournaments() {
       ) : (
         <>
           <ul className="cards">
+            {waiting}
             {list.map((t) => (
               <li key={t.id} className="card">
                 <h2 className="body-strong">{t.name}</h2>

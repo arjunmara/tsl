@@ -15,10 +15,12 @@
     "check": "node scripts/scaffold.check.mjs",
     "check:a11y": "node scripts/a11y.check.mjs",
     "check:ui": "node scripts/ui.check.mjs",
-    "check:auth": "node scripts/auth.check.mjs"
+    "check:auth": "node scripts/auth.check.mjs",
+    "check:outbox": "node scripts/outbox.check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.119.0",
+    "dexie": "4.4.7",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-router": "8.5.1",

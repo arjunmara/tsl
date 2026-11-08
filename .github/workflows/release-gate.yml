@@ -34,6 +34,8 @@ jobs:
         run: npm run check:ui
       - name: Auth check
         run: npm run check:auth
+      - name: Offline replay test (Story 1.7)
+        run: npm run check:outbox
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
       # and write, Activity log, idempotency) and the pg_proc command skeleton check.
       - name: Migration, leak tests and command skeleton check (Stories 1.4, 1.6)
@@ -49,6 +51,4 @@ jobs:
           fi
       # Slots filled by later stories; each stays a passing no-op until then.
       - name: Standings test (Story 3.4)
-        run: echo "not yet implemented"
-      - name: Offline replay test (Story 1.7)
         run: echo "not yet implemented"

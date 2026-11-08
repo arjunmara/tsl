@@ -3,7 +3,7 @@ import { callbackUrl } from './appUrl'
 import { messages, type MessageCode } from './messages'
 import { supabase } from './supabase'
 
-export type Session = { email: string; verified: boolean }
+export type Session = { id: string; email: string; verified: boolean }
 /** null on success; otherwise the code and its plain-English message. */
 export type AuthFailure = { code: MessageCode; message: string } | null
 
@@ -92,7 +92,7 @@ export const signOut = () => run(() => supabase.auth.signOut({ scope: 'local' })
 /** Calls cb with the current session now and on every change; returns the unsubscribe. */
 export function onSession(cb: (s: Session | null) => void): () => void {
   const { data } = supabase.auth.onAuthStateChange((_event, s) => {
-    cb(s?.user ? { email: s.user.email ?? '', verified: !!s.user.email_confirmed_at } : null)
+    cb(s?.user ? { id: s.user.id, email: s.user.email ?? '', verified: !!s.user.email_confirmed_at } : null)
   })
   return () => data.subscription.unsubscribe()
 }
