@@ -1780,8 +1780,8 @@
    "day": null,
    "kickoff": "06:00:00",
    "status": "done",
-   "hg": 7,
-   "ag": 0,
+   "hg": 6,
+   "ag": 1,
    "hp": null,
    "ap": null
   }
@@ -2916,30 +2916,6 @@
    "og": false
   },
   {
-   "id": 142,
-   "match": 22,
-   "team": 4,
-   "player": null,
-   "minute": null,
-   "og": false
-  },
-  {
-   "id": 143,
-   "match": 22,
-   "team": 4,
-   "player": null,
-   "minute": null,
-   "og": false
-  },
-  {
-   "id": 144,
-   "match": 22,
-   "team": 4,
-   "player": null,
-   "minute": null,
-   "og": false
-  },
-  {
    "id": 151,
    "match": 22,
    "team": 4,
@@ -2961,6 +2937,30 @@
    "team": 4,
    "player": 25,
    "minute": 1,
+   "og": false
+  },
+  {
+   "id": 154,
+   "match": 22,
+   "team": 4,
+   "player": 27,
+   "minute": 60,
+   "og": false
+  },
+  {
+   "id": 155,
+   "match": 22,
+   "team": 2,
+   "player": 12,
+   "minute": 60,
+   "og": false
+  },
+  {
+   "id": 156,
+   "match": 22,
+   "team": 4,
+   "player": 27,
+   "minute": 10,
    "og": false
   }
  ],
@@ -3214,9 +3214,9 @@
      "src": "../Sponsors/web/sarwan-chand.jpg",
      "until": 1793762754816
     },
-    "as": 0,
+    "as": 1,
     "hc": "#ffffff",
-    "hs": 7,
+    "hs": 6,
     "lay": {
      "x": 130,
      "y": 20,
