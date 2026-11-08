@@ -46,6 +46,8 @@ and **live** (the existing TSL project).
 
 ## Nightly backup
 
+**Paused (2026-11-08):** the schedule is commented out in `app-backup.yml` until the R2 bucket and secrets exist. Turn it on before the first real Organiser data lands (Story 2.x at the latest); steps 5–7 above are deferred until then.
+
 `.github/workflows/app-backup.yml` runs at 19:00 UTC (00:45 in Nepal). It dumps schema `app`
 from live with `pg_dump --schema=app --strict-names --no-owner`, checks the dump contains the schema, uploads it and confirms the object is in the bucket, gzips it and uploads
 `app-YYYY-MM-DDTHHMMZ.sql.gz` to R2 (reruns never overwrite). A failed run fails the workflow, and GitHub emails the owner.

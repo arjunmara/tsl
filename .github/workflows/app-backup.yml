@@ -3,7 +3,8 @@
 # Actions artifacts: this repo is public. Setup steps: supabase/migrations/README.md.
 name: App backup
 on:
-  schedule: [{ cron: '0 19 * * *' }]  # 00:45 in Nepal
+  # Paused until the founder sets up R2 and the secrets (no app data yet). To turn on, restore:
+  # schedule: [{ cron: '0 19 * * *' }]  # 00:45 in Nepal
   workflow_dispatch:
 permissions: { contents: read }
 jobs:
