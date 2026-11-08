@@ -1,0 +1,43 @@
+name: Release gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.node-version
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint (layer rule)
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Scaffold checks (layer rule, build guard)
+        run: npm run check
+      - name: Accessibility check
+        run: npm run check:a11y
+      - name: Component check
+        run: npm run check:ui
+      # Slots filled by later stories; each stays a passing no-op until then.
+      - name: Leak tests (Story 1.6)
+        run: echo "not yet implemented"
+      - name: Command skeleton check (Story 1.6)
+        run: echo "not yet implemented"
+      - name: Standings test (Story 3.4)
+        run: echo "not yet implemented"
+      - name: Offline replay test (Story 1.7)
+        run: echo "not yet implemented"
