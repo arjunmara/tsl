@@ -26,6 +26,12 @@
 /seasons/*/graphics/
 !/supabase/
 !/CLAUDE.md
+# New multi-organiser app (Vite build, Cloudflare Pages)
+!/app/
+/app/node_modules/
+/app/dist/
+/app/dev-dist/
+/app/.env*
 # BMAD method and skills (planning output stays private, in its own repo)
 !/_bmad/
 !/.claude/

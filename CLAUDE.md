@@ -5,6 +5,8 @@
 
 Tools for the Tamghas Super League futsal tournament (Tamghas, Gulmi, Nepal): a phone graphics maker, a live-stream overlay and a match console. Static HTML pages with plain scripts and no build step, served by GitHub Pages from `arjunmara/tsl`; data in Supabase Postgres. BMAD planning output goes in `_bmad-output/`, long-term docs in `docs/`.
 
+The exception is `app/`, the new multi-organiser PWA: a Vite + React build (Node 22) deployed by Cloudflare Pages, not GitHub Pages; see `app/README.md`.
+
 ## Policy
 
 - Ask before every `git push`: pushing to `main` deploys to every phone via GitHub Pages.
