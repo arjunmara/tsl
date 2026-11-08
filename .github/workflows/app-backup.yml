@@ -1,0 +1,49 @@
+# Nightly private backup of the app schema on live into a Cloudflare R2 bucket.
+# The bucket's lifecycle rule deletes copies after 30 days. Dumps never go to git or to
+# Actions artifacts: this repo is public. Setup steps: supabase/migrations/README.md.
+name: App backup
+on:
+  # Paused until the founder sets up R2 and the secrets (no app data yet). To turn on, restore:
+  # schedule: [{ cron: '0 19 * * *' }]  # 00:45 in Nepal
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      LIVE_DB_URL: ${{ secrets.LIVE_DB_URL }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - name: Check secrets
+        run: |
+          missing=0
+          for n in LIVE_DB_URL R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
+            [ -n "${!n}" ] || { echo "::error::Secret $n is not set"; missing=1; }
+          done
+          exit $missing
+      - name: Dump and upload
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -euo pipefail
+          file="app-$(date -u +%Y-%m-%dT%H%MZ).sql.gz"
+          # The URL reaches the container as an env var, never on a command line.
+          docker run --rm -e LIVE_DB_URL postgres:17 \
+            sh -c 'pg_dump "$LIVE_DB_URL" --schema=app --strict-names --no-owner' \
+            | gzip > "$RUNNER_TEMP/$file"
+          gunzip -t "$RUNNER_TEMP/$file"
+          gunzip -c "$RUNNER_TEMP/$file" | grep -q '^CREATE SCHEMA app;' \
+            || { echo "::error::Dump has no CREATE SCHEMA app"; exit 1; }
+          aws s3 cp "$RUNNER_TEMP/$file" "s3://$R2_BUCKET/$file" \
+            --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" --only-show-errors
+          aws s3 ls "s3://$R2_BUCKET/$file" \
+            --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" | grep -q "$file" \
+            || { echo "::error::Uploaded object not found in R2"; exit 1; }
+          rm -f "$RUNNER_TEMP/$file"
