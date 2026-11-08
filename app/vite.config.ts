@@ -17,11 +17,33 @@ export default defineConfig(({ mode }) => {
     }
   }
   return {
+    build: {
+      rollupOptions: { input: { main: 'index.html', tokens: 'tokens.html' } },
+    },
     plugins: [
       react(),
       VitePWA({
         // 'prompt': a new service worker waits; a later story activates it only when the outbox is empty (AD-25).
         registerType: 'prompt',
+        // Google Fonts cached on first load so offline phones keep Barlow and Bebas Neue.
+        workbox: {
+          runtimeCaching: [
+            {
+              urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com',
+              handler: 'CacheFirst',
+              options: { cacheName: 'google-fonts-css' },
+            },
+            {
+              urlPattern: ({ url }) => url.origin === 'https://fonts.gstatic.com',
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-files',
+                cacheableResponse: { statuses: [0, 200] },
+                expiration: { maxEntries: 20, maxAgeSeconds: 31536000 },
+              },
+            },
+          ],
+        },
         manifest: {
           name: 'Tamghas Super League',
           short_name: 'TSL',

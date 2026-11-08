@@ -1,0 +1,85 @@
+/* Sample page only (tokens.html). Real components arrive in Story 1.3. */
+.sample {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--spacing-gutter);
+}
+.sample section {
+  margin-top: var(--spacing-5);
+}
+.sample-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+  gap: var(--spacing-3);
+}
+.sample-swatch {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--rounded-md);
+  padding: var(--spacing-2);
+}
+.sample-chip {
+  height: var(--spacing-touch-min);
+  border: 2px solid var(--ink-muted);
+  border-radius: var(--rounded-sm);
+  margin-bottom: var(--spacing-2);
+}
+.sample-bar {
+  height: var(--spacing-4);
+  background: var(--ink-muted);
+}
+.sample-radius {
+  width: var(--spacing-touch-min);
+  height: var(--spacing-touch-min);
+  border: 2px solid var(--ink-muted);
+}
+.sample-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+}
+.sample-button {
+  min-height: var(--spacing-touch-min);
+  max-width: 100%;
+  padding: 0 var(--spacing-4);
+  border-radius: var(--rounded-md);
+  font-family: var(--body-strong-font-family);
+  font-weight: var(--body-strong-font-weight);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.sample-button.primary {
+  background: var(--action);
+  color: var(--on-action);
+  border: 2px solid var(--action);
+}
+.sample-button.secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border: 2px solid var(--ink-muted);
+}
+.sample-button.secondary:hover {
+  background: var(--bg);
+}
+.sample-select {
+  min-height: var(--spacing-touch-min);
+  max-width: 100%;
+  border: 2px solid var(--ink-muted);
+  border-radius: var(--rounded-md);
+  background: var(--surface);
+  padding: 0 var(--spacing-3);
+}
+.sample-name {
+  font-variant-ligatures: none;
+  letter-spacing: 0.02em;
+}
+.sample-panel {
+  border-radius: var(--rounded-md);
+  padding: var(--spacing-3);
+}
+.sample-button.undo {
+  background: transparent;
+  color: var(--highlight-dark);
+  border: 2px solid var(--highlight-dark);
+}

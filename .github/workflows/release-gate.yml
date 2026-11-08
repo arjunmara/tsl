@@ -28,6 +28,8 @@ jobs:
         run: npm run build
       - name: Scaffold checks (layer rule, build guard)
         run: npm run check
+      - name: Accessibility check
+        run: npm run check:a11y
       # Slots filled by later stories; each stays a passing no-op until then.
       - name: Leak tests (Story 1.6)
         run: echo "not yet implemented"
@@ -36,6 +38,4 @@ jobs:
       - name: Standings test (Story 3.4)
         run: echo "not yet implemented"
       - name: Offline replay test (Story 1.7)
-        run: echo "not yet implemented"
-      - name: Accessibility check (Story 1.3)
         run: echo "not yet implemented"

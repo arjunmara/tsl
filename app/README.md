@@ -18,6 +18,10 @@ npm run preview    # serve dist/
 
 The database comes only from `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in the build environment; `src/domain/env.ts` is the only reader. Without them a local or CI build still works and the page shows "No database configured". On Cloudflare Pages (`CF_PAGES=1`) a missing variable fails the build. Never commit a `.env` file or a key.
 
+## Design tokens
+
+Tokens live in `src/ui/tokens.css`; sample at `/tokens.html`. `npm run check:a11y` (after build, needs Google Chrome) checks contrast, colour literals, themes, 200% text and reduced motion.
+
 ## Layers
 
 `src/ui` (tokens, components) imports nothing below it. `src/features/<area>` may import `ui` and `domain`. Only `src/domain` and `src/outbox` import Supabase. `eslint.config.js` enforces this with `no-restricted-imports`.

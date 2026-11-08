@@ -31,6 +31,12 @@ for (const [file, imp] of [['src/domain/x.ts', '../features/a'], ['src/domain/x.
   assert.ok(msgs.some((m) => m.includes(imp) && m.includes(above)), `${file} -> ${imp} must fail: ${msgs}`)
 }
 assert.deepEqual(await lint('src/domain/x.ts', "import './other'\n"), [])
+const sample = 'the sample page imports only ui'
+for (const imp of ['../domain/env', '../features/a', '../outbox/q', '@supabase/supabase-js']) {
+  const msgs = await lint('src/sample/x.tsx', `import '${imp}'\n`)
+  assert.ok(msgs.some((m) => m.includes(imp) && m.includes(sample)), `sample -> ${imp} must fail: ${msgs}`)
+}
+assert.deepEqual(await lint('src/sample/x.tsx', "import '../ui/b'\n"), [])
 
 // Build guard: on Cloudflare Pages a missing variable fails the config; elsewhere it loads.
 const env = { command: 'build', mode: 'production' }
