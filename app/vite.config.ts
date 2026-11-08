@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '')
   // Cloudflare Pages sets CF_PAGES=1: never ship a build that points at no database.
   if (env.CF_PAGES) {
-    for (const name of ['VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY']) {
+    for (const name of ['VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_TURNSTILE_SITE_KEY']) {
       if (!env[name]) throw new Error(`${name} is not set in this Cloudflare Pages environment`)
     }
     try {

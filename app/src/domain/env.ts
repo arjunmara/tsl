@@ -15,3 +15,7 @@ export function refFromUrl(url: string): string | null {
 export function databaseRef(): string | null {
   return refFromUrl(supabaseUrl)
 }
+
+export const turnstileSiteKey: string = import.meta.env.VITE_TURNSTILE_SITE_KEY ?? ''
+/** Optional fixed base for links in emails; empty means the page's own origin (see appUrl.ts). */
+export const appUrlEnv: string = import.meta.env.VITE_APP_URL ?? ''
