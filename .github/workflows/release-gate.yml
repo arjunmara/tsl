@@ -30,6 +30,8 @@ jobs:
         run: npm run check
       - name: Accessibility check
         run: npm run check:a11y
+      - name: Component check
+        run: npm run check:ui
       # Slots filled by later stories; each stays a passing no-op until then.
       - name: Leak tests (Story 1.6)
         run: echo "not yet implemented"

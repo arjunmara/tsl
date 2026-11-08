@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
   }
   return {
     build: {
-      rollupOptions: { input: { main: 'index.html', tokens: 'tokens.html' } },
+      rollupOptions: { input: { main: 'index.html', tokens: 'tokens.html', components: 'components.html' } },
     },
     plugins: [
       react(),

@@ -13,7 +13,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "node scripts/scaffold.check.mjs",
-    "check:a11y": "node scripts/a11y.check.mjs"
+    "check:a11y": "node scripts/a11y.check.mjs",
+    "check:ui": "node scripts/ui.check.mjs"
   },
   "dependencies": {
     "react": "19.3.1",

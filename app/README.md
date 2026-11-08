@@ -22,6 +22,8 @@ The database comes only from `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_
 
 Tokens live in `src/ui/tokens.css`; sample at `/tokens.html`. `npm run check:a11y` (after build, needs Google Chrome) checks contrast, colour literals, themes, 200% text and reduced motion.
 
+Components in `src/ui`: `PrimaryButton`, `SecondaryButton`, `DestructiveButton` (always via a Confirm sheet), `Field` with `focusFirstInvalid`, `StatusPill`, `ConfirmSheet`; sample at `/components.html`, checked by `npm run check:ui`.
+
 ## Layers
 
 `src/ui` (tokens, components) imports nothing below it. `src/features/<area>` may import `ui` and `domain`. Only `src/domain` and `src/outbox` import Supabase. `eslint.config.js` enforces this with `no-restricted-imports`.
