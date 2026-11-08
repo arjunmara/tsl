@@ -32,6 +32,17 @@ jobs:
         run: npm run check:a11y
       - name: Component check
         run: npm run check:ui
+      - name: Migration check
+        working-directory: .
+        run: bash supabase/migrations/check.sh
+      - name: Public-data guard
+        working-directory: .
+        # sync.py writes into the public repo; it must never read the app schema.
+        run: |
+          [ -f sync.py ] || { echo "::error::sync.py is missing"; exit 1; }
+          if grep -qiE 'Accept-Profile|Content-Profile' sync.py; then
+            echo "::error::sync.py sets a schema profile header (reads a non-public schema)"; exit 1
+          fi
       # Slots filled by later stories; each stays a passing no-op until then.
       - name: Leak tests (Story 1.6)
         run: echo "not yet implemented"
