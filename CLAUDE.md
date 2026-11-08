@@ -38,6 +38,8 @@ The exception is `app/`, the new multi-organiser PWA: a Vite + React build (Node
 - Show dates fans see in both BS and AD, e.g. `Saturday · Kartik 14, 2083 BS (31 Oct 2026)`. BS month lengths vary by year, so look dates up rather than computing an offset.
 - `loadSeason()` in `db.js` and `texts()` in `sync.py` build the same text/JSON shapes the templates read; change them together.
 
+- In `app/`, every button and link label is a verb plus its object that reads clearly on its own ("Create new tournament", "Email me a reset code"), never a bare noun, "Submit"/"OK"/"Continue" or a generic "Try again"; when you touch a screen, review its labels and fix any that fail (rule in `app/README.md` → Writing labels).
+
 ## Known pitfalls
 
 - A page's scripts share one global scope (`db.js`, `league.js`, `live.js`, then the page's own script), so a duplicate top-level `const` breaks the whole page. Check the name is free before adding a helper.

@@ -29,7 +29,7 @@ export function MyTournaments() {
       {!online && <p role="status" className="banner body-strong">{messages.offline_banner}</p>}
       <div className="empty">
         <p className="body-strong">No tournaments yet.</p>
-        <PrimaryButton label="New tournament" onClick={() => navigate('/new')} />
+        <PrimaryButton label="Create new tournament" onClick={() => navigate('/new')} />
       </div>
     </main>
   )

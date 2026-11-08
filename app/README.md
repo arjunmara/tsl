@@ -24,6 +24,10 @@ Tokens live in `src/ui/tokens.css`; sample at `/tokens.html`. `npm run check:a11
 
 Components in `src/ui`: `PrimaryButton`, `SecondaryButton`, `DestructiveButton` (always via a Confirm sheet), `Field` with `focusFirstInvalid`, `StatusPill`, `ConfirmSheet`; sample at `/components.html`, checked by `npm run check:ui`.
 
+## Writing labels
+
+Every button and link is a verb plus its object and makes sense on its own: "Create new tournament", not "New tournament"; "Email me a reset code", not "Send code"; "Try the link again", not "Try again". No "Submit", "OK", "Continue" or "Done". Exceptions: wizard "Next"/"Back" and Confirm-sheet "Cancel". Messages come from `src/domain/messages.ts` and follow EXPERIENCE.md Voice and Tone. When you touch a screen, check its labels against this and fix any that fail.
+
 ## Layers
 
 `src/ui` (tokens, components) imports nothing below it. `src/features/<area>` may import `ui` and `domain`. Only `src/domain` and `src/outbox` import Supabase. `eslint.config.js` enforces this with `no-restricted-imports`.

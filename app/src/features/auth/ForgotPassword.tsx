@@ -37,7 +37,7 @@ export function ForgotPassword() {
           required validate={checkEmail} showErrors={showErrors} />
         <Turnstile key={widget} onToken={setToken} quiet />
         <Problem text={error} />
-        <PrimaryButton label="Send code" onClick={() => void submit()} {...blocked(busy ? 'Sending…' : token === null && messages.captcha_wait)} />
+        <PrimaryButton label="Email me a reset code" onClick={() => void submit()} {...blocked(busy ? 'Sending…' : token === null && messages.captcha_wait)} />
       </form>
       <p className="body"><Link to="/sign-in">Back to sign in</Link></p>
     </Screen>

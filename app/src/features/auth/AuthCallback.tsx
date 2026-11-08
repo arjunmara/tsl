@@ -36,7 +36,7 @@ export function AuthCallback() {
       {problem === 'offline' ? (
         <>
           <Problem text={messages.offline} />
-          <PrimaryButton label="Try again" onClick={() => (setFailed(null), setAttempt((n) => n + 1))} />
+          <PrimaryButton label="Try the link again" onClick={() => (setFailed(null), setAttempt((n) => n + 1))} />
         </>
       ) : problem ? (
         <>

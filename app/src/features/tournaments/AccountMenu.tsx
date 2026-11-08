@@ -4,7 +4,7 @@ import { signOut } from '../../domain/auth'
 import { SecondaryButton } from '../../ui/Button'
 import { applyTheme, currentTheme, type Theme } from './theme'
 
-const themes: [Theme, string][] = [['device', 'Device'], ['light', 'Light'], ['dark', 'Dark']]
+const themes: [Theme, string][] = [['device', 'Same as this phone'], ['light', 'Light'], ['dark', 'Dark']]
 
 export function AccountMenu({ email }: { email: string }) {
   const navigate = useNavigate()

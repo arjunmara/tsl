@@ -159,7 +159,7 @@ try {
     await page.getByText('No tournaments yet.').waitFor()
     const verify = called('/verify').at(-1)
     assert.deepEqual([verify.body.type, verify.body.token, verify.body.email], ['signup', '123456', 'new@example.com'])
-    assert.ok(await button(page, 'New tournament').isVisible(), 'empty state Primary')
+    assert.ok(await button(page, 'Create new tournament').isVisible(), 'empty state Primary')
     await context.close()
   }
 
@@ -229,7 +229,7 @@ try {
     await page.goto(base + '/forgot-password')
     await page.getByLabel('Email').fill('org@example.com')
     await pass(page)
-    await button(page, 'Send code').click()
+    await button(page, 'Email me a reset code').click()
     await waitPath(page, '/reset-password')
     assert.equal(called('/recover')[0].body.email, 'org@example.com')
     assert.equal(sentToken('/recover'), 'tok', 'reset request without captcha token')
@@ -305,7 +305,7 @@ try {
     await page.reload()
     await page.getByText('Account', { exact: true }).click()
     assert.ok(await page.getByLabel('Dark').isChecked())
-    await page.getByLabel('Device').check()
+    await page.getByLabel('Same as this phone').check()
     assert.deepEqual(await theme(), [null, null])
     await context.close()
   }
@@ -368,7 +368,7 @@ try {
     await page.goto(base + '/auth/callback?token_hash=good&type=signup')
     await page.getByRole('alert').waitFor()
     assert.match(await alertText(page), /^Can't reach the server/)
-    await button(page, 'Try again').click()
+    await button(page, 'Try the link again').click()
     await waitPath(page, '/')
     await page.getByText('No tournaments yet.').waitFor()
     await page.goto(base + '/auth/callback?token_hash=bad&type=signup')
