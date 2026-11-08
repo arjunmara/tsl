@@ -9,7 +9,7 @@ export const checkPassword = (v: string) => (v.length >= 8 ? null : messages.pas
 export const checkCode = (v: string) => (/^\d{6,10}$/.test(v) ? null : messages.code_format)
 
 // Field saves on blur, but a password manager can fill a field that never blurs,
-// so auth forms read the inputs themselves at submit, keyed by their autocomplete name.
+// so forms read the inputs themselves at submit, keyed by name, else by autocomplete.
 export function useForm() {
   const ref = useRef<HTMLFormElement>(null)
   const [showErrors, setShowErrors] = useState(false)
@@ -19,7 +19,7 @@ export function useForm() {
     const form = ref.current
     if (!form || focusFirstInvalid(form)) return null
     return Object.fromEntries(
-      [...form.querySelectorAll('input')].map((i) => [i.autocomplete, i.type === 'password' ? i.value : i.value.trim()]),
+      [...form.querySelectorAll('input')].map((i) => [i.name || i.autocomplete, i.type === 'password' ? i.value : i.value.trim()]),
     )
   }
   return { ref, showErrors, values }

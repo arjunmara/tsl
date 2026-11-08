@@ -1,5 +1,5 @@
-// Story 1.5 auth check: every row of the spec's I/O matrix in real Chrome against vite preview.
-// Supabase /auth/v1/* and Turnstile are mocked by route interception; the app is built for this check
+// Story 1.5 auth check: every row of the spec's I/O matrix in real Chrome against vite preview,
+// plus Story 1.6's create-tournament UI rows. Supabase /auth/v1/*, /rest/v1/* and Turnstile are mocked by route interception; the app is built for this check
 // with a fake Supabase URL into node_modules/.auth-dist. `npm run check:auth`. Needs Google Chrome.
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -39,7 +39,10 @@ let calls = []
 const called = (path) => calls.filter((c) => c.path === path)
 
 /** A fresh context: Supabase and Turnstile mocked, optional stored session and init script. */
-async function fresh({ stored, refreshDelay = 0, init, offlineVerifies = 0 } = {}) {
+// rpc(body): the create_tournament answer, 'offline' to drop the request or 500; default ok.
+// listRead(): 'error' (HTTP 500) or 'offline' for that tournament list read; default the list.
+// seed: tournaments already in the list.
+async function fresh({ stored, refreshDelay = 0, init, offlineVerifies = 0, rpc, listRead, seed = [] } = {}) {
   calls = []
   const context = await browser.newContext({ serviceWorkers: 'block' })
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort())
@@ -78,6 +81,30 @@ async function fresh({ stored, refreshDelay = 0, init, offlineVerifies = 0 } = {
       case '/logout': return route.fulfill({ status: 204, headers: cors })
       default: return bad('unexpected_failure', `unmocked ${path}`, 500)
     }
+  })
+  // The app schema: create_tournament adds to the list the tournament read returns.
+  const tournaments = [...seed]
+  await context.route(`${SUPA}/rest/v1/**`, async (route) => {
+    const req = route.request()
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    const path = new URL(req.url()).pathname
+    const body = req.postData() ? JSON.parse(req.postData()) : {}
+    calls.push({ path, body, url: req.url(), headers: req.headers() })
+    const json = (data) => route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(data) })
+    const boom = () => route.fulfill({ status: 500, headers: cors, contentType: 'application/json', body: '{"code":"XX000","message":"boom"}' })
+    if (path === '/rest/v1/tournament') {
+      const r = listRead?.()
+      if (r === 'offline') return route.abort('internetdisconnected')
+      return r === 'error' ? boom() : json(tournaments)
+    }
+    if (path === '/rest/v1/rpc/create_tournament') {
+      const r = rpc?.(body) ?? { ok: true, code: null, message: 'Tournament created.' }
+      if (r === 'offline') return route.abort('internetdisconnected')
+      if (r === 500) return boom()
+      if (r.ok) tournaments.unshift({ id: body.tournament_id, name: body.name, season: [{ number: 1, status: 'setup' }] })
+      return json(r)
+    }
+    return route.fulfill({ status: 500, headers: cors, body: `unmocked ${path}` })
   })
   if (stored) await context.addInitScript(([k, v]) => localStorage.setItem(k, v), [STORAGE_KEY, JSON.stringify(stored)])
   if (init) await context.addInitScript(init)
@@ -274,6 +301,105 @@ try {
     assert.equal(await busy.locator('.skeleton-card').count(), 3, 'skeleton cards')
     await page.getByText('No tournaments yet.').waitFor()
     assert.equal(await busy.count(), 0, 'still busy after loading')
+    await context.close()
+  }
+
+  // --- Create a tournament: field checks, then the command, then the card on My tournaments.
+  {
+    const { context, page } = await signedIn()
+    const rpcCalls = () => called('/rest/v1/rpc/create_tournament')
+    await button(page, 'Create new tournament').click()
+    await waitPath(page, '/new')
+    const create = button(page, 'Create tournament')
+    await create.click()
+    await page.getByText('Tournament name is required.').waitFor()
+    await page.getByLabel('Tournament name').fill('x'.repeat(81))
+    await create.click()
+    await page.getByText('Use 80 characters or fewer.').waitFor()
+    assert.equal(rpcCalls().length, 0, 'invalid name sent')
+    await page.getByLabel('Tournament name').fill('  Gulmi Cup ')
+    await create.click()
+    await waitPath(page, '/')
+    const card = page.locator('.card')
+    await card.waitFor()
+    assert.equal((await card.textContent()).replace(/\s+/g, ' ').trim(), 'Gulmi CupSeason 1 · Setup')
+    assert.equal(await card.locator('.ui-pill-pending').textContent(), 'Setup')
+    const [rpc] = rpcCalls()
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    assert.deepEqual(Object.keys(rpc.body).sort(), ['command_id', 'name', 'season_id', 'tournament_id'])
+    for (const k of ['command_id', 'season_id', 'tournament_id']) assert.match(rpc.body[k], uuid, k)
+    assert.equal(rpc.body.name, 'Gulmi Cup')
+    assert.equal(rpc.headers['content-profile'], 'app', 'command not sent to the app schema')
+    assert.equal(called('/rest/v1/tournament').at(-1).headers['accept-profile'], 'app', 'read not from the app schema')
+    assert.ok(await button(page, 'Create new tournament').isVisible(), 'no way to create another')
+    await context.close()
+  }
+
+  // --- Create refused: offline keeps the same command (no double create); a code shows its text.
+  {
+    const answers = ['offline', { ok: false, code: 'email_not_verified', message: 'Not allowed.' }]
+    const { context, page } = await signedIn('org@example.com', { rpc: () => answers.shift() })
+    await page.goto(base + '/new')
+    await page.getByLabel('Tournament name').fill('Gulmi Cup')
+    await button(page, 'Create tournament').click()
+    await page.getByRole('alert').waitFor()
+    assert.equal(await alertText(page), "Can't reach the server. Check your signal and try again.")
+    await button(page, 'Create tournament').click()
+    await page.getByText('Verify your email first, then try again.').waitFor()
+    assert.equal(await alertText(page), 'Verify your email first, then try again.')
+    assert.equal(path(page), '/new')
+    // After a definite refusal, the next try is a new command with new ids.
+    await button(page, 'Create tournament').click()
+    await waitPath(page, '/')
+    const [first, second, third] = called('/rest/v1/rpc/create_tournament').map((c) => c.body)
+    assert.deepEqual(second, first, 'offline retry changed the command')
+    for (const k of ['command_id', 'tournament_id', 'season_id']) assert.notEqual(third[k], second[k], `${k} reused after a refusal`)
+    await context.close()
+  }
+
+  // --- Create hits a server error: unknown text; the retry may have run, so it reuses the ids.
+  {
+    const answers = [500]
+    const { context, page } = await signedIn('org@example.com', { rpc: () => answers.shift() })
+    await page.goto(base + '/new')
+    await page.getByLabel('Tournament name').fill('Gulmi Cup')
+    await button(page, 'Create tournament').click()
+    await page.getByRole('alert').waitFor()
+    assert.equal(await alertText(page), 'Something went wrong. Try again.')
+    await button(page, 'Create tournament').click()
+    await waitPath(page, '/')
+    const [first, second] = called('/rest/v1/rpc/create_tournament').map((c) => c.body)
+    assert.deepEqual(second, first, 'retry after a server error changed the command')
+    await context.close()
+  }
+
+  // --- List read fails: words, Try loading again, Create still there; back online reloads it.
+  {
+    const reads = ['error']
+    const { context, page } = await fresh({ stored: session('org@example.com'), listRead: () => reads.shift() })
+    await page.goto(base + '/')
+    await page.getByRole('alert').waitFor()
+    assert.equal(await alertText(page), "Couldn't load your tournaments. Try loading them again.")
+    assert.ok(await button(page, 'Create new tournament').isVisible(), 'error: no Create')
+    await button(page, 'Try loading again').click()
+    await page.getByText('No tournaments yet.').waitFor()
+    await context.close()
+  }
+  {
+    // supabase-js retries a failed read 3 times (1s, 2s, 4s), so stay down until back online.
+    let down = true
+    const seed = [{ id: 't1', name: 'Gulmi Cup', season: [{ number: 1, status: 'setup' }] }]
+    const { context, page } = await fresh({ stored: session('org@example.com'), listRead: () => (down ? 'offline' : undefined), seed })
+    await page.goto(base + '/')
+    await page.getByRole('alert').waitFor({ timeout: 15000 })
+    assert.equal(await alertText(page), "Can't reach the server. Check your signal and try again.")
+    assert.ok(await button(page, 'Create new tournament').isVisible(), 'offline: no Create')
+    await context.setOffline(true)
+    down = false
+    await context.setOffline(false)
+    await page.locator('.card').waitFor()
+    assert.match(await page.locator('.card').textContent(), /Gulmi Cup/)
+    assert.equal(await page.getByRole('alert').count(), 0, 'error still shown after reload')
     await context.close()
   }
 

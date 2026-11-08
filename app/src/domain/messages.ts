@@ -19,10 +19,28 @@ export const messages = {
   bad_link: "That link didn't work or has expired.",
   captcha_load: "Couldn't load the check. Reload the page.",
   unknown: 'Something went wrong. Try again.',
+  // Commands
+  not_signed_in: 'You are signed out. Sign in again, then try again.',
+  email_not_verified: 'Verify your email first, then try again.',
+  not_authorized: "Only this tournament's organisers can change it.",
+  not_found: 'That season no longer exists. Reload the page.',
+  in_progress: 'This change is still being saved. Wait a moment, then reload.',
+  name_invalid: 'Names must be 1 to 80 characters.',
+  already_exists: 'This was already created. Reload to see it.',
+  season_setup: "This can't change while the season is in setup.",
+  season_registration: "This can't change once registration has opened.",
+  season_started: "This can't change once the season has started.",
+  season_finished: "This can't change because the season has finished.",
+  tournaments_unknown: "Couldn't load your tournaments. Try loading them again.",
   // Form checks
   email_format: 'Enter an email address like name@example.com.',
   password_short: 'Use at least 8 characters.',
   code_format: 'Enter the code from the email.',
+  name_long: 'Use 80 characters or fewer.',
 } as const
 
 export type MessageCode = keyof typeof messages
+
+/** Text for any code, e.g. from a command; unknown codes get the generic message. */
+export const messageFor = (code: string | null): string =>
+  code && Object.hasOwn(messages, code) ? messages[code as MessageCode] : messages.unknown

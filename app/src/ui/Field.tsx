@@ -13,10 +13,11 @@ export type FieldProps = {
   inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
   type?: 'text' | 'email' | 'password'
   autoComplete?: string
+  name?: string
 }
 
 // Saves on blur, only when the value changed and is valid. No page Save button.
-export function Field({ label, value, onSave, validate, required, showErrors, inputMode, type = 'text', autoComplete }: FieldProps) {
+export function Field({ label, value, onSave, validate, required, showErrors, inputMode, type = 'text', autoComplete, name }: FieldProps) {
   const id = useId()
   const errorId = useId()
   const [text, setText] = useState(value)
@@ -56,6 +57,7 @@ export function Field({ label, value, onSave, validate, required, showErrors, in
       </label>
       <input
         id={id}
+        name={name}
         className="ui-input"
         value={text}
         type={type}

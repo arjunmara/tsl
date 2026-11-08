@@ -97,3 +97,15 @@
   border-radius: var(--rounded-lg);
   background: var(--line);
 }
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: var(--spacing-4);
+  border: 1px solid var(--line);
+  border-radius: var(--rounded-lg);
+  background: var(--surface);
+}
+.card h2 {
+  margin: 0;
+}
