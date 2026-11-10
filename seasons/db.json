@@ -1780,8 +1780,8 @@
    "day": null,
    "kickoff": "06:00:00",
    "status": "done",
-   "hg": 6,
-   "ag": 1,
+   "hg": 0,
+   "ag": 0,
    "hp": null,
    "ap": null
   }
@@ -2852,14 +2852,6 @@
    "og": false
   },
   {
-   "id": 134,
-   "match": 22,
-   "team": 4,
-   "player": 26,
-   "minute": 2,
-   "og": false
-  },
-  {
    "id": 135,
    "match": 16,
    "team": 13,
@@ -2913,54 +2905,6 @@
    "team": 10,
    "player": null,
    "minute": null,
-   "og": false
-  },
-  {
-   "id": 151,
-   "match": 22,
-   "team": 4,
-   "player": 27,
-   "minute": 10,
-   "og": false
-  },
-  {
-   "id": 152,
-   "match": 22,
-   "team": 4,
-   "player": 28,
-   "minute": 1,
-   "og": false
-  },
-  {
-   "id": 153,
-   "match": 22,
-   "team": 4,
-   "player": 25,
-   "minute": 1,
-   "og": false
-  },
-  {
-   "id": 154,
-   "match": 22,
-   "team": 4,
-   "player": 27,
-   "minute": 60,
-   "og": false
-  },
-  {
-   "id": 155,
-   "match": 22,
-   "team": 2,
-   "player": 12,
-   "minute": 60,
-   "og": false
-  },
-  {
-   "id": 156,
-   "match": 22,
-   "team": 4,
-   "player": 27,
-   "minute": 10,
    "og": false
   }
  ],
@@ -3211,12 +3155,12 @@
    "state": {
     "ac": "#d71920",
     "ad": {
-     "src": "../Sponsors/web/sarwan-chand.jpg",
-     "until": 1793762754816
+     "src": "../Sponsors/web/hari-kunwar.jpg",
+     "until": 1794299258996
     },
-    "as": 1,
+    "as": 0,
     "hc": "#ffffff",
-    "hs": 6,
+    "hs": 0,
     "lay": {
      "x": 130,
      "y": 20,
@@ -3230,7 +3174,7 @@
     "guide": false,
     "match": 22,
     "scene": "auto",
-    "since": 1793762771417,
+    "since": null,
     "period": "1st Half",
     "ticker": true,
     "elapsed": 0
