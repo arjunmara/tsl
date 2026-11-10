@@ -142,3 +142,200 @@
   gap: var(--spacing-2);
   margin-top: var(--spacing-2);
 }
+
+/* Setup wizard (Story 1.8). The Back / Next bar is fixed; scroll-padding keeps a focused field above it. */
+:root {
+  --wizard-bar-height: 5rem;
+}
+:root:has(.wizard-bar) {
+  scroll-padding-bottom: var(--wizard-bar-height);
+}
+.wizard {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--spacing-5) var(--spacing-gutter) calc(var(--wizard-bar-height) + var(--spacing-5));
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+.wizard h1,
+.wizard p,
+.wizard figure {
+  margin: 0;
+}
+.wizard-progress {
+  height: 0.25rem;
+  border-radius: var(--rounded-full);
+  background: var(--line);
+  overflow: hidden;
+}
+.wizard-progress > div {
+  height: 100%;
+  background: var(--action);
+}
+.wizard-bar {
+  position: fixed;
+  inset: auto 0 0;
+  height: var(--wizard-bar-height);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.wizard-bar-inner {
+  max-width: 60rem;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 var(--spacing-gutter);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+}
+.wizard-bar-inner .ui-primary-wrap {
+  flex: 1;
+  max-width: 20rem;
+}
+.wizard-bar-inner .ui-primary {
+  width: 100%;
+}
+.wizard-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-5);
+}
+.wizard-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+@media (min-width: 1024.02px) {
+  .wizard-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+}
+.file-input:focus-visible + .file-button {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.logo-preview {
+  width: 6rem;
+  height: 6rem;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--rounded-md);
+}
+.colour-input {
+  width: 6rem;
+  height: var(--spacing-touch-min);
+  padding: var(--spacing-1);
+  background: var(--surface);
+  border: 2px solid var(--ink-muted);
+  border-radius: var(--rounded-md);
+}
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) var(--spacing-4);
+}
+.swatches p {
+  flex-basis: 100%;
+}
+.swatch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+.swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--rounded-sm);
+}
+
+/* Sample Graphic: 4:5, brand colours only (inline), text navy or white. */
+.sample {
+  aspect-ratio: 4 / 5;
+  width: 100%;
+  max-width: 24rem;
+  padding: var(--spacing-4);
+  border-radius: var(--rounded-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  position: relative;
+}
+.sample-caption {
+  position: absolute;
+  top: var(--spacing-2);
+  left: var(--spacing-2);
+  padding: 0 var(--spacing-2);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--rounded-sm);
+}
+.sample-panel {
+  padding: var(--spacing-4);
+  border-radius: var(--rounded-md);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+}
+.sample-logo {
+  width: 4rem;
+  height: 4rem;
+  object-fit: contain;
+}
+.sample-initial,
+.resume-initial {
+  display: grid;
+  place-items: center;
+  font-family: var(--display-lg-font-family);
+  font-size: var(--display-lg-font-size);
+}
+.sample-name {
+  font-family: var(--display-lg-font-family);
+  font-size: var(--display-lg-font-size);
+  letter-spacing: var(--display-lg-letter-spacing);
+  line-height: var(--display-lg-line-height);
+  overflow-wrap: anywhere;
+}
+.sample-result {
+  font-family: var(--body-strong-font-family);
+  font-weight: var(--body-strong-font-weight);
+}
+.sample-score {
+  padding: 0 var(--spacing-2);
+  border-radius: var(--rounded-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Resume card on My tournaments. */
+.resume-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+.resume-logo {
+  width: 3rem;
+  height: 3rem;
+  flex: none;
+  object-fit: contain;
+  border-radius: var(--rounded-md);
+  background: var(--bg);
+}
+.card .wizard-progress {
+  margin: var(--spacing-1) 0;
+}
+.card .ui-primary-wrap,
+.card .ui-primary,
+.card-waiting .ui-primary-wrap,
+.card-waiting .ui-primary {
+  width: 100%;
+}

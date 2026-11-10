@@ -36,6 +36,8 @@ jobs:
         run: npm run check:auth
       - name: Offline replay test (Story 1.7)
         run: npm run check:outbox
+      - name: Setup wizard check (Story 1.8)
+        run: npm run check:setup
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
       # and write, Activity log, idempotency) and the pg_proc command skeleton check.
       - name: Migration, leak tests and command skeleton check (Stories 1.4, 1.6)

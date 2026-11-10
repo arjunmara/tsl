@@ -87,6 +87,10 @@ Every change goes through `send(name, args, { scope })` from `src/domain/command
 - `npm run check:outbox` (needs Google Chrome) runs every case against a mocked server.
 - The server-corrected `enteredAt` takes its offset from `app.server_now()` at app start, on reconnect and when the page is shown again (round-trip midpoint; answers slower than 5 s or older than the last applied one are ignored). Replay's first pass waits up to 3 s for the first answer; until one arrives the offset is 0 and the device clock is used.
 
+### Versioned edits
+
+`send(name, args, { scope, versionOf: rowId })` queues an edit of a versioned row without `expected_version`. The outbox keeps a base version per row on the device (Dexie table `versions`): set from a read (`noteVersion`, only when nothing of this user's for that row is pending) and from every ok answer that carries `version` (commands return the row's new version). Replay fills `expected_version` from the base as it is at that moment, so a refused-and-discarded edit, a lost answer or another device's change never shifts later edits. "Send my version" sets the base to the conflict's `current_version`, so the edits queued behind it follow.
+
 ### Conflict envelope (for edit commands)
 
 An edit of a versioned row takes `expected_version int` and, when the row's `version` differs, returns without writing:
@@ -97,6 +101,16 @@ An edit of a versioned row takes `expected_version int` and, when the row's `ver
 ```
 
 `current` uses the command's argument names as keys, so the sheet can compare it with what was sent; `changed_by` is a display name. `runCommand` passes `conflict` through unchanged.
+
+## Setup wizard (Story 1.8)
+
+`src/features/setup/Setup.tsx`: "Create new tournament" opens `/new`, which makes the Tournament and Season ids once (kept in `history.state` and `sessionStorage`, so a reload or retry creates the same Tournament). Leaving the name field the first time sends `create_tournament` and moves to `/t/:id/setup/1`; later edits send `set_tournament_branding` with only the changed field, queued with `versionOf: <tournament id>` and no `expected_version` (see Versioned edits). Colours or a logo picked before the name wait and follow the create. Next sends `set_setup_step`. Steps 2–7 are placeholders until their stories.
+
+- A logo is resized in the browser to fit 512×512, encoded WebP, and queued with the command: `send(..., { upload })` stores the blob in the outbox, and replay uploads it (upsert) to the `tournament-assets` bucket before running the command. That bucket is public: no personal data in it.
+- The sample Graphic uses only the brand colours and navy/white text from the tokens; when neither reaches 4.5:1 on the main colour, the panel behind the text is darkened (`src/features/setup/brand.ts`).
+- My tournaments shows a Resume card for each Tournament whose latest Season is in setup with `setup_step < 7`, read from the server.
+- Steps 2–7 load the Tournament and go back to step 1 when it is missing or the step is past the furthest finished one + 1; an id that isn't a UUID shows "This tournament isn't available." Back and Next replace the history entry.
+- `npm run check:setup` (needs Google Chrome) runs every case against a mocked server.
 
 ## Client errors
 

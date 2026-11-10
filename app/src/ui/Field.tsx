@@ -8,6 +8,8 @@ export type FieldProps = {
   /** Returns the problem in words, or null when the value is fine. */
   validate?: (value: string) => string | null
   required?: boolean
+  /** The words shown when a required field is empty; default "<label> is required." */
+  requiredMessage?: string
   /** Set by the parent on Next so untouched required fields show their message. */
   showErrors?: boolean
   inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
@@ -17,7 +19,7 @@ export type FieldProps = {
 }
 
 // Saves on blur, only when the value changed and is valid. No page Save button.
-export function Field({ label, value, onSave, validate, required, showErrors, inputMode, type = 'text', autoComplete, name }: FieldProps) {
+export function Field({ label, value, onSave, validate, required, requiredMessage, showErrors, inputMode, type = 'text', autoComplete, name }: FieldProps) {
   const id = useId()
   const errorId = useId()
   const [text, setText] = useState(value)
@@ -36,7 +38,7 @@ export function Field({ label, value, onSave, validate, required, showErrors, in
   // Passwords are taken as typed; other fields ignore surrounding spaces.
   const t = type === 'password' ? text : text.trim()
   // An empty optional field is always valid, so it can be cleared.
-  const problem = t === '' ? (required ? `${label} is required.` : null) : validate?.(t) ?? null
+  const problem = t === '' ? (required ? requiredMessage ?? `${label} is required.` : null) : validate?.(t) ?? null
   const error = touched || showErrors ? problem : null
 
   function blur() {

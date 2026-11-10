@@ -1,5 +1,5 @@
 // Story 1.5 auth check: every row of the spec's I/O matrix in real Chrome against vite preview,
-// plus Story 1.6's create-tournament UI rows. Supabase /auth/v1/*, /rest/v1/* and Turnstile are mocked by route interception; the app is built for this check
+// plus Story 1.6's create-tournament UI rows (now through wizard step 1). Supabase /auth/v1/*, /rest/v1/* and Turnstile are mocked by route interception; the app is built for this check
 // with a fake Supabase URL into node_modules/.auth-dist. `npm run check:auth`. Needs Google Chrome.
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -305,52 +305,58 @@ try {
     await context.close()
   }
 
-  // --- Create a tournament: field checks, then the command, then the card on My tournaments.
+  // --- Create a tournament (wizard step 1): Next with no name, field checks, then the command on leaving the
+  // field, the step-1 URL, and the Resume card on My tournaments.
   {
     const { context, page } = await signedIn()
     const rpcCalls = () => called('/rest/v1/rpc/create_tournament')
     await button(page, 'Create new tournament').click()
     await waitPath(page, '/new')
-    const create = button(page, 'Create tournament')
-    await create.click()
-    await page.getByText('Tournament name is required.').waitFor()
-    await page.getByLabel('Tournament name').fill('x'.repeat(81))
-    await create.click()
+    await page.getByRole('heading', { name: 'Step 1 of 7 · Name & logo' }).waitFor()
+    await button(page, 'Next').click()
+    await page.getByText("Add the tournament's name.").waitFor()
+    const name = page.getByLabel('Tournament name')
+    assert.ok(await name.evaluate((el) => el === document.activeElement), 'Next did not focus the name')
+    await name.fill('x'.repeat(81))
+    await name.press('Tab')
     await page.getByText('Use 80 characters or fewer.').waitFor()
     assert.equal(rpcCalls().length, 0, 'invalid name sent')
-    await page.getByLabel('Tournament name').fill('  Gulmi Cup ')
-    await create.click()
-    await waitPath(page, '/')
-    const card = page.locator('.card')
-    await card.waitFor()
-    assert.equal((await card.textContent()).replace(/\s+/g, ' ').trim(), 'Gulmi CupSeason 1 · Setup')
-    assert.equal(await card.locator('.ui-pill-pending').textContent(), 'Setup')
+    await name.fill('  Gulmi Cup ')
+    await name.press('Tab')
+    await page.waitForURL((u) => /^\/t\/[0-9a-f-]{36}\/setup\/1$/.test(u.pathname), { timeout: 5000 })
     const [rpc] = rpcCalls()
+    assert.ok(path(page).includes(rpc.body.tournament_id), 'URL is not the created tournament')
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
     assert.deepEqual(Object.keys(rpc.body).sort(), ['command_id', 'name', 'season_id', 'tournament_id'])
     for (const k of ['command_id', 'season_id', 'tournament_id']) assert.match(rpc.body[k], uuid, k)
     assert.equal(rpc.body.name, 'Gulmi Cup')
     assert.equal(rpc.headers['content-profile'], 'app', 'command not sent to the app schema')
+    await button(page, 'Back').click()
+    await waitPath(page, '/')
+    const card = page.locator('.card')
+    await card.waitFor()
+    assert.match((await card.textContent()).replace(/\s+/g, ' '), /Gulmi CupSeason 1 · Setup · step 1 of 7/)
     assert.equal(called('/rest/v1/tournament').at(-1).headers['accept-profile'], 'app', 'read not from the app schema')
     assert.ok(await button(page, 'Create new tournament').isVisible(), 'no way to create another')
     await context.close()
   }
 
-  // --- Create refused: the code's text stays on the form; the next try is a new command with new ids.
+  // --- Create refused: the code's text shows on step 1; the next try is a new command with the same ids.
   // (Offline and lost answers go through the outbox: scripts/outbox.check.mjs.)
   {
     const answers = [{ ok: false, code: 'email_not_verified', message: 'Not allowed.' }]
     const { context, page } = await signedIn('org@example.com', { rpc: () => answers.shift() })
     await page.goto(base + '/new')
     await page.getByLabel('Tournament name').fill('Gulmi Cup')
-    await button(page, 'Create tournament').click()
+    await page.getByLabel('Tournament name').press('Tab')
     await page.getByText('Verify your email first, then try again.').waitFor()
     assert.equal(await alertText(page), 'Verify your email first, then try again.')
     assert.equal(path(page), '/new')
-    await button(page, 'Create tournament').click()
-    await waitPath(page, '/')
+    await button(page, 'Next').click()
+    await page.waitForURL((u) => u.pathname.endsWith('/setup/2'), { timeout: 5000 })
     const [first, second] = called('/rest/v1/rpc/create_tournament').map((c) => c.body)
-    for (const k of ['command_id', 'tournament_id', 'season_id']) assert.notEqual(second[k], first[k], `${k} reused after a refusal`)
+    assert.notEqual(second.command_id, first.command_id, 'command_id reused after a refusal')
+    for (const k of ['tournament_id', 'season_id']) assert.equal(second[k], first[k], `${k} changed on retry`)
     await context.close()
   }
 
@@ -360,7 +366,9 @@ try {
     const { context, page } = await signedIn('org@example.com', { rpc: () => answers.shift() })
     await page.goto(base + '/new')
     await page.getByLabel('Tournament name').fill('Gulmi Cup')
-    await button(page, 'Create tournament').click()
+    await page.getByLabel('Tournament name').press('Tab')
+    await page.waitForURL((u) => u.pathname.endsWith('/setup/1'), { timeout: 5000 })
+    await button(page, 'Back').click()
     await waitPath(page, '/')
     await page.locator('.card-waiting', { hasText: 'Waiting to send' }).waitFor()
     await page.locator('.card').waitFor({ timeout: 8000 })
@@ -501,10 +509,11 @@ try {
 
   // --- Sign out: local session cleared, /sign-in, Back does not show My tournaments.
   {
-    // History: /new, then / (pushed by the link), so Back after sign-out lands on a guarded page.
+    // History (one document): /, then /new (the wizard's Back replaces it with /), so Back after sign-out lands on a guarded page.
     const { context, page } = await signedIn()
-    await page.goto(base + '/new')
-    await page.getByRole('link', { name: 'Back to My tournaments' }).click()
+    await button(page, 'Create new tournament').click()
+    await waitPath(page, '/new')
+    await button(page, 'Back').click()
     await page.getByText('No tournaments yet.').waitFor()
     await page.getByText('Account', { exact: true }).click()
     await button(page, 'Sign out').click()

@@ -3,6 +3,9 @@ import { Dexie, type EntityTable } from 'dexie'
 /** A version_conflict refusal: the row as it is now on the server, and who changed it last. */
 export type Conflict = { current_version: number; current: Record<string, unknown>; changed_by: string; changed_at: string }
 
+/** A file to upload before the command runs (upsert, so a repeat is harmless). Removed from the entry once uploaded. */
+export type Upload = { bucket: string; path: string; blob: Blob; contentType: string }
+
 /** One queued command. Stored before any network call; deleted only once the server says ok. */
 export type Entry = {
   seq: number
@@ -22,7 +25,17 @@ export type Entry = {
   code?: string
   conflict?: Conflict
   attempts: number
+  upload?: Upload
+  /**
+   * Set on edits of a versioned row (the row's id): replay sends expected_version from that row's base version
+   * (below), so the version is never guessed when the change is made.
+   */
+  versionOf?: string
 }
 
-export const db = new Dexie('tsl-outbox') as Dexie & { entries: EntityTable<Entry, 'seq'> }
+/** The last version this device knows for a row: from reads with nothing pending for it, and from every ok result. */
+export type BaseVersion = { id: string; version: number }
+
+export const db = new Dexie('tsl-outbox') as Dexie & { entries: EntityTable<Entry, 'seq'>; versions: EntityTable<BaseVersion, 'id'> }
 db.version(1).stores({ entries: '++seq' })
+db.version(2).stores({ entries: '++seq', versions: 'id' })

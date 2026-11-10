@@ -8,7 +8,12 @@ import { StatusPill } from '../../ui/StatusPill'
 import { Problem } from '../auth/Screen'
 import { useOnline } from '../app/online'
 import { useSession } from '../auth/session'
+import { STEPS } from '../setup/Setup'
 import { AccountMenu } from './AccountMenu'
+
+/** "Step 1 is saved. Next: Description & rules." for k finished steps. */
+const savedSteps = (k: number) =>
+  `${k === 0 ? '' : k === 1 ? 'Step 1 is saved. ' : `Steps 1–${k} are saved. `}Next: ${STEPS[k]}.`
 
 const statusLabel: Record<SeasonStatus, string> = { setup: 'Setup', registration: 'Registration', started: 'Started', finished: 'Finished' }
 
@@ -20,8 +25,9 @@ export function MyTournaments() {
   const [list, setList] = useState<TournamentSummary[] | undefined>()
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
-  // This user's creates still on the device; the list reloads as each one is sent.
-  const queued = useOutbox().entries.filter((e) => e.name === 'create_tournament')
+  // This user's changes still on the device; the list reloads as each one is sent (setup steps included).
+  const mine = useOutbox().entries
+  const queued = mine.filter((e) => e.name === 'create_tournament')
 
   // Loads on open, on "Try loading again", and again when the signal comes back.
   useEffect(() => {
@@ -38,7 +44,7 @@ export function MyTournaments() {
       setError(r.code === 'offline' ? messages.offline : messages.tournaments_unknown)
     })
     return () => { live = false }
-  }, [attempt, queued.length])
+  }, [attempt, mine.length])
 
   // A create already in the loaded list (sent, answer lost) shows once, as the real card.
   const waiting = queued.filter((e) => !list?.some((t) => t.id === e.args.tournament_id)).map((e) => (
@@ -47,6 +53,7 @@ export function MyTournaments() {
       <p className="body">
         <StatusPill state="pending" label={e.state !== 'pending' ? "Couldn't save" : 'Waiting to send'} />
       </p>
+      <PrimaryButton label="Continue setup" onClick={() => navigate(`/t/${String(e.args.tournament_id)}/setup/1`)} />
     </li>
   ))
   const create = <PrimaryButton label="Create new tournament" onClick={() => navigate('/new')} />
@@ -78,7 +85,21 @@ export function MyTournaments() {
         <>
           <ul className="cards">
             {waiting}
-            {list.map((t) => (
+            {list.map((t) => t.season?.status === 'setup' && t.season.setupStep < 7 ? (
+              <li key={t.id} className="card">
+                <div className="resume-head">
+                  {t.logoUrl ? <img className="resume-logo" src={t.logoUrl} alt="" />
+                    : <span className="resume-logo resume-initial" aria-hidden="true">{[...t.name][0]?.toUpperCase()}</span>}
+                  <h2 className="body-strong">{t.name}</h2>
+                </div>
+                <p className="body">Season {t.season.number} · Setup · step {t.season.setupStep + 1} of 7</p>
+                <div className="wizard-progress" aria-hidden="true">
+                  <div style={{ width: `${(t.season.setupStep / 7) * 100}%` }} />
+                </div>
+                <p className="meta">{savedSteps(t.season.setupStep)}</p>
+                <PrimaryButton label="Continue setup" onClick={() => navigate(`/t/${t.id}/setup/${t.season!.setupStep + 1}`)} />
+              </li>
+            ) : (
               <li key={t.id} className="card">
                 <h2 className="body-strong">{t.name}</h2>
                 {t.season && (

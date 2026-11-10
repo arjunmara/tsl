@@ -1,9 +1,12 @@
-import { db, type Conflict } from './db'
+import { db, type Conflict, type Upload } from './db'
 
 /** conflict comes with code 'version_conflict'. */
-export type Result = { ok: boolean; code: string | null; message: string | null; conflict?: Conflict }
+/** version: the changed row's version after an ok command, when the command reports it. */
+export type Result = { ok: boolean; code: string | null; message: string | null; conflict?: Conflict; version?: number }
 export type Config = {
   run: (name: string, args: Record<string, unknown>, commandId: string) => Promise<Result>
+  /** Uploads an entry's file; its failure codes are handled like a command's (offline retries). */
+  upload: (u: Upload) => Promise<Result>
   /** The signed-in user's id, or null. */
   actor: () => Promise<string | null>
   appVersion: string
@@ -49,9 +52,22 @@ async function pass(): Promise<'done' | 'retry'> {
     }
     await db.entries.update(e.seq, { attempts: e.attempts + 1 })
     on.sending(true)
-    const r = await config.run(e.name, e.args, e.commandId).finally(() => on.sending(false))
+    const c = config
+    const r = await (async () => {
+      if (e.upload) {
+        const u = await c.upload(e.upload)
+        if (!u.ok) return u
+        await db.entries.update(e.seq, { upload: undefined })
+      }
+      // A versioned edit sends the base version as it is now (unknown base: null, which the server answers as a conflict).
+      const args = e.versionOf ? { ...e.args, expected_version: (await db.versions.get(e.versionOf))?.version ?? null } : e.args
+      return c.run(e.name, args, e.commandId)
+    })().finally(() => on.sending(false))
     if (r.ok) {
-      await db.entries.delete(e.seq)
+      await db.transaction('rw', db.entries, db.versions, async () => {
+        if (Number.isInteger(r.version)) await db.versions.put({ id: e.versionOf ?? e.scope, version: r.version! })
+        await db.entries.delete(e.seq)
+      })
       settle(e.seq, r)
     } else if (RETRY.has(r.code ?? '')) {
       settleAll() // this and every later entry stays queued

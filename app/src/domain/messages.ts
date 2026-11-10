@@ -33,12 +33,19 @@ export const messages = {
   season_finished: "This can't change because the season has finished.",
   request_failed: "This change was refused. It's kept so you can try again.",
   version_conflict: 'Someone else changed this first.',
+  colour_invalid: "That colour couldn't be saved. Choose it again from the colour picker.",
+  logo_invalid: "That logo couldn't be saved. Choose it again.",
+  step_invalid: "That setup step doesn't exist. Reload the page.",
+  tournament_unknown: "Couldn't load this tournament. Try loading it again.",
+  tournament_missing: "This tournament isn't available.",
   tournaments_unknown: "Couldn't load your tournaments. Try loading them again.",
   // Form checks
   email_format: 'Enter an email address like name@example.com.',
   password_short: 'Use at least 8 characters.',
   code_format: 'Enter the code from the email.',
   name_long: 'Use 80 characters or fewer.',
+  name_required: "Add the tournament's name.",
+  logo_unreadable: "Couldn't read that image. Choose a JPEG, PNG or WebP picture.",
 } as const
 
 export type MessageCode = keyof typeof messages

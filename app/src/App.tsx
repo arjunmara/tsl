@@ -9,7 +9,7 @@ import { RequireSession, RequireVerified, SessionProvider } from './features/aut
 import { SignIn } from './features/auth/SignIn'
 import { SignUp } from './features/auth/SignUp'
 import { MyTournaments } from './features/tournaments/MyTournaments'
-import { NewTournament } from './features/tournaments/NewTournament'
+import { NewTournament, SetupStep } from './features/setup/Setup'
 import { SaveStatusBar } from './features/save-status/SaveStatusBar'
 import { PrimaryButton } from './ui/Button'
 
@@ -62,6 +62,7 @@ export function App() {
             <Route path="/" element={<MyTournaments />} />
             <Route element={<RequireVerified />}>
               <Route path="/new" element={<NewTournament />} />
+              <Route path="/t/:tournamentId/setup/:step" element={<SetupStep />} />
             </Route>
           </Route>
           {crashTest && <Route path="/__crash" element={<Crash />} />}

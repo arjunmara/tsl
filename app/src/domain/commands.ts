@@ -1,16 +1,16 @@
-import { configure, hasPending, kick, type Conflict } from '../outbox'
+import { configure, hasPending, kick, myQueued, type Conflict, type Entry, type Upload } from '../outbox'
 import { serverNow, syncClock } from './clock'
 import { appVersion } from './env'
 import { supabase } from './supabase'
 
 // Features write only through send(): it queues on the device and replays in order (src/outbox).
-export { discard, forgetRefused, resend, send, sendMine, useOutbox, whenEmpty, type Conflict, type Entry as OutboxEntry } from '../outbox'
+export { discard, forgetRefused, resend, send, sendMine, useOutbox, whenEmpty, type Conflict, type Entry as OutboxEntry, type Upload } from '../outbox'
 
 /**
  * What every command returns. code is null on success. A refused edit of a versioned row returns
  * code 'version_conflict' with conflict (the row now, who changed it and when); it is passed through as is.
  */
-export type CommandResult = { ok: boolean; code: string | null; message: string | null; conflict?: Conflict }
+export type CommandResult = { ok: boolean; code: string | null; message: string | null; conflict?: Conflict; version?: number }
 
 /**
  * Runs an `app` command. Only the outbox calls this; features use send(). Pass the same commandId to retry the same command: the server returns
@@ -35,6 +35,29 @@ export async function runCommand(
   }
 }
 
+/** Uploads a queued file to Storage (upsert: a retry overwrites the same path). Never throws. */
+async function uploadFile(u: Upload): Promise<CommandResult> {
+  try {
+    const { error } = await supabase.storage.from(u.bucket).upload(u.path, u.blob, { upsert: true, contentType: u.contentType })
+    if (!error) return { ok: true, code: null, message: null }
+    // Only a failed fetch is offline. Storage may answer an RLS refusal with HTTP 400 and statusCode "403" in the body.
+    const e = error as { status?: number; statusCode?: string; originalError?: unknown }
+    const status = e.status ?? 0
+    const body = String(e.statusCode ?? '')
+    const code = !navigator.onLine || e.originalError instanceof TypeError ? 'offline'
+      : status === 401 || body === '401' ? 'not_signed_in'
+        : status === 403 || body === '403' ? 'not_authorized'
+          : status >= 500 ? 'unknown' : 'request_failed'
+    return { ok: false, code, message: error.message }
+  } catch (err) {
+    return { ok: false, code: err instanceof TypeError || !navigator.onLine ? 'offline' : 'request_failed', message: null }
+  }
+}
+
+/** This user's pending entries in one scope (a Tournament id), oldest first, including every send() already called. */
+export const queuedFor = async (scope: string): Promise<Entry[]> =>
+  (await myQueued()).filter((e) => e.scope === scope && e.state === 'pending')
+
 const actor = async () => (await supabase.auth.getSession()).data.session?.user.id ?? null
 
 /**
@@ -43,7 +66,7 @@ const actor = async () => (await supabase.auth.getSession()).data.session?.user.
  */
 export function startOutbox() {
   const ready = Promise.race([syncClock(), new Promise((r) => setTimeout(r, 3000))])
-  configure({ run: runCommand, actor, appVersion, now: serverNow, ready })
+  configure({ run: runCommand, upload: uploadFile, actor, appVersion, now: serverNow, ready })
   // Every auth change (sign-in, token refresh, sign-out) re-reads the user and replays.
   // Deferred: supabase-js deadlocks if an auth call runs inside its own callback.
   supabase.auth.onAuthStateChange(() => void setTimeout(kick))

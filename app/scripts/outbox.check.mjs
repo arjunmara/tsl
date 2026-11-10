@@ -149,12 +149,16 @@ const entry = (name, scope, actor = ME) => ({
 
 const button = (page, name) => page.getByRole('button', { name, exact: true })
 const status = (page) => page.locator('.save-bar')
-/** In-app navigation to /new (works offline). */
+const onStep1 = (u) => /^\/t\/[0-9a-f-]{36}\/setup\/1$/.test(u.pathname)
+/** In-app navigation (works offline) to /new: the name is sent when the field is left, then Back returns to My tournaments. */
 async function createOffline(page, name) {
   await button(page, 'Create new tournament').click()
   await page.getByLabel('Tournament name').fill(name)
-  await button(page, 'Create tournament').click()
+  await page.getByLabel('Tournament name').press('Tab')
+  await page.waitForURL(onStep1, { timeout: 5000 })
+  await button(page, 'Back').click()
   await page.waitForURL((u) => u.pathname === '/', { timeout: 5000 })
+  await page.getByRole('heading', { name: 'My tournaments' }).waitFor()
 }
 // Within a minute: the offline creates wait out the list read's retries; a missed offset is 5 min off.
 const near = (iso, expected, what) => assert.ok(Math.abs(Date.parse(iso) - expected) < 60000, `${what}: ${iso}`)
@@ -166,14 +170,15 @@ try {
     mock.delay = 800
     await page.goto(base + '/new')
     await page.getByLabel('Tournament name').fill('Alpha')
-    await button(page, 'Create tournament').click()
+    await page.getByLabel('Tournament name').press('Tab')
     await status(page).getByText(/^Saving…/).waitFor()
-    await page.waitForURL((u) => u.pathname === '/')
+    await page.waitForURL(onStep1)
     await status(page).locator('[aria-live="polite"]').getByText('Saved', { exact: true }).waitFor()
     await status(page).getByText('Saved').waitFor({ state: 'detached', timeout: 6000 })
     assert.equal((await status(page).textContent()).trim(), '', 'status not hidden')
     assert.deepEqual(await entries(page), [])
     assert.equal(mock.calls.length, 1)
+    await button(page, 'Back').click()
     await page.locator('.card', { hasText: 'Alpha' }).waitFor()
     await context.close()
   }
@@ -229,7 +234,7 @@ try {
     await context.close()
   }
 
-  // --- Queued create while server_now fails: offset 0; navigates to / with a Waiting card.
+  // --- Queued create while server_now fails: offset 0; step 1, then Back shows a Waiting card on /.
   {
     const { context, mock, page } = await fresh()
     await context.setOffline(true)
@@ -529,8 +534,8 @@ try {
     mock.next.push(answer)
     await page.goto(base + '/new')
     await page.getByLabel('Tournament name').fill('Again')
-    await button(page, 'Create tournament').click()
-    await page.waitForURL((u) => u.pathname === '/')
+    await page.getByLabel('Tournament name').press('Tab')
+    await page.waitForURL(onStep1)
     const [e] = await entries(page)
     assert.deepEqual([e?.state, e?.attempts], ['pending', 1], `${JSON.stringify(answer)} did not keep it pending`)
     await status(page).getByText('Saved', { exact: true }).waitFor({ timeout: 8000 })

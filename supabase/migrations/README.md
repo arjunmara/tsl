@@ -80,6 +80,21 @@ one of the caller's Tournaments or Seasons is logged with no Tournament (visible
 online again, and open `/__crash?crashtest`: Logs → Postgres shows a `client_error` line with
 `[removed]` where the test email and number were.
 
+## Apply 0004_wizard_step1.sql (Story 1.8)
+
+Apply before the app deploy with the setup wizard (test first, then live). It adds the brand colours and
+`logo_path` to `app.tournament`, `setup_step` to `app.season`, the `set_tournament_branding` and
+`set_setup_step` commands, and the **`tournament-assets`** Storage bucket (public read) with policies that let
+a signed-in Organiser write only under `<their tournament id>/`. The bucket is public: **never put personal data
+in it** (no player photos, ID documents or anything about a person), only Tournament and Sponsor logos and ads
+(WebP, PNG or JPEG, at most 1 MiB each). The Tournament's name, colours and logo stay editable after a Season
+starts (no Season check); `set_setup_step` only works while setup can be edited and never changes the Season's
+`version`. `create_tournament` is redefined with the same signature so its ok answer also carries `version: 1`;
+`set_tournament_branding` answers with the new `version` too.
+Check with `select public from storage.buckets where id = 'tournament-assets';` (one row, `true`). Then on the
+test preview, create a tournament through the wizard, pick colours and a logo, and open My tournaments on
+another device: the Resume card opens step 2 once step 1 is finished with Next.
+
 Edit commands added later answer a stale `expected_version` with
 `{ok: false, code: 'version_conflict', conflict: {current_version, current, changed_by, changed_at}}`
 (see `app/README.md`, Conflict envelope).
