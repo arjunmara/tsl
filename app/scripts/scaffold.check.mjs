@@ -40,16 +40,20 @@ assert.deepEqual(await lint('src/sample/x.tsx', "import '../ui/b'\n"), [])
 
 // Build guard: on Cloudflare Pages a missing variable fails the config; elsewhere it loads.
 const env = { command: 'build', mode: 'production' }
-for (const k of ['CF_PAGES', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY']) delete process.env[k]
+const guarded = ['CF_PAGES', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_TURNSTILE_SITE_KEY']
+for (const k of guarded) delete process.env[k]
 assert.ok(await loadConfigFromFile(env, 'vite.config.ts', '.', 'silent'))
 process.env.CF_PAGES = '1'
 await assert.rejects(loadConfigFromFile(env, 'vite.config.ts', '.', 'silent'), /VITE_SUPABASE_URL/)
 process.env.VITE_SUPABASE_URL = 'https://abc.supabase.co'
 await assert.rejects(loadConfigFromFile(env, 'vite.config.ts', '.', 'silent'), /VITE_SUPABASE_PUBLISHABLE_KEY/)
-process.env.VITE_SUPABASE_URL = 'not a url'
 process.env.VITE_SUPABASE_PUBLISHABLE_KEY = 'x'
+await assert.rejects(loadConfigFromFile(env, 'vite.config.ts', '.', 'silent'), /VITE_TURNSTILE_SITE_KEY/)
+process.env.VITE_TURNSTILE_SITE_KEY = 'x'
+assert.ok(await loadConfigFromFile(env, 'vite.config.ts', '.', 'silent'))
+process.env.VITE_SUPABASE_URL = 'not a url'
 await assert.rejects(loadConfigFromFile(env, 'vite.config.ts', '.', 'silent'), /valid URL/)
-for (const k of ['CF_PAGES', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY']) delete process.env[k]
+for (const k of guarded) delete process.env[k]
 
 // Database ref shown by the shell.
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })

@@ -11,10 +11,13 @@ export type FieldProps = {
   /** Set by the parent on Next so untouched required fields show their message. */
   showErrors?: boolean
   inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
+  type?: 'text' | 'email' | 'password'
+  autoComplete?: string
+  name?: string
 }
 
 // Saves on blur, only when the value changed and is valid. No page Save button.
-export function Field({ label, value, onSave, validate, required, showErrors, inputMode }: FieldProps) {
+export function Field({ label, value, onSave, validate, required, showErrors, inputMode, type = 'text', autoComplete, name }: FieldProps) {
   const id = useId()
   const errorId = useId()
   const [text, setText] = useState(value)
@@ -30,7 +33,8 @@ export function Field({ label, value, onSave, validate, required, showErrors, in
     setSaved(value)
   }
 
-  const t = text.trim()
+  // Passwords are taken as typed; other fields ignore surrounding spaces.
+  const t = type === 'password' ? text : text.trim()
   // An empty optional field is always valid, so it can be cleared.
   const problem = t === '' ? (required ? `${label} is required.` : null) : validate?.(t) ?? null
   const error = touched || showErrors ? problem : null
@@ -38,7 +42,7 @@ export function Field({ label, value, onSave, validate, required, showErrors, in
   function blur() {
     setFocused(false)
     setTouched(edited)
-    if (t !== saved.trim() && !problem) {
+    if (t !== (type === 'password' ? saved : saved.trim()) && !problem) {
       // The person's edit wins over a parent value that arrived while they typed.
       setProp(value)
       setSaved(t)
@@ -53,8 +57,11 @@ export function Field({ label, value, onSave, validate, required, showErrors, in
       </label>
       <input
         id={id}
+        name={name}
         className="ui-input"
         value={text}
+        type={type}
+        autoComplete={autoComplete}
         inputMode={inputMode}
         aria-required={required || undefined}
         aria-invalid={error ? true : undefined}

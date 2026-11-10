@@ -18,8 +18,26 @@ and **live** (the existing TSL project).
   migration grants exactly what it needs and ships each table's RLS policy in the same file.
 - Always apply migrations as `postgres` in the SQL Editor. Default privileges bind only the role
   that ran them, so objects created by another role would not start locked.
+- Every write is a **command**: a function in `app`, `security definer set search_path = ''`,
+  that calls `app.authorize(actor, action, target)` and then `app.claim_command(actor, command_id)`
+  before anything else, and returns `{ok, code, message}`. Clients get EXECUTE on commands only,
+  SELECT through RLS, and never insert, update or delete grants.
+- **Helpers** are the shared functions commands call (`authorize`, `claim_command`,
+  `finish_command`, `season_allows`), RLS helpers (`is_member`) and trigger functions
+  (`log_change`, `season_status_guard`, `activity_log_immutable`). They are listed in the `helpers` allowlist in
+  `check.sh`. Anything in `app` not on that list is a command, and the `pg_proc` skeleton check
+  fails naming it if it misses `authorize` then `claim_command`. Every function in `app`, helper
+  or command, must be `security definer` with `search_path = ''`. Add a new helper to the
+  allowlist in the same pull request, and only if clients cannot call it to write.
+- A released command's signature and meaning never change. A change ships as a new function
+  (`create_tournament_v2`); the old one stays while any supported app version still calls it.
+- Commands never insert Activity log rows; the `log_change` trigger on every tenant table does,
+  from `app.actor`, `app.command_id` and optional `app.reason` (set with `set_config(..., true)`).
+  Season status changes only through lifecycle commands and `app.season_transition`;
+  `app.season_allows` is the only reader of `app.season_action`.
 - `bash supabase/migrations/check.sh` applies all files twice to a local Postgres in Docker and
-  checks the result; it prints `ok`. The release gate runs it on every pull request.
+  checks the result, then runs the command, Activity log, cross-tenant leak and skeleton tests; it
+  prints `ok`. The release gate runs it on every pull request.
 
 ## One-time setup (founder)
 
@@ -43,6 +61,13 @@ and **live** (the existing TSL project).
      database password filled in (GitHub runners have no IPv6, so not the direct one).
    - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
 7. Actions → **App backup** → Run workflow. Check that `app-<date>.sql.gz` appears in the bucket.
+
+## Apply 0002_command_skeleton.sql (Story 1.6)
+
+Apply before the app deploy that has the "Create tournament" form (test first, then live).
+Check with `select count(*) from app.season_transition;` (3 rows). Then on the test preview,
+create a tournament, see it on My tournaments, and check that a second test account does not
+see it.
 
 ## Nightly backup
 
