@@ -589,6 +589,114 @@ q "insert into storage.buckets (id, name) values ('other', 'other')" >/dev/null
 [ "$(as $A "with u as (update storage.objects set name = name returning 1) select count(*) from u")" = 1 ] || fail "storage: member cannot update (upsert)"
 [ "$(as $A "with d as (delete from storage.objects returning 1) select count(*) from d")" = 1 ] || fail "storage: member cannot delete"
 
+# --- Teams and Registration links (Story 2.1). A organises T1 (S1 registration, S9 started, S8 finished); B organises T2
+# (S2 setup). Only a token's SHA-256 reaches the server; Story 2.2 redeems by sha256(convert_to(token, 'UTF8')), which must
+# equal the client's crypto.subtle hex.
+tc() { as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.$2 r"; }
+hash() { printf %s "$1" | sha256sum | cut -d' ' -f1; }
+TK1=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcde
+H1=$(hash $TK1) H2=$(hash ${TK1/A/B}) H3=$(hash ${TK1/A/C}) H4=$(hash ${TK1/A/D}) H5=$(hash ${TK1/A/E}) H6=$(hash ${TK1/A/F})
+[ "$(q "select encode(sha256(convert_to('$TK1', 'UTF8')), 'hex')")" = "$H1" ] || fail "team: server sha256 differs from the client's"
+TM1=51111111-0000-4000-8000-000000000001 TM2=51111111-0000-4000-8000-000000000002 TM3=51111111-0000-4000-8000-000000000003
+L1=61111111-0000-4000-8000-000000000001 L2=61111111-0000-4000-8000-000000000002 L3=61111111-0000-4000-8000-000000000003
+L4=61111111-0000-4000-8000-000000000004 L5=61111111-0000-4000-8000-000000000005 L6=61111111-0000-4000-8000-000000000006
+add_t() { tc "$1" "add_team('$(cmd "$2")', '$3', '$4', $5, '$6', '$7', '$8')"; }
+active() { q "select coalesce(string_agg(id::text, ',' order by id), 'none') from app.registration_link where team_id='$1' and revoked_at is null"; }
+tcounts="select (select count(*) from app.team)||'/'||(select count(*) from app.registration_link)"
+r=$(as $A "select app.add_team('$(cmd 300)', '$TM1', '$S1', '  Friends Sporting Wing ', ' fsw ', '$L1', '$H1')")
+[ "$(q "select (r->>'ok')||coalesce(r->>'version', 'none') from (select '$r'::jsonb r) x")" = truenone ] || fail "add_team: not ok, or answered a version: $r"
+[ "$(q "select concat_ws('|', tournament_id, season_id, name, code, coalesce(kit_colour, 'null'), status, version) from app.team where id='$TM1'")" \
+  = "$T1|$S1|Friends Sporting Wing|FSW|null|invited|1" ] || fail "add_team: team row"
+[ "$(q "select concat_ws('|', tournament_id, team_id, token_hash, created_by, coalesce(revoked_at::text, 'active'), version) from app.registration_link where id='$L1'")" \
+  = "$T1|$TM1|$H1|$A|active|1" ] || fail "add_team: link row"
+[ "$(q "select string_agg(table_name||':'||op, ',' order by id) from app.activity_log where command_id='$(cmd 300)' and actor='$A' and tournament_id='$T1'")" \
+  = team:insert,registration_link:insert ] || fail "add_team: not logged"
+[ "$(q "select count(*) from app.activity_log where strpos(coalesce(after::text, ''), '$TK1') > 0")" = 0 ] || fail "add_team: token in the log"
+before=$(q "$tcounts")
+[ "$(as $A "select app.add_team('$(cmd 300)', '$TM1', '$S1', 'Again', 'AGN', '$L1', '$H1')")" = "$r" ] || fail "add_team: repeat gave another answer"
+[ "$(add_t $A 301 $TM2 $S1 "'Friends United'" ' Fsw' $L2 $H2)" = team_code_taken ] || fail "add_team: duplicate code"
+for bad in "'x'|F|$L2|$H2|code_invalid" "'x'|TOOLNG|$L2|$H2|code_invalid" "'x'|F-W|$L2|$H2|code_invalid" "''|FU|$L2|$H2|name_invalid" \
+    "'   '|FU|$L2|$H2|name_invalid" "repeat('x', 81)|FU|$L2|$H2|name_invalid" "E'F\\u0085U'|FU|$L2|$H2|name_invalid" \
+    "'x'|FU|$L2|${H2:0:63}|token_invalid" "'x'|FU|$L2|${H2^^}|token_invalid" "'x'|FU|$L1|$H2|already_exists" "'x'|FU|$L2|$H1|already_exists"; do
+  IFS='|' read -r n c l h want <<<"$bad"
+  [ "$(add_t $A 302 $TM2 $S1 "$n" "$c" $l $h)" = "$want" ] || fail "add_team: $bad"
+  q "delete from app.command_result where command_id='$(cmd 302)'" >/dev/null
+done
+[ "$(tc $A "add_team('$(cmd 303)', '$TM1', '$S1', 'x', 'FU', '$L2', '$H2')")" = already_exists ] || fail "add_team: reused team id"
+[ "$(tc $A "add_team('$(cmd 304)', '$TM2', '$S1', 'x', 'FU', null, '$H2')")" = token_invalid ] || fail "add_team: null link id"
+[ "$(q "$tcounts")" = "$before" ] || fail "add_team: refusals wrote"
+[ "$(add_t $U 305 $TM2 $S1 "'x'" FU $L2 $H2)" = email_not_verified ] || fail "add_team: unverified"
+[ "$(add_t $A 309 $TM2 21111111-0000-4000-8000-0000000000ff "'x'" FU $L2 $H2)" = not_authorized ] || fail "add_team: unknown season"
+[ "$(add_t $A 306 $TM2 $S9 "'x'" FU $L2 $H2)|$(add_t $A 307 $TM2 $S8 "'x'" FU $L2 $H2)" = season_started\|season_finished ] || fail "add_team: closed season"
+# The same code in another Season (B's own) is fine.
+[ "$(add_t $B 308 $TM2 $S2 "'Friends Sporting Wing'" FSW $L2 $H2)" = ok ] || fail "add_team: same code in another season"
+
+# Revoke: revoked_at set and version bumped once; repeating is ok; the hash is never active again.
+rv() { tc "$1" "revoke_registration_link('$(cmd "$2")', '$3', '$4')"; }
+[ "$(rv $A 310 $S1 $L1)|$(active $TM1)" = 'ok|none' ] || fail "revoke"
+[ "$(q "select (revoked_at is not null)||'/'||version from app.registration_link where id='$L1'")|$(q "select count(*) from app.activity_log where command_id='$(cmd 310)' and table_name='registration_link' and op='update'")" = true/2\|1 ] \
+  || fail "revoke: row or log"
+[ "$(rv $A 311 $S1 $L1)|$(q "select version from app.registration_link where id='$L1'")" = ok\|2 ] || fail "revoke: again bumped or refused"
+[ "$(rv $A 312 $S1 $L6)" = link_missing ] || fail "revoke: unknown link"
+# Reissue: a new link after a revoke; then a reissue replaces the active one; a used hash or id is refused.
+ri() { tc "$1" "reissue_registration_link('$(cmd "$2")', '$3', '$4', '$5', '$6')"; }
+[ "$(ri $A 313 $S1 $TM1 $L3 $H3)|$(active $TM1)" = "ok|$L3" ] || fail "reissue after revoke"
+[ "$(ri $A 314 $S1 $TM1 $L4 $H1)|$(ri $A 315 $S1 $TM1 $L1 $H4)|$(active $TM1)" = "already_exists|already_exists|$L3" ] || fail "reissue: old hash or id reused"
+[ "$(ri $A 316 $S1 $TM1 $L4 $H4)|$(active $TM1)|$(q "select version from app.registration_link where id='$L3'")" = "ok|$L4|2" ] || fail "reissue: replace"
+[ "$(q "select count(*) from app.registration_link where token_hash in ('$H1', '$H3') and revoked_at is null")" = 0 ] || fail "reissue: an old hash is active"
+[ "$(q "select string_agg(table_name||':'||op, ',' order by id) from app.activity_log where command_id='$(cmd 316)'")" = registration_link:update,registration_link:insert ] \
+  || fail "reissue: not logged"
+[ "$(ri $A 317 $S1 $TM1 $L5 ${H5:1})|$(ri $A 318 $S1 $TM3 $L5 $H5)|$(ri $A 319 $S9 $TM1 $L5 $H5)" = token_invalid\|team_missing\|season_started ] \
+  || fail "reissue: refusals"
+# Revoking works in every Season status; reissuing and adding only in setup and registration.
+q "insert into app.team (id, tournament_id, season_id, name, code) values ('$TM3', '$T1', '$S8', 'Old Boys', 'OB');
+   insert into app.registration_link (id, tournament_id, team_id, token_hash, created_by) values ('$L5', '$T1', '$TM3', '$H5', '$A')" >/dev/null
+[ "$(ri $A 320 $S8 $TM3 $L6 $H6)|$(rv $A 321 $S8 $L5)|$(active $TM3)" = 'season_finished|ok|none' ] || fail "finished season: reissue or revoke"
+# Two reissues at once leave exactly one active link (the Team row is locked).
+as $A "select app.reissue_registration_link('$(cmd 322)', '$S1', '$TM1', '$L6', '$H6'); select pg_sleep(1)" >/dev/null & held=$!
+for _ in $(seq 100); do [ "$(q "select count(*) from pg_stat_activity where state = 'active' and query like '%pg_sleep(1)%' and pid <> pg_backend_pid()")" = 1 ] && break; sleep 0.1; done
+L7=61111111-0000-4000-8000-000000000007
+[ "$(ri $A 323 $S1 $TM1 $L7 $(hash ${TK1/A/G}))" = ok ] || fail "race: second reissue"
+wait $held
+[ "$(active $TM1)" = "$L7" ] || fail "race: active links $(active $TM1)"
+
+# Open registration: needs the photo-consent statement and all three dates; moves setup -> registration without a version bump.
+op() { tc "$1" "open_registration('$(cmd "$2")', '$3')"; }
+v2=$(q "select version from app.season where id='$S2'")
+[ "$(op $B 330 $S2)|$(q "select status from app.season where id='$S2'")" = 'setup_incomplete|setup' ] || fail "open_registration: incomplete setup"
+q "update app.season set photo_consent = 'Photos may be posted.', starts_on = '2026-12-01', ends_on = '2026-12-10' where id='$S2'" >/dev/null
+[ "$(op $B 331 $S2)" = setup_incomplete ] || fail "open_registration: no deadline"
+q "update app.season set registration_deadline = '2026-11-20' where id='$S2'" >/dev/null
+[ "$(op $B 332 $S2)|$(q "select status||'/'||version from app.season where id='$S2'")" = "ok|registration/$v2" ] || fail "open_registration"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 332)' and table_name='season' and after->>'status'='registration'")" = 1 ] \
+  || fail "open_registration: not logged"
+[ "$(op $B 333 $S2)|$(op $A 334 $S9)|$(op $U 335 $S2)" = 'ok|season_started|email_not_verified' ] || fail "open_registration: already open, started or unverified"
+
+# Leaks: B (T2) and anon read none of T1's Teams, links or their log rows, and none of T1's commands work for B.
+[ "$(as $A "select count(*) from app.team where tournament_id='$T1'")|$(as $A "select count(*) from app.registration_link where tournament_id='$T1'")" = 2\|6 ] \
+  || fail "team: A cannot read own rows"
+[ "$(as $B "select count(*) from app.team where tournament_id<>'$T2'")|$(as $B "select count(*) from app.registration_link where tournament_id<>'$T2'")|$(as $B "select count(*) from app.activity_log where table_name in ('team','registration_link') and tournament_id<>'$T2'")" \
+  = 0\|0\|0 ] || fail "leak: B reads T1's Teams, links or their log"
+[ "$(as $B "select count(*) from app.team")|$(as $B "select count(*) from app.registration_link")" = 1\|1 ] || fail "team: B cannot read own rows"
+for t in team registration_link; do
+  ! as anon "select count(*) from app.$t" >/dev/null 2>&1 || fail "leak: anon reads $t"
+done
+for s in "insert into app.team (id, tournament_id, season_id, name, code) values (gen_random_uuid(), '$T1', '$S1', 'x', 'XX')" \
+    "update app.registration_link set revoked_at = null" "delete from app.registration_link" "update app.team set code = 'ZZ'"; do
+  ! as $A "$s" >/dev/null 2>&1 || fail "member wrote directly: $s"
+done
+links=$(q "select string_agg(id||':'||coalesce(revoked_at::text, 'active')||':'||version, ',' order by id) from app.registration_link")
+[ "$(add_t $B 340 51111111-0000-4000-8000-000000000009 $S1 "'Stolen'" STL 61111111-0000-4000-8000-000000000009 $(hash x))|$(rv $B 341 $S1 $L7)|$(ri $B 342 $S1 $TM1 61111111-0000-4000-8000-000000000009 $(hash x))|$(op $B 343 $S1)" \
+  = 'not_authorized|not_authorized|not_authorized|not_authorized' ] || fail "leak: B's Team commands on T1's Season"
+# B naming its own Season with T1's ids touches nothing either.
+[ "$(rv $B 344 $S2 $L7)|$(ri $B 345 $S2 $TM1 61111111-0000-4000-8000-000000000009 $(hash x))" = 'link_missing|team_missing' ] || fail "leak: B's Season with T1's ids"
+[ "$(q "select string_agg(id||':'||coalesce(revoked_at::text, 'active')||':'||version, ',' order by id) from app.registration_link")" = "$links" ] || fail "leak: links changed"
+for f in "add_team('$(cmd 346)', '$TM2', '$S1', 'x', 'XX', '$L6', '$H6')" "open_registration('$(cmd 347)', '$S1')" \
+    "revoke_registration_link('$(cmd 348)', '$S1', '$L7')" "reissue_registration_link('$(cmd 349)', '$S1', '$TM1', '$L6', '$H6')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+
 # --- Co-organisers (Story 1.14). A organises T1, B organises T2; C and D are verified, U is not.
 C=dddddddd-0000-4000-8000-000000000004 D=eeeeeeee-0000-4000-8000-000000000005
 q "insert into auth.users values ('$C','c@x.test',now()), ('$D','d@x.test',now())" >/dev/null
@@ -648,7 +756,7 @@ q "update app.organiser_invite set expires_at = now() - interval '1 second' wher
 # Remove C: C's reads of T1 are empty and C's next commands are not_authorized; C's pending invites are cancelled.
 [ "$(rm_ $A 227 $T1 $C)|$(members)" = "ok|$A" ] || fail "remove C"
 [ "$(q "select count(*) from app.organiser_invite where id='$I4' and cancelled_at is not null")" = 1 ] || fail "remove: C's invite still pending"
-for t in tournament season organiser_membership organiser_invite activity_log sponsor; do
+for t in tournament season organiser_membership organiser_invite activity_log sponsor team registration_link; do
   [ "$(as $C "select count(*) from app.$t where to_jsonb($t)::text like '%$T1%'")" = 0 ] || fail "removed C still reads $t"
 done
 [ "$(as $C "select count(*) from app.organisers('$T1')")" = 0 ] || fail "removed C reads the Organisers"

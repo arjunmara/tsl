@@ -68,6 +68,7 @@ async function fresh({ setupStep = 6, sponsors = [] } = {}) {
     const path = url.pathname
     if (path === '/rest/v1/tournament') return json(route, [mock.row])
     if (path === '/rest/v1/format_preset') return json(route, [])
+    if (path === '/rest/v1/team') return json(route, [])
     if (path === '/rest/v1/sponsor') {
       assert.equal(url.searchParams.get('season_id'), `eq.${S}`)
       return json(route, mock.sponsors.toSorted((a, b) => a.sort - b.sort).map(({ id, caption, logo_path, ad_paths, version }) => ({ id, caption, logo_path, ad_paths, version })))

@@ -46,8 +46,10 @@ jobs:
         run: npm run check:sponsors
       - name: Co-organisers check (Story 1.14)
         run: npm run check:organisers
+      - name: Teams check (Story 2.1)
+        run: npm run check:teams
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
-      # and write, Activity log, idempotency), the co-organiser leak and race tests (Story 1.14) and the pg_proc
+      # and write, Activity log, idempotency), the co-organiser and Team leak and race tests (Stories 1.14, 2.1) and the pg_proc
       # command skeleton check.
       - name: Migration, leak tests and command skeleton check (Stories 1.4, 1.6)
         working-directory: .

@@ -13,6 +13,7 @@ import { NewTournament, SettingsSection, SetupStep } from './features/setup/Setu
 import { Home } from './features/home/Home'
 import { Settings } from './features/home/Settings'
 import { CoOrganisers } from './features/home/CoOrganisers'
+import { TeamPage } from './features/home/TeamPage'
 import { Invite } from './features/auth/Invite'
 import { SaveStatusBar } from './features/save-status/SaveStatusBar'
 import { PrimaryButton } from './ui/Button'
@@ -75,6 +76,7 @@ export function App() {
               <Route path="/new" element={<NewTournament />} />
               <Route path="/t/:tournamentId/setup/:step" element={<SetupStep />} />
               <Route path="/t/:tournamentId" element={<Home />} />
+              <Route path="/t/:tournamentId/teams/:teamId" element={<TeamPage />} />
               <Route path="/t/:tournamentId/settings" element={<Settings />} />
               <Route path="/t/:tournamentId/settings/co-organisers" element={<CoOrganisers />} />
               <Route path="/t/:tournamentId/settings/:section" element={<SettingsSection />} />

@@ -180,3 +180,14 @@ button.ui-save-toggle {
   padding: var(--spacing-2) var(--spacing-3);
   resize: vertical;
 }
+
+/* Kit dot (Story 2.1): full-radius dot with a 2px ink-muted ring. */
+.ui-kit-dot {
+  display: inline-block;
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--rounded-full);
+  border: 2px solid var(--ink-muted);
+  background: var(--kit, var(--surface));
+}

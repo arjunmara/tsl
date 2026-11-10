@@ -65,6 +65,13 @@ export const messages = {
   invite_cancelled: 'This invite was cancelled. Ask for a new invite if you need one.',
   invite_expired: 'This invite has expired. Ask for a new invite.',
   organisers_unknown: "Couldn't load the organisers. Try loading them again.",
+  team_code_taken: 'That Team code is already used in this Season. Choose another code.',
+  code_invalid: 'A Team code is 2 to 5 letters or digits.',
+  token_invalid: "That link couldn't be made. Try making it again.",
+  link_missing: 'That link no longer exists. Reload the page.',
+  team_missing: 'That Team no longer exists in this Season. Reload the page.',
+  setup_incomplete: 'Add the photo-consent statement and the Season dates before adding Teams.',
+  teams_unknown: "Couldn't load the Teams. Try loading them again.",
   tournament_unknown: "Couldn't load this tournament. Try loading it again.",
   tournament_missing: "This tournament isn't available.",
   tournaments_unknown: "Couldn't load your tournaments. Try loading them again.",
@@ -89,6 +96,8 @@ export const messages = {
   caption_long: 'Use 120 characters or fewer.',
   sponsor_logo_required: "Choose the Sponsor's logo.",
   image_too_large: 'That picture is too detailed to save. Choose a simpler or smaller one.',
+  team_name_required: "Add the Team's name.",
+  team_code_required: 'Add a Team code of 2 to 5 letters or digits.',
   logo_unreadable: "Couldn't read that image. Choose a JPEG, PNG or WebP picture.",
 } as const
 

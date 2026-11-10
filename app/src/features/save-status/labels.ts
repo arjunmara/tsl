@@ -28,6 +28,10 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   cancel_invite: () => 'Cancel an invite',
   accept_invite: () => 'Accept an invite to organise a tournament',
   remove_organiser: () => 'Remove an organiser',
+  add_team: (a) => `Add Team ‘${String(a.name ?? '')}’`,
+  open_registration: () => 'Open registration',
+  revoke_registration_link: () => 'Revoke a Registration link',
+  reissue_registration_link: () => 'Make a new Registration link',
 }
 
 /** "rules", "description and rules": the fields an edit changes, in words. */

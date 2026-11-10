@@ -59,7 +59,7 @@ async function fresh({ viewport = { width: 390, height: 844 }, setupStep = 3, bl
     const path = new URL(req.url()).pathname
     if (path === '/rest/v1/tournament') return json(route, mock.rows)
     if (path === '/rest/v1/format_preset') return json(route, [FUTSAL])
-    if (path === '/rest/v1/sponsor') return json(route, [])
+    if (path === '/rest/v1/sponsor' || path === '/rest/v1/team') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     const a = JSON.parse(req.postData())
     const cmd = path.replace('/rest/v1/rpc/', '')
@@ -148,7 +148,8 @@ try {
     const { context, page } = await fresh()
     await page.goto(base + `/t/${T}`)
     await tab(page, 'Teams').click()
-    await page.getByText('Add your Teams to send each one its Registration link.', { exact: true }).waitFor()
+    // This Season has no consent statement or dates yet, so the Teams tab asks for setup first (Story 2.1).
+    await page.getByText('Finish setup before adding Teams: add the photo-consent statement and the Season dates.', { exact: true }).waitFor()
     await page.reload()
     await tab(page, 'Teams').waitFor()
     assert.equal(await selected(page), 'Teams', 'tab not remembered')

@@ -21,7 +21,8 @@
     "check:dates": "node scripts/dates.check.mjs",
     "check:home": "node scripts/home.check.mjs",
     "check:sponsors": "node scripts/sponsors.check.mjs",
-    "check:organisers": "node scripts/organisers.check.mjs"
+    "check:organisers": "node scripts/organisers.check.mjs",
+    "check:teams": "node scripts/teams.check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.119.0",

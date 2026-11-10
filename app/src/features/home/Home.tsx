@@ -2,14 +2,15 @@ import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { queuedFor } from '../../domain/commands'
 import { messages } from '../../domain/messages'
-import { logoUrl, tournamentSetup, type SeasonSummary } from '../../domain/tournaments'
+import { logoUrl, tournamentSetup, type SeasonAnswers, type SeasonSummary } from '../../domain/tournaments'
 import { backIcon, IconButton, PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { Problem } from '../auth/Screen'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { overlay, Unavailable, UUID } from '../setup/Setup'
 import { statusLabel } from '../tournaments/MyTournaments'
+import { Teams } from './Teams'
 
-type Head = { name: string; logoPath: string | null; logoBlob: Blob | null; season: SeasonSummary }
+export type Head = { name: string; logoPath: string | null; logoBlob: Blob | null; season: SeasonSummary & { answers: SeasonAnswers } }
 
 // The last server read per Tournament, so the home opens offline after one visit in this page load.
 const lastHead = new Map<string, Head>()
@@ -29,12 +30,21 @@ export async function readHead(id: string): Promise<Head | 'missing' | 'offline'
   const v = overlay({ name: head.name, primary: '', secondary: '', logoPath: head.logoPath, logoBlob: head.logoBlob }, queued)
   // A finished step still waiting to send counts, as in the wizard.
   const step = Math.max(head.season.setupStep, ...queued.filter((e) => e.name === 'set_setup_step').map((e) => Number(e.args.step) || 0))
-  return { ...head, name: v.name, logoPath: v.logoPath, logoBlob: v.logoBlob, season: { ...head.season, setupStep: step } }
+  // Season answers still waiting to send count too (the Teams tab needs the consent statement and dates).
+  const answers = { ...head.season.answers }
+  for (const e of queued) {
+    if (e.args.season_id !== head.season.id || (e.name !== 'set_season_rules' && e.name !== 'set_season_dates')) continue
+    for (const k of Object.keys(answers) as (keyof SeasonAnswers)[]) {
+      const x = e.args[k]
+      if (typeof x === 'string') answers[k] = x
+    }
+  }
+  return { ...head, name: v.name, logoPath: v.logoPath, logoBlob: v.logoBlob, season: { ...head.season, setupStep: step, answers } }
 }
 
 // The Matches tab once setup is finished, until the Draw and fixtures arrive (Epic 3).
 const matchesText: Record<SeasonSummary['status'], string> = {
-  setup: 'Setup is finished. Opening registration comes in a later update.',
+  setup: 'Setup is finished. Add your Teams on the Teams tab to open registration.',
   registration: 'Record the draw once registration closes.',
   started: 'Matches come in a later update.',
   finished: 'This Season is finished.',
@@ -168,12 +178,7 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
                 <PrimaryButton label="Continue setup" onClick={() => navigate(`/t/${tournamentId}/setup/${h.season.setupStep + 1}`)} />
               </>
             ) : <p className="body">{matchesText[h.season.status]}</p>)}
-            {tab === 'teams' && (
-              <>
-                <p className="body">Add your Teams to send each one its Registration link.</p>
-                <p className="meta">Adding Teams comes in a later update.</p>
-              </>
-            )}
+            {tab === 'teams' && <Teams tournamentId={tournamentId} head={h} onSeasonChange={() => setAttempt((n) => n + 1)} />}
             {tab === 'graphics' && (
               <>
                 <p className="body">Each Graphic says what it needs before it can be made.</p>

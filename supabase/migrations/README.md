@@ -173,6 +173,16 @@ Edit commands added later answer a stale `expected_version` with
 `{ok: false, code: 'version_conflict', conflict: {current_version, current, changed_by, changed_at}}`
 (see `app/README.md`, Conflict envelope).
 
+## Apply 0011_teams.sql (Story 2.1)
+
+Already applied to test (2026-11-10); apply to live before the app deploy with the Teams tab. It adds `app.team` and
+`app.registration_link` (RLS: that Tournament's Organisers read; no client writes), the Season actions `manage_teams`,
+`revoke_links` and `open_registration`, and the commands `add_team`, `open_registration`, `revoke_registration_link` and
+`reissue_registration_link`. Only a link token's SHA-256 is stored; the token itself stays on the Organiser's phone.
+Check with `select count(*) from app.season_action where action in ('manage_teams', 'revoke_links', 'open_registration');`
+(8 rows). Then on the test preview, add a Team on the Teams tab (the Season moves to Registration), share its link,
+reissue and revoke it, and check that a second test account sees no Team.
+
 ## Nightly backup
 
 **Paused (2026-11-08):** the schedule is commented out in `app-backup.yml` until the R2 bucket and secrets exist. Turn it on before the first real Organiser data lands (Story 2.x at the latest); steps 5–7 above are deferred until then.
