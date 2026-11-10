@@ -1,12 +1,15 @@
-import { db } from './db'
+import { db, type Conflict } from './db'
 
-export type Result = { ok: boolean; code: string | null; message: string | null }
+/** conflict comes with code 'version_conflict'. */
+export type Result = { ok: boolean; code: string | null; message: string | null; conflict?: Conflict }
 export type Config = {
   run: (name: string, args: Record<string, unknown>, commandId: string) => Promise<Result>
   /** The signed-in user's id, or null. */
   actor: () => Promise<string | null>
   appVersion: string
   now: () => Date
+  /** The first pass waits for this (e.g. the first clock sync), if given. */
+  ready?: Promise<unknown>
 }
 
 export const QUEUED: Result = { ok: false, code: 'queued', message: null }
@@ -37,9 +40,9 @@ async function pass(): Promise<'done' | 'retry'> {
   on.actor(me ?? null)
   if (!config || !me) return (settleAll(), 'done')
   const all = await db.entries.orderBy('seq').toArray()
-  const stopped = new Set(all.filter((e) => e.state === 'failed').map((e) => e.scope))
+  const stopped = new Set(all.filter((e) => e.state !== 'pending').map((e) => e.scope))
   for (const e of all) {
-    // Other users' entries wait untouched; a failed entry holds back the rest of its scope.
+    // Other users' entries wait untouched; a failed or conflict entry holds back the rest of its scope.
     if (e.state !== 'pending' || e.actor !== me || stopped.has(e.scope)) {
       settle(e.seq, QUEUED)
       continue
@@ -53,13 +56,25 @@ async function pass(): Promise<'done' | 'retry'> {
     } else if (RETRY.has(r.code ?? '')) {
       settleAll() // this and every later entry stays queued
       return 'retry'
+    } else if (r.code === 'version_conflict' && validConflict(r.conflict)) {
+      await db.entries.update(e.seq, { state: 'conflict', code: r.code, conflict: r.conflict })
+      stopped.add(e.scope)
+      settle(e.seq, r)
     } else {
-      await db.entries.update(e.seq, { state: 'failed', code: r.code ?? 'unknown' })
+      // A version_conflict without a usable payload can't be shown side by side: a plain refusal.
+      await db.entries.update(e.seq, { state: 'failed', code: r.code === 'version_conflict' ? 'request_failed' : r.code ?? 'unknown' })
       stopped.add(e.scope)
       settle(e.seq, r)
     }
   }
   return 'done'
+}
+
+function validConflict(c: unknown): c is Conflict {
+  const x = c as Partial<Conflict> | null
+  return !!x && typeof x === 'object' && Number.isInteger(x.current_version)
+    && !!x.current && typeof x.current === 'object' && !Array.isArray(x.current)
+    && typeof x.changed_at === 'string' && !Number.isNaN(Date.parse(x.changed_at))
 }
 
 // Tabs share one queue: the Web Lock keeps passes from overlapping across tabs.
@@ -79,6 +94,7 @@ export function kick() {
   void (async () => {
     let r: 'done' | 'retry'
     try {
+      await config?.ready
       do {
         again = false
         r = await locked(pass)

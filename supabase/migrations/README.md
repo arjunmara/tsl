@@ -23,8 +23,9 @@ and **live** (the existing TSL project).
   before anything else, and returns `{ok, code, message}`. Clients get EXECUTE on commands only,
   SELECT through RLS, and never insert, update or delete grants.
 - **Helpers** are the shared functions commands call (`authorize`, `claim_command`,
-  `finish_command`, `season_allows`), RLS helpers (`is_member`) and trigger functions
-  (`log_change`, `season_status_guard`, `activity_log_immutable`). They are listed in the `helpers` allowlist in
+  `finish_command`, `season_allows`), RLS helpers (`is_member`), trigger functions
+  (`log_change`, `season_status_guard`, `activity_log_immutable`) and the write-free client helpers
+  `server_now` and `report_client_error`. They are listed in the `helpers` allowlist in
   `check.sh`. Anything in `app` not on that list is a command, and the `pg_proc` skeleton check
   fails naming it if it misses `authorize` then `claim_command`. Every function in `app`, helper
   or command, must be `security definer` with `search_path = ''`. Add a new helper to the
@@ -68,6 +69,20 @@ Apply before the app deploy that has the "Create tournament" form (test first, t
 Check with `select count(*) from app.season_transition;` (3 rows). Then on the test preview,
 create a tournament, see it on My tournaments, and check that a second test account does not
 see it.
+
+## Apply 0003_handback.sql (Story 1.7 part B)
+
+Apply before the app deploy with the hand-back sheet (test first, then live). It adds
+`app.discarded_command`, the `discard_command` command, `server_now` and `report_client_error`, and
+lets an actor read their own Activity log rows that have no Tournament. A discard whose scope is not
+one of the caller's Tournaments or Seasons is logged with no Tournament (visible only to the caller). Check with
+`select app.server_now();` (one row). Then on the test preview, create a tournament offline and
+online again, and open `/__crash?crashtest`: Logs → Postgres shows a `client_error` line with
+`[removed]` where the test email and number were.
+
+Edit commands added later answer a stale `expected_version` with
+`{ok: false, code: 'version_conflict', conflict: {current_version, current, changed_by, changed_at}}`
+(see `app/README.md`, Conflict envelope).
 
 ## Nightly backup
 

@@ -1,4 +1,4 @@
-// Story 1.7 outbox check: every row of the spec's I/O matrix in real Chrome. Supabase is mocked by route
+// Story 1.7 outbox check (parts A and B): every UI row of both specs' I/O matrices in real Chrome. Supabase is mocked by route
 // interception; the mock RPC dedupes by command_id like the server. The app is built twice with a fake
 // Supabase URL (the second build is the "new version" for the update gate) and served by a tiny static
 // server whose root can be switched. `npm run check:outbox`. Needs Google Chrome.
@@ -50,18 +50,17 @@ const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers
 
 /**
  * A signed-in context with mocked Supabase. The mock server applies each command_id once and returns the
- * stored result to repeats. mock.refuse: names answered name_invalid (not stored); mock.dropNext: apply the
+ * stored result to repeats, refusals included (like finish_command). mock.refuse: names answered name_invalid; mock.dropNext: apply the
  * next new command, then drop its response; mock.down: abort every RPC and list read; mock.next: answers for
- * the next RPCs (an HTTP status or a result), before applying; clockAhead: ms the server Date header
- * (exposed to CORS) is ahead; mock.delay: ms before each RPC answer.
+ * the next create_tournament RPCs (an HTTP status or a result), before applying; clockAhead: ms app.server_now
+ * is ahead (undefined: server_now fails); mock.delay: ms before each RPC answer. mock.discards: discard_command
+ * bodies (deduped by command_id); mock.reports: report_client_error bodies. signedIn false: no stored session.
  */
-async function fresh({ serviceWorkers = 'block', clockAhead } = {}) {
-  const mock = { calls: [], applied: new Map(), tournaments: [], refuse: new Set(), dropNext: false, down: false, delay: 0, next: [] }
+async function fresh({ serviceWorkers = 'block', clockAhead, signedIn = true } = {}) {
+  const mock = { calls: [], applied: new Map(), tournaments: [], refuse: new Set(), dropNext: false, down: false, delay: 0, next: [], discards: [], reports: [], refused: new Map() }
   const context = await browser.newContext({ serviceWorkers })
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort())
-  const headers = () => clockAhead === undefined ? cors
-    : { ...cors, date: new Date(Date.now() + clockAhead).toUTCString(), 'access-control-expose-headers': 'date' }
-  const json = (route, data) => route.fulfill({ status: 200, headers: headers(), contentType: 'application/json', body: JSON.stringify(data) })
+  const json = (route, data) => route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(data) })
   await context.route(`${SUPA}/auth/v1/**`, (route) =>
     route.request().method() === 'OPTIONS' ? route.fulfill({ status: 204, headers: cors }) : json(route, session()))
   await context.route(`${SUPA}/rest/v1/**`, async (route) => {
@@ -69,6 +68,20 @@ async function fresh({ serviceWorkers = 'block', clockAhead } = {}) {
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
     const path = new URL(req.url()).pathname
     if (path === '/rest/v1/tournament') return mock.down ? route.abort('internetdisconnected') : json(route, mock.tournaments)
+    if (path === '/rest/v1/rpc/server_now') {
+      return clockAhead === undefined ? route.fulfill({ status: 500, headers: cors, body: 'no clock' })
+        : json(route, new Date(Date.now() + clockAhead).toISOString().replace('Z', '123+00:00'))
+    }
+    if (path === '/rest/v1/rpc/report_client_error') {
+      mock.reports.push(JSON.parse(req.postData()))
+      return route.fulfill({ status: 204, headers: cors })
+    }
+    if (path === '/rest/v1/rpc/discard_command') {
+      if (mock.down) return route.abort('internetdisconnected')
+      const body = JSON.parse(req.postData())
+      if (!mock.discards.some((d) => d.command_id === body.command_id)) mock.discards.push(body)
+      return json(route, { ok: true, code: null, message: 'Change discarded.' })
+    }
     if (path !== '/rest/v1/rpc/create_tournament') return route.fulfill({ status: 500, headers: cors, body: `unmocked ${path}` })
     const body = JSON.parse(req.postData())
     mock.calls.push(body)
@@ -78,9 +91,16 @@ async function fresh({ serviceWorkers = 'block', clockAhead } = {}) {
     if (typeof special === 'number') {
       return route.fulfill({ status: special, headers: cors, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST000', message: `HTTP ${special}` }) })
     }
+    // The server stores every finished answer, refusals included; in_progress is not finished.
+    if (special && special.code !== 'in_progress') mock.refused.set(body.command_id, special)
     if (special) return json(route, special)
+    if (mock.refused.has(body.command_id)) return json(route, mock.refused.get(body.command_id))
     if (mock.applied.has(body.command_id)) return json(route, mock.applied.get(body.command_id))
-    if (mock.refuse.has(body.name)) return json(route, { ok: false, code: 'name_invalid', message: 'Bad name.' })
+    if (mock.refuse.has(body.name)) {
+      const refusal = { ok: false, code: 'name_invalid', message: 'Bad name.' }
+      mock.refused.set(body.command_id, refusal)
+      return json(route, refusal)
+    }
     const result = { ok: true, code: null, message: 'Tournament created.' }
     mock.applied.set(body.command_id, result)
     mock.tournaments.unshift({ id: body.tournament_id, name: body.name, season: [{ number: 1, status: 'setup' }] })
@@ -90,6 +110,7 @@ async function fresh({ serviceWorkers = 'block', clockAhead } = {}) {
     }
     return json(route, result)
   })
+  if (!signedIn) return { context, mock, page: await context.newPage() }
   await context.addInitScript((v) => localStorage.setItem('sb-fake-auth-token', v), JSON.stringify(session()))
   return { context, mock, page: await open(context) }
 }
@@ -161,7 +182,8 @@ try {
   {
     const ahead = 5 * 60 * 1000
     const { context, mock, page } = await fresh({ clockAhead: ahead })
-    await page.getByText('No tournaments yet.').waitFor() // a response with the Date header has arrived
+    await page.getByText('No tournaments yet.').waitFor()
+    for (let i = 0; i < 50 && !(await page.evaluate(() => performance.getEntriesByType('resource').some((r) => r.name.endsWith('/rpc/server_now') && r.responseEnd > 0))); i++) await page.waitForTimeout(100)
     // Routed requests ignore setOffline, so the mock drops RPCs too.
     await context.setOffline(true)
     mock.down = true
@@ -207,7 +229,7 @@ try {
     await context.close()
   }
 
-  // --- Queued create with no server Date header: offset 0; navigates to / with a Waiting card.
+  // --- Queued create while server_now fails: offset 0; navigates to / with a Waiting card.
   {
     const { context, mock, page } = await fresh()
     await context.setOffline(true)
@@ -219,11 +241,11 @@ try {
     assert.equal(await page.locator('.card-waiting', { hasText: 'Solo' }).count(), 1, 'waiting card hidden by the error')
     await status(page).getByText("Offline · 1 change waiting to send. They'll send when the signal is back.", { exact: true }).waitFor()
     const [e] = await entries(page)
-    near(e.enteredAt, Date.now(), 'enteredAt with no Date header')
+    near(e.enteredAt, Date.now(), 'enteredAt with server_now failing')
     await context.close()
   }
 
-  // --- Refusal: entry failed, its scope stopped, other scopes continue; Try saving again re-sends it.
+  // --- Refusal: entry failed, its scope stopped, other scopes continue; hand-back "Try sending again" re-sends it.
   {
     const { context, mock, page } = await fresh()
     const [bad, later, other] = [entry('Bad', 'S1'), entry('Later', 'S1'), entry('Other', 'S2')]
@@ -239,10 +261,236 @@ try {
     assert.deepEqual(stored.map((e) => [e.args.name, e.state, e.code ?? null]), [['Bad', 'failed', 'name_invalid'], ['Later', 'pending', null]])
     await page2.locator('.card-waiting', { hasText: 'Bad' }).getByText("Couldn't save").waitFor()
     mock.refuse.clear()
-    await button(page2, 'Try saving again').click()
+    await button(page2, 'Review this change').click()
+    const sheet = page2.getByRole('dialog')
+    await sheet.getByRole('heading', { name: "This change wasn't saved" }).waitFor()
+    await sheet.getByText('Create tournament ‘Bad’', { exact: true }).waitFor()
+    await sheet.getByText('Names must be 1 to 80 characters.', { exact: true }).waitFor()
+    await button(page2, 'Try sending again').click()
     await status(page2).getByText('Saved', { exact: true }).waitFor()
-    assert.deepEqual(mock.calls.slice(2).map((c) => c.command_id), [bad.commandId, later.commandId], 'Try again did not re-send the same entry, then the rest')
+    assert.equal(await page2.locator('dialog[open]').count(), 0, 'sheet still open')
+    const [again, next] = mock.calls.slice(2)
+    assert.notEqual(again.command_id, bad.commandId, 'Try sending again reused the refused command id')
+    assert.deepEqual({ ...again, command_id: 0 }, { ...bad.args, command_id: 0 }, 'Try sending again changed the command')
+    assert.equal(next?.command_id, later.commandId, 'the rest of the scope did not follow')
+    assert.ok(mock.applied.has(again.command_id), 'resend did not succeed')
     assert.deepEqual(await entries(page2), [])
+    await context.close()
+  }
+
+  // --- Refusal → Discard: Cancel changes nothing; confirming sends a logged discard_command and resumes the scope.
+  {
+    const { context, mock, page } = await fresh()
+    const [bad, later] = [entry('Bad', 'S1'), entry('Later', 'S1')]
+    await seed(page, [bad, later])
+    mock.refuse.add('Bad')
+    await page.close()
+    const page2 = await open(context)
+    // Tapping the status lists the changes, refused first; the review button opens the sheet.
+    await status(page2).getByRole('alert').getByRole('button', { name: "Couldn't save" }).click()
+    assert.deepEqual(await status(page2).getByRole('listitem').allTextContents(),
+      ['Create tournament ‘Bad’ · Names must be 1 to 80 characters.', 'Create tournament ‘Later’'])
+    assert.equal(await page2.locator('dialog[open]').count(), 0, 'the status opened the sheet')
+    await button(page2, 'Review this change').click()
+    const sheet = page2.getByRole('dialog')
+    await sheet.getByRole('heading', { name: "This change wasn't saved" }).waitFor()
+    await button(page2, 'Discard this change').click()
+    await sheet.getByRole('heading', { name: 'Discard "Create tournament ‘Bad’"?' }).waitFor()
+    assert.ok(await button(page2, 'Discard this change').evaluate((b) => b.classList.contains('ui-destructive')), 'confirm action not destructive')
+    await sheet.getByText("It won't be saved. This is logged.", { exact: true }).waitFor()
+    assert.equal(await page2.evaluate(() => document.activeElement?.textContent), 'Cancel', 'focus not on Cancel')
+    assert.equal(await page2.locator('dialog[open]').count(), 1, 'a second sheet opened')
+    await button(page2, 'Cancel').click()
+    await sheet.getByRole('heading', { name: "This change wasn't saved" }).waitFor()
+    await page2.waitForTimeout(300)
+    assert.deepEqual(mock.discards, [], 'Cancel sent a discard')
+    assert.deepEqual((await entries(page2)).map((e) => [e.args.name, e.state]), [['Bad', 'failed'], ['Later', 'pending']], 'Cancel changed the outbox')
+    await button(page2, 'Discard this change').click()
+    await button(page2, 'Discard this change').click()
+    await status(page2).getByText('Saved', { exact: true }).waitFor()
+    assert.equal(mock.discards.length, 1)
+    const { command_id: _, ...args } = mock.discards[0]
+    assert.deepEqual(args, { discarded_id: bad.commandId, name: 'create_tournament', scope: 'S1', reason: 'name_invalid' })
+    assert.deepEqual(mock.calls.map((c) => c.command_id), [bad.commandId, later.commandId], 'scope did not resume after the discard')
+    assert.deepEqual(await entries(page2), [])
+    assert.equal(await page2.locator('dialog[open]').count(), 0, 'sheet still open')
+    await context.close()
+  }
+
+  // --- Conflict on replay: scope stopped; the sheet shows only the differing fields, who and when; Use mine
+  // re-sends with expected_version and a new command id, then the scope resumes.
+  const conflict = (tournamentId) => ({ ok: false, code: 'version_conflict', message: 'Changed by someone else.',
+    conflict: { current_version: 4, current: { id: tournamentId, tournament_id: tournamentId, name: 'Theirs Cup' }, changed_by: 'Sita', changed_at: '2026-11-10T04:15:00Z' } })
+  {
+    const { context, mock, page } = await fresh()
+    const [mine, later] = [entry('Mine Cup', 'S1'), entry('Later', 'S1')]
+    await seed(page, [mine, later])
+    mock.next.push(conflict(mine.args.tournament_id))
+    await page.close()
+    const page2 = await open(context)
+    await status(page2).getByRole('alert').getByText("Couldn't save", { exact: true }).waitFor()
+    await page2.waitForTimeout(300)
+    assert.deepEqual(mock.calls.map((c) => c.command_id), [mine.commandId], 'scope not stopped by the conflict')
+    const stored = await entries(page2)
+    assert.deepEqual(stored.map((e) => [e.state, e.code ?? null]), [['conflict', 'version_conflict'], ['pending', null]])
+    assert.deepEqual(stored[0].conflict, conflict(mine.args.tournament_id).conflict, 'conflict not stored')
+    await button(page2, 'Review this change').click()
+    const sheet = page2.getByRole('dialog')
+    await sheet.getByRole('heading', { name: 'Someone else changed this first' }).waitFor()
+    const cols = await sheet.locator('section').evaluateAll((ss) => ss.map((s) => [s.querySelector('h3').textContent,
+      [...s.querySelectorAll('dt, dd')].map((d) => d.textContent)]))
+    assert.deepEqual(cols, [['Your change', ['Name', 'Mine Cup']], ['Their version', ['Name', 'Theirs Cup']]])
+    await sheet.getByText('Changed by Sita at 10 Nov 2026, 10:00', { exact: true }).waitFor()
+    await button(page2, 'Send my version').click()
+    await status(page2).getByText('Saved', { exact: true }).waitFor()
+    const [, again, next] = mock.calls
+    assert.notEqual(again.command_id, mine.commandId, 'Send my version reused the command id')
+    const { command_id: _, ...sent } = again
+    assert.deepEqual(sent, { ...mine.args, expected_version: 4 }, 'Send my version sent different args')
+    assert.equal(next?.command_id, later.commandId, 'scope did not resume')
+    assert.equal(mock.calls.length, 3)
+    assert.deepEqual(await entries(page2), [])
+    await context.close()
+  }
+
+  // --- Keep their version while offline: the discard is queued (scope 'discard') and the entry is gone; it sends later.
+  {
+    const { context, mock, page } = await fresh()
+    const mine = entry('Mine Cup', 'S1')
+    await seed(page, [mine])
+    mock.next.push(conflict(mine.args.tournament_id))
+    await page.close()
+    const page2 = await open(context)
+    await button(page2, 'Review this change').click()
+    mock.down = true
+    await button(page2, 'Keep their version').click()
+    await page2.locator('dialog[open]').waitFor({ state: 'detached', timeout: 3000 })
+    for (let i = 0; i < 30 && (await entries(page2)).some((e) => e.name !== 'discard_command'); i++) await page2.waitForTimeout(100)
+    const [q, ...rest] = await entries(page2)
+    assert.equal(rest.length, 0, 'old entry kept')
+    assert.deepEqual([q.name, q.scope, q.state, q.actor], ['discard_command', `discard:${mine.commandId}`, 'pending', ME])
+    assert.deepEqual(q.args, { discarded_id: mine.commandId, name: 'create_tournament', scope: 'S1', reason: 'kept_theirs' })
+    mock.down = false
+    for (let i = 0; i < 100 && !mock.discards.length; i++) await page2.waitForTimeout(100)
+    assert.equal(mock.discards[0]?.command_id, q.commandId, 'queued discard not sent')
+    await status(page2).getByText('Saved', { exact: true }).waitFor()
+    assert.deepEqual(await entries(page2), [])
+    await context.close()
+  }
+
+  // --- A conflict where nothing sent differs: the fallback line, a blank changed_by as "someone", both choices.
+  {
+    const { context, mock, page } = await fresh()
+    const mine = entry('Same Cup', 'S1')
+    await seed(page, [mine])
+    const c = conflict(mine.args.tournament_id)
+    mock.next.push({ ...c, conflict: { ...c.conflict, current: { tournament_id: mine.args.tournament_id, name: 'Same Cup' }, changed_by: ' ' } })
+    await page.close()
+    const page2 = await open(context)
+    await button(page2, 'Review this change').click()
+    const sheet = page2.getByRole('dialog')
+    await sheet.getByText('Nothing you changed differs from their version.', { exact: true }).waitFor()
+    await sheet.getByText('Changed by someone at 10 Nov 2026, 10:00', { exact: true }).waitFor()
+    assert.equal(await sheet.locator('section').count(), 0, 'columns shown with nothing differing')
+    await button(page2, 'Keep their version').waitFor()
+    await button(page2, 'Send my version').waitFor()
+    await button(page2, 'Close without choosing').click()
+    assert.deepEqual((await entries(page2)).map((e) => e.state), ['conflict'], 'closing dropped the change')
+    await context.close()
+  }
+
+  // --- A malformed conflict payload is a plain refusal.
+  {
+    const { context, mock, page } = await fresh()
+    await seed(page, [entry('Odd Cup', 'S1')])
+    mock.next.push({ ok: false, code: 'version_conflict', message: null, conflict: { current_version: 'x', current: [], changed_at: 'never' } })
+    await page.close()
+    const page2 = await open(context)
+    await status(page2).getByRole('alert').getByText("Couldn't save", { exact: true }).waitFor()
+    assert.deepEqual((await entries(page2)).map((e) => [e.state, e.code, e.conflict ?? null]), [['failed', 'request_failed', null]])
+    await context.close()
+  }
+
+  // --- Two refused changes: oldest first; the first choice moves to the second with focus on the heading;
+  // the second choice closes the sheet.
+  {
+    const { context, mock, page } = await fresh()
+    const [one, two] = [entry('Bad1', 'S1'), entry('Bad2', 'S2')]
+    await seed(page, [one, two])
+    mock.refuse.add('Bad1').add('Bad2')
+    await page.close()
+    const page2 = await open(context)
+    await button(page2, 'Review refused changes').click()
+    const sheet = page2.getByRole('dialog')
+    await sheet.getByRole('heading', { name: 'Review refused changes' }).waitFor()
+    await sheet.getByText('Create tournament ‘Bad1’', { exact: true }).waitFor()
+    mock.refuse.clear()
+    await button(page2, 'Try sending again').click()
+    await sheet.getByText('Create tournament ‘Bad2’', { exact: true }).waitFor()
+    assert.equal(await page2.locator('dialog[open]').count(), 1, 'sheet closed after the first choice')
+    assert.equal(await page2.evaluate(() => document.activeElement?.tagName), 'H2', 'focus not on the heading')
+    await button(page2, 'Discard this change').click()
+    await button(page2, 'Discard this change').click()
+    await page2.locator('dialog[open]').waitFor({ state: 'detached' })
+    await status(page2).getByText('Saved', { exact: true }).waitFor()
+    assert.deepEqual(mock.discards.map((d) => [d.discarded_id, d.reason]), [[two.commandId, 'name_invalid']])
+    assert.equal(mock.applied.size, 1, 'first change not sent')
+    await context.close()
+  }
+
+  // --- Sign-in kicks a pass: an entry of this user waiting while signed out sends as soon as they sign in.
+  {
+    const { context, mock, page } = await fresh({ signedIn: false })
+    await page.goto(base + '/sign-in')
+    await page.getByLabel('Email').waitFor()
+    const late = entry('Late', 'S7')
+    await seed(page, [late])
+    await page.waitForTimeout(1000)
+    assert.equal(mock.calls.length, 0, 'sent while signed out')
+    await page.getByLabel('Email').fill('org@example.com')
+    await page.getByLabel('Password').fill('password1')
+    const t = Date.now()
+    await button(page, 'Sign in').click()
+    while (!mock.calls.length && Date.now() - t < 5000) await page.waitForTimeout(50)
+    assert.ok(Date.now() - t < 1500, `sign-in took ${Date.now() - t} ms to send`)
+    assert.equal(mock.calls[0].command_id, late.commandId)
+    await status(page).getByText('Saved', { exact: true }).waitFor()
+    await context.close()
+  }
+
+  // --- Crash in a screen: one report with no email or long number, the boundary text and its reload button.
+  {
+    const { context, mock, page } = await fresh()
+    await page.goto(base + '/__crash?crashtest')
+    await page.getByRole('alert').getByText('Something went wrong on this screen.', { exact: true }).waitFor()
+    await button(page, 'Reload this page').waitFor()
+    await page.waitForTimeout(500)
+    assert.equal(mock.reports.length, 1, `reports: ${JSON.stringify(mock.reports)}`)
+    const [r] = mock.reports
+    assert.deepEqual([r.app_version, r.route, r.error_name], [pkg.version, '/__crash', 'Error'])
+    assert.ok(r.message.includes('[removed]') && !/example\.com|9800000001/.test(r.message), `message: ${r.message}`)
+    assert.match(r.frame, /^\/assets\/[^:]+\.js:\d+$/, `frame: ${r.frame}`)
+    await context.close()
+  }
+
+  // --- Uncaught errors and rejections: route with :id and no query or hash; personal data removed; 5 per page load.
+  {
+    const { context, mock, page } = await fresh()
+    await page.evaluate(() => {
+      history.pushState(null, '', '/t/0b7c2c7e-1d2a-4c3b-9f00-123456789abc/teams?who=x#y')
+      setTimeout(() => void Promise.reject(new Error('Rejected for org@example.com')))
+    })
+    for (let i = 0; i < 50 && !mock.reports.length; i++) await page.waitForTimeout(50)
+    await page.evaluate(() => {
+      for (let i = 0; i < 5; i++) setTimeout(() => { throw new TypeError(`Boom ${i} 0b7c2c7e-1d2a-4c3b-9f00-123456789abc 9812345678`) })
+    })
+    await page.waitForTimeout(1000)
+    assert.equal(mock.reports.length, 5, `reports: ${mock.reports.length}`)
+    assert.ok(mock.reports.every((r) => r.route === '/t/:id/teams'), `routes: ${mock.reports.map((r) => r.route)}`)
+    const msgs = mock.reports.map((r) => r.message)
+    assert.ok(msgs.includes('Rejected for [removed]'), `messages: ${msgs}`)
+    assert.ok(msgs.includes('Boom 0 [removed] [removed]'), `messages: ${msgs}`)
+    assert.ok(mock.reports.some((r) => r.error_name === 'TypeError'))
     await context.close()
   }
 

@@ -1,8 +1,10 @@
 import { registerSW } from 'virtual:pwa-register'
 import { hasWaitingChanges, startOutbox, whenEmpty } from '../../domain/commands'
+import { startReporting } from '../../domain/report'
 
-/** Once at app start: replay of queued changes, the leave warning, and the service-worker update gate. */
+/** Once at app start: error reports, replay of queued changes, the leave warning, and the service-worker update gate. */
 export function start() {
+  startReporting()
   startOutbox()
   // Closing the tab with changes still on this device: ask first.
   window.addEventListener('beforeunload', (e) => {

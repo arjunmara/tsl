@@ -45,7 +45,7 @@ export function MyTournaments() {
     <li key={e.seq} className="card-waiting">
       <h2 className="body-strong">{String(e.args.name ?? '')}</h2>
       <p className="body">
-        <StatusPill state="pending" label={e.state === 'failed' ? "Couldn't save" : 'Waiting to send'} />
+        <StatusPill state="pending" label={e.state !== 'pending' ? "Couldn't save" : 'Waiting to send'} />
       </p>
     </li>
   ))

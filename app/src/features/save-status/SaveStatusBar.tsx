@@ -3,13 +3,20 @@ import { useOutbox } from '../../domain/commands'
 import { messageFor } from '../../domain/messages'
 import { SaveStatus, type SaveState } from '../../ui/SaveStatus'
 import { useOnline } from '../app/online'
+import { HandBack } from './HandBack'
 import { labelFor } from './labels'
 
-/** The page header's Save status for the signed-in user: shown only while changes wait or fail, then "Saved" briefly. */
+/**
+ * The page header's Save status for the signed-in user: shown only while changes wait or are refused, then
+ * "Saved" briefly. Tapping it lists the changes, refused ones first; the review button opens the hand-back sheet.
+ */
 export function SaveStatusBar() {
-  const { entries, sending, retry } = useOutbox()
+  const { entries, sending } = useOutbox()
   const online = useOnline()
+  const [review, setReview] = useState(false)
   const pending = entries.filter((e) => e.state === 'pending').length
+  const stopped = entries.filter((e) => e.state !== 'pending')
+  if (review && !stopped.length) setReview(false)
   const busy = sending || entries.length > 0
   const [wasBusy, setWasBusy] = useState(busy)
   const [saved, setSaved] = useState(false)
@@ -23,12 +30,17 @@ export function SaveStatusBar() {
     return () => clearTimeout(t)
   }, [saved])
 
-  const state: SaveState | null = entries.some((e) => e.state === 'failed') ? 'failed'
+  const state: SaveState | null = stopped.length ? 'failed'
     : pending && !online ? 'offline' : pending || sending ? 'saving' : saved ? 'saved' : null
-  const items = entries.map((e) => labelFor(e.name, e.args) + (e.state === 'failed' ? ` · ${messageFor(e.code ?? null)}` : ''))
+  const items = [
+    ...stopped.map((e) => `${labelFor(e.name, e.args)} · ${messageFor(e.code ?? null)}`),
+    ...entries.filter((e) => e.state === 'pending').map((e) => labelFor(e.name, e.args)),
+  ]
   return (
     <header className={state ? 'save-bar' : 'save-bar save-bar-empty'}>
-      <SaveStatus state={state} count={pending} items={items} onRetry={() => void retry()} />
+      <SaveStatus state={state} count={pending} items={items}
+        reviewLabel={stopped.length > 1 ? 'Review refused changes' : 'Review this change'} onReview={() => setReview(true)} />
+      <HandBack open={review} entries={stopped} onClose={() => setReview(false)} />
     </header>
   )
 }

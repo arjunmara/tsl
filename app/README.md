@@ -80,11 +80,27 @@ Every change goes through `send(name, args, { scope })` from `src/domain/command
 
 - Give a scope: the Tournament or Season id the change belongs to, or `'global'`. A refused change stops later changes in its scope only.
 - Add a `commandLabels` entry in `src/features/save-status/labels.ts` for every new command, in plain words ("Create tournament ‘Gulmi Cup’"); the Save status lists waiting changes with it.
-- Network failures, `unknown` (5xx), `in_progress` and `not_signed_in` retry (2 s doubling to 60 s, and at once on reconnect, any auth change and app start); any other code (4xx is `request_failed`) marks the change failed until "Try saving again". Nothing is dropped without the user: a screen that shows a refusal itself (like the create form) calls `forgetRefused(commandId)`.
+- Network failures, `unknown` (5xx), `in_progress` and `not_signed_in` retry (2 s doubling to 60 s, and at once on reconnect, any auth change and app start); any other code (4xx is `request_failed`) marks the change `failed`, and `version_conflict` marks it `conflict`. Either stops its scope until the user chooses in the hand-back sheet. Nothing is dropped without the user: a screen that shows a refusal itself (like the create form) calls `forgetRefused(commandId)`.
+- Hand-back sheet (`src/features/save-status/HandBack.tsx`, opened by "Review this change" / "Review refused changes" beside the Save status; tapping the status itself lists the changes, refused first): one refused change at a time, oldest first. A conflict shows "Your change" / "Their version" for the fields that differ (add words for new fields to `fieldLabels` in `labels.ts`) with "Keep their version" (logged discard) or "Send my version" (same command, `expected_version` set). Any other refusal offers "Try sending again" or "Discard this change" (confirmed, logged). A resend always gets a new command id in the same queue place, since the server stores the refusal under the old one. Discards are the `discard_command` command, each queued in its own scope `discard:<discarded command id>`. A `version_conflict` without a valid `conflict` payload is treated as a plain refusal (`request_failed`).
 - Only the signed-in user's entries replay and count for the Save status, the leave warning and the update gate. `send` with nobody signed in returns `not_signed_in` and stores nothing.
 - A new service worker activates only once this user has nothing pending and the page is hidden (or right at app start); closing the tab with changes waiting asks first.
 - `npm run check:outbox` (needs Google Chrome) runs every case against a mocked server.
-- The server-corrected `enteredAt` needs Supabase to expose the `Date` response header to the browser (CORS); without it the offset is 0 and the device clock is used.
+- The server-corrected `enteredAt` takes its offset from `app.server_now()` at app start, on reconnect and when the page is shown again (round-trip midpoint; answers slower than 5 s or older than the last applied one are ignored). Replay's first pass waits up to 3 s for the first answer; until one arrives the offset is 0 and the device clock is used.
+
+### Conflict envelope (for edit commands)
+
+An edit of a versioned row takes `expected_version int` and, when the row's `version` differs, returns without writing:
+
+```json
+{ "ok": false, "code": "version_conflict", "message": "…",
+  "conflict": { "current_version": 4, "current": { "name": "Gulmi Cup", "…": "…" }, "changed_by": "Sita", "changed_at": "2026-11-10T04:15:00Z" } }
+```
+
+`current` uses the command's argument names as keys, so the sheet can compare it with what was sent; `changed_by` is a display name. `runCommand` passes `conflict` through unchanged.
+
+## Client errors
+
+`src/domain/report.ts` sends uncaught errors, unhandled rejections and the error boundary's errors (App.tsx: "Something went wrong on this screen." + "Reload this page") straight to `app.report_client_error`, at most 5 per page load (a bare cross-origin `Script error.` is ignored). The route has UUID segments replaced by `:id` and no query or hash; the route, error name and message have emails, UUIDs, phone numbers (8+ digits, grouped or with +) and runs of 6+ digits replaced by `[removed]`; the first stack frame is sent as file:line only. The boundary wraps the routes only (the Save status stays) and resets on navigation. They appear in Supabase > Logs > Postgres as a `client_error` JSON line. `/__crash` (dev, or any build with `?crashtest`) throws on purpose to check this.
 
 ## Make the release gate block merges
 

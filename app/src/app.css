@@ -120,3 +120,25 @@
 .save-bar-empty {
   padding: 0;
 }
+
+/* Hand-back sheet: "Your change" and "Their version" side by side. */
+.handback-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-4);
+  margin: var(--spacing-3) 0;
+}
+.handback-col h3,
+.handback-col dl,
+.handback-col dd {
+  margin: 0;
+}
+.handback-col dd {
+  overflow-wrap: anywhere;
+}
+.handback-col dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+}

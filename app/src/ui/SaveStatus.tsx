@@ -15,11 +15,15 @@ const words = (state: SaveState, count: number) =>
 
 /**
  * Dot plus words, never icon-only; null state shows nothing. The polite live region and the alert region
- * stay mounted so screen readers hear each change. Tapping lists the waiting changes (items, in plain words).
+ * stay mounted so screen readers hear each change. Tapping lists the changes (items, in plain words);
+ * when failed, a separate button (reviewLabel) calls onReview.
  */
-export function SaveStatus({ state, count, items, onRetry }: { state: SaveState | null; count: number; items: string[]; onRetry: () => void }) {
+export function SaveStatus({ state, count, items, reviewLabel, onReview }: {
+  state: SaveState | null; count: number; items: string[]; reviewLabel: string; onReview: () => void
+}) {
   const [open, setOpen] = useState(false)
   const listId = useId()
+  const failed = state === 'failed'
   const body = state && (
     items.length ? (
       <button type="button" className="ui-save-toggle body-strong" aria-expanded={open}
@@ -36,9 +40,9 @@ export function SaveStatus({ state, count, items, onRetry }: { state: SaveState 
   )
   return (
     <div className={state ? `ui-save ui-save-${state}` : 'ui-save'}>
-      <div aria-live="polite">{state !== 'failed' && body}</div>
-      <div role="alert">{state === 'failed' && body}</div>
-      {state === 'failed' && <SecondaryButton label="Try saving again" onClick={onRetry} />}
+      <div aria-live="polite">{!failed && body}</div>
+      <div role="alert">{failed && body}</div>
+      {failed && <SecondaryButton label={reviewLabel} onClick={onReview} />}
       {state && open && items.length > 0 && (
         <ul id={listId} className="ui-save-list body" aria-label="Changes waiting to send">
           {items.map((t, i) => <li key={i}>{t}</li>)}
