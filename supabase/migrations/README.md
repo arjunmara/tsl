@@ -183,6 +183,21 @@ Check with `select count(*) from app.season_action where action in ('manage_team
 (8 rows). Then on the test preview, add a Team on the Teams tab (the Season moves to Registration), share its link,
 reissue and revoke it, and check that a second test account sees no Team.
 
+## Apply 0012_registration_grant.sql (Story 2.2)
+
+**First turn on anonymous sign-ins** in the same project (`app/README.md`, Registration link). Apply before the app deploy with
+the `/register` page (test first, then live). It adds `app.registration_grant` (one per anonymous user: the link it redeemed and
+that link's Team, Season and Tournament; that Tournament's Organisers read it), the Season action `edit_team` (setup and
+registration), the read helpers `app.granted_team()` and `app.registration_form()`, a second read policy on `app.team` (a grant
+holder reads its own Team while the link is active), the commands `redeem_registration_link` (the token is hashed on the server;
+`link_dead` for unknown, revoked or replaced links; redeeming again replaces the grant) and `edit_team` (name, Team code, kit
+colour; versioned with the conflict envelope, `changed_by` is "Organiser" or "Team manager"; Organisers may call it too), and
+redefines `app.authorize`: a `team_id` target resolves to its Season, and an anonymous user passes only for redeeming, discarding
+its own refused change, and grant actions on the Team of its live grant. Check with
+`select count(*) from app.season_action where action = 'edit_team';` (2). Then on the test preview, add a Team, open its link in
+a private window on a phone, change the name, code and kit colour, check the Organiser sees them; revoke the link and reload the
+private window ("This link no longer works").
+
 ## Nightly backup
 
 **Paused (2026-11-08):** the schedule is commented out in `app-backup.yml` until the R2 bucket and secrets exist. Turn it on before the first real Organiser data lands (Story 2.x at the latest); steps 5–7 above are deferred until then.

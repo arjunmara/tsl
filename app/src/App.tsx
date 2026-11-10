@@ -15,6 +15,7 @@ import { Settings } from './features/home/Settings'
 import { CoOrganisers } from './features/home/CoOrganisers'
 import { TeamPage } from './features/home/TeamPage'
 import { Invite } from './features/auth/Invite'
+import { Register } from './features/register/Register'
 import { SaveStatusBar } from './features/save-status/SaveStatusBar'
 import { PrimaryButton } from './ui/Button'
 
@@ -46,9 +47,12 @@ function ScreenBoundary({ children }: { children: ReactNode }) {
 // /__crash throws, to check error reporting: only in dev or with ?crashtest. The fake email and number
 // in its message must not reach the log.
 const crashTest = import.meta.env.DEV || new URLSearchParams(location.search).has('crashtest')
-/** The page-wide Save status, except where a screen shows it in its own App bar (Tournament home and Settings list). */
+/**
+ * The page-wide Save status, except where a screen shows it itself: the Tournament home and Settings list (in the App bar)
+ * and the Registration link form (only while it's open).
+ */
 function PageSaveStatus() {
-  return /^\/t\/[^/]+(\/settings)?\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
+  return /^\/(t\/[^/]+(\/settings)?|register)\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
 }
 
 function Crash(): ReactNode {
@@ -70,6 +74,7 @@ export function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/invite/:token" element={<Invite />} />
+          <Route path="/register" element={<Register />} />
           <Route element={<RequireSession />}>
             <Route path="/" element={<MyTournaments />} />
             <Route element={<RequireVerified />}>

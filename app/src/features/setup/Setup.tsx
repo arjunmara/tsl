@@ -454,7 +454,7 @@ function Swatches({ chosen, panel }: { chosen: string; panel: string }) {
 }
 
 /** A native colour picker; the sample follows every move, the choice saves on change or blur. */
-function ColourField({ label, value, onInput, onSave }: { label: string; value: string; onInput: (v: string) => void; onSave: (v: string) => void }) {
+export function ColourField({ label, value, onInput, onSave }: { label: string; value: string; onInput: (v: string) => void; onSave: (v: string) => void }) {
   const id = useId()
   const input = useRef<HTMLInputElement>(null)
   const save = useRef(onSave)

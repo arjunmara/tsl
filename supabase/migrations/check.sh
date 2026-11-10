@@ -23,7 +23,7 @@ create role anon nologin; create role authenticated nologin; create role service
 create role authenticator noinherit login; grant anon, authenticated, service_role to authenticator;
 create schema auth;
 create function auth.jwt() returns jsonb language sql stable as $$ select '{}'::jsonb $$;
-create table auth.users (id uuid primary key, email text, email_confirmed_at timestamptz);
+create table auth.users (id uuid primary key, email text, email_confirmed_at timestamptz, is_anonymous boolean not null default false);
 create function auth.uid() returns uuid language sql stable as
   $$ select (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')::uuid $$;
 grant usage on schema auth to anon, authenticated;
@@ -79,7 +79,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -802,6 +802,135 @@ for f in "invite_organiser('$(cmd 247)', '$I2', '$T1', 'x@x.test')" "cancel_invi
   [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
 done
 [ "$(q "select has_function_privilege('authenticated', 'app.lock_membership(uuid, uuid)', 'execute')")" = f ] || fail "lock_membership granted"
+
+# --- Registration grant (Story 2.2). A organises T5 (S5 and S6 in registration); B organises T2 (S2 in registration).
+# G1, G2, G3 and G4 are anonymous Team managers (no email). X and Y are Teams of S5, Z of S6, W of B's S2.
+T5=11111111-0000-4000-8000-000000000005 S5=21111111-0000-4000-8000-000000000005 S6=21111111-0000-4000-8000-000000000006
+G1=f1111111-0000-4000-8000-000000000001 G2=f1111111-0000-4000-8000-000000000002 G3=f1111111-0000-4000-8000-000000000003
+G4=f1111111-0000-4000-8000-000000000004
+X=71111111-0000-4000-8000-000000000001 Y=71111111-0000-4000-8000-000000000002 Z=71111111-0000-4000-8000-000000000003
+W=71111111-0000-4000-8000-000000000004
+LX=81111111-0000-4000-8000-000000000001 LY=81111111-0000-4000-8000-000000000002 LZ=81111111-0000-4000-8000-000000000003
+LW=81111111-0000-4000-8000-000000000004 LX2=81111111-0000-4000-8000-000000000005 LX3=81111111-0000-4000-8000-000000000006
+TX=${TK1/A/x} TY=${TK1/A/y} TZ=${TK1/A/z} TW=${TK1/A/w} TX2=${TK1/A/2} TX3=${TK1/A/3}
+q "insert into auth.users (id, is_anonymous) values ('$G1', true), ('$G2', true), ('$G3', true), ('$G4', true)" >/dev/null
+[ "$(create $A 500 $T5 $S5 'Grant Cup' | grep -c '"ok": true')" = 1 ] || fail "grant: fixture tournament"
+q "update app.season set status = 'registration', registration_deadline = '2026-11-20' where id = '$S5';
+   insert into app.season (id, tournament_id, number, status) values ('$S6', '$T5', 2, 'setup');
+   update app.season set status = 'registration' where id = '$S6';
+   insert into app.team (id, tournament_id, season_id, name, code) values ('$X', '$T5', '$S5', 'Xenon', 'XEN'),
+     ('$Y', '$T5', '$S5', 'Yeti', 'YET'), ('$Z', '$T5', '$S6', 'Zeal', 'ZEA'), ('$W', '$T2', '$S2', 'Wolves', 'WOL');
+   insert into app.registration_link (id, tournament_id, team_id, token_hash, created_by) values
+     ('$LX', '$T5', '$X', '$(hash $TX)', '$A'), ('$LY', '$T5', '$Y', '$(hash $TY)', '$A'),
+     ('$LZ', '$T5', '$Z', '$(hash $TZ)', '$A'), ('$LW', '$T2', '$W', '$(hash $TW)', '$B')" >/dev/null
+rd() { tc "$1" "redeem_registration_link('$(cmd "$2")', '$3')"; }
+et() { tc "$1" "edit_team('$(cmd "$2")', '$3', $4, $5)"; }
+ver() { q "select version from app.team where id='$1'"; }
+seen() { as "$1" "select coalesce(string_agg(id::text, ',' order by id), 'none') from app.team"; }
+form() { as "$1" "select coalesce((select concat_ws('|', tournament_name, season_number, season_status, registration_deadline) from app.registration_form()), 'none')"; }
+# Every command except the grant's own, called as $1 with ids of T5, S5, X and LX: all must be not_authorized.
+others=$(q "select string_agg(format('%s(%s)', p.proname, (select string_agg(format('%s => %s', a.n, case
+    when a.n = 'command_id' then 'gen_random_uuid()' when a.n = 'tournament_id' then quote_literal('$T5')
+    when a.n = 'season_id' then quote_literal('$S5') when a.n = 'team_id' then quote_literal('$X')
+    when a.n = 'link_id' then quote_literal('$LX') when a.t = 'uuid'::regtype then 'gen_random_uuid()'
+    when a.t in ('integer'::regtype, 'smallint'::regtype, 'numeric'::regtype) then '1' when a.t = 'boolean'::regtype then 'true' when a.t = 'date'::regtype then '''2026-12-01'''
+    when a.t in ('text[]'::regtype, 'uuid[]'::regtype, 'jsonb'::regtype) then '''{}''' else '''x''' end), ', ' order by a.o)
+    from unnest(p.proargnames, p.proargtypes::oid[]::regtype[]) with ordinality a(n, t, o))), E'\n' order by p.proname)
+  from pg_proc p where p.pronamespace = 'app'::regnamespace and p.prorettype = 'jsonb'::regtype
+    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command}'::name[])")
+[ "$(wc -l <<<"$others")" -ge 20 ] || fail "grant: too few commands listed: $others"
+refused_all() {
+  while IFS= read -r f; do
+    [ "$(tc "$1" "$f")" = not_authorized ] || fail "grant: $1 ran $f"
+  done <<<"$others"
+}
+
+# No grant yet: an anonymous user reads nothing and changes nothing.
+[ "$(seen $G1)|$(form $G1)|$(et $G1 500 $X 1 "name => 'Taken'")" = 'none|none|not_authorized' ] || fail "grant: before redeeming"
+# Redeem: the server hashes the token; a bad or unknown token is link_dead; a repeat gives the same answer.
+r=$(as $G1 "select app.redeem_registration_link('$(cmd 501)', '$TX')")
+[ "$(q "select (r->>'ok')||(r->>'team_id') from (select '$r'::jsonb r) x")" = "true$X" ] || fail "redeem: $r"
+[ "$(as $G1 "select app.redeem_registration_link('$(cmd 501)', '$TX')")" = "$r" ] || fail "redeem: repeat gave another answer"
+[ "$(q "select concat_ws('|', link_id, team_id, season_id, tournament_id) from app.registration_grant where id='$G1'")" = "$LX|$X|$S5|$T5" ] \
+  || fail "redeem: grant row"
+[ "$(q "select count(*) from app.activity_log where table_name='registration_grant' and actor='$G1' and tournament_id='$T5' and command_id='$(cmd 501)'")|$(q "select count(*) from app.activity_log where strpos(coalesce(after::text, ''), '$TX') > 0")" = 1\|0 ] \
+  || fail "redeem: not logged, or token in the log"
+[ "$(rd $G2 502 nope)|$(rd $G2 503 '')|$(rd $G2 504 "$(hash $TY)")|$(q "select count(*) from app.registration_grant where id='$G2'")" = 'link_dead|link_dead|link_dead|0' ] \
+  || fail "redeem: bad tokens (or the stored hash itself) accepted"
+[ "$(rd $A 505 $TY)|$(rd $U 506 $TY)" = 'not_authorized|email_not_verified' ] || fail "redeem: an account redeemed a link"
+# The grant reads its own Team and the form's Season facts, nothing else.
+[ "$(seen $G1)|$(form $G1)" = "$X|Grant Cup|1|registration|2026-11-20" ] || fail "grant: G1's reads"
+tables=$(q "select string_agg(table_name, ' ' order by table_name) from information_schema.role_table_grants
+             where grantee = 'authenticated' and table_schema = 'app' and privilege_type = 'SELECT'
+               and table_name not in ('team', 'format_preset', 'season_transition', 'season_action')")
+[[ " $tables " == *" registration_grant "*" season "* ]] || fail "grant: leak table list: $tables"
+for t in $tables; do
+  [ "$(as $G1 "select count(*) from app.$t")" = 0 ] || fail "leak: grant holder reads $t"
+done
+[ "$(as $G1 "select count(*) from app.organisers('$T5')")" = 0 ] || fail "leak: grant holder reads the Organisers"
+refused_all $G1
+# edit_team as the grant: only its Team; name, code and kit colour each alone; versioned.
+[ "$(et $G1 510 $X 1 "name => '  Xenon FC '")|$(et $G1 511 $X 2 "code => ' xfc'")|$(et $G1 512 $X 3 "kit_colour => '#FFAA00'")" = ok\|ok\|ok ] \
+  || fail "edit_team: grant edits"
+[ "$(q "select concat_ws('|', name, code, kit_colour, version) from app.team where id='$X'")" = 'Xenon FC|XFC|#ffaa00|4' ] || fail "edit_team: row"
+r=$(as $G1 "select app.edit_team('$(cmd 513)', '$X', 4, name => 'Xenon')")
+[ "$(q "select (r->>'ok')||(r->>'version') from (select '$r'::jsonb r) x")" = true5 ] || fail "edit_team: answer lacks the new version: $r"
+[ "$(q "select count(*) from app.activity_log where table_name='team' and row_id='$X' and actor='$G1' and op='update'")" = 4 ] || fail "edit_team: not logged"
+[ "$(et $G1 514 $Y 1 "name => 'Taken'")|$(et $G1 515 $Z 1 "name => 'Taken'")|$(et $G1 516 $W 1 "name => 'Taken'")" \
+  = 'not_authorized|not_authorized|not_authorized' ] || fail "leak: grant edits another Team"
+[ "$(tc $G1 "edit_team('$(cmd 517)', '$X', 5, code => 'YET')")|$(tc $G1 "edit_team('$(cmd 518)', '$X', 5, code => 'ZEA')")" = 'team_code_taken|ok' ] \
+  || fail "edit_team: code unique per Season only"
+for bad in "code => 'X'|code_invalid" "code => 'X-Y'|code_invalid" "name => ''|name_invalid" "name => repeat('x', 81)|name_invalid" \
+    "kit_colour => 'red'|colour_invalid" "kit_colour => '#fff'|colour_invalid"; do
+  IFS='|' read -r a want <<<"$bad"
+  [ "$(et $G1 519 $X 6 "$a")" = "$want" ] || fail "edit_team: $bad"
+  q "delete from app.command_result where command_id='$(cmd 519)'" >/dev/null
+done
+# Conflicts name a role, never an email; an Organiser edits the same Team through the same command.
+[ "$(et $A 520 $X 6 "name => 'Xenon United'")" = ok ] || fail "edit_team: Organiser"
+r=$(as $G1 "select app.edit_team('$(cmd 521)', '$X', 6, name => 'Mine')")
+[ "$(q "select concat_ws('|', r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'name', r->'conflict'->'current'->>'code', r->'conflict'->>'changed_by') from (select '$r'::jsonb r) x")" \
+  = 'version_conflict|7|Xenon United|ZEA|Organiser' ] || fail "edit_team: conflict for the grant: $r"
+r=$(as $A "select app.edit_team('$(cmd 522)', '$X', 6, name => 'Theirs')")
+[ "$(q "select r->'conflict'->>'changed_by' from (select '$r'::jsonb r) x")|$(et $G1 523 $X 7 "name => 'Xenon'")" = 'Organiser|ok' ] || fail "edit_team: conflict for A"
+r=$(as $A "select app.edit_team('$(cmd 524)', '$X', 7, name => 'Theirs')")
+[ "$(q "select r->'conflict'->>'changed_by' from (select '$r'::jsonb r) x")" = 'Team manager' ] || fail "edit_team: changed_by for the grant's change: $r"
+[ "$(et $G1 528 $X 8 "name => null")|$(ver $X)" = ok\|8 ] || fail "edit_team: nothing to change bumped the version"
+[ "$(et $B 525 $X 8 "name => 'Stolen'")|$(et $B 526 $W 1 "name => 'Wolves FC'")" = 'not_authorized|ok' ] || fail "edit_team: other tenant"
+# A discard by the grant holder is logged with no Tournament.
+[ "$(tc $G1 "discard_command('$(cmd 527)', '$(cmd 521)', 'edit_team', '$X', 'Keep theirs')")" = ok ] || fail "grant: discard"
+[ "$(q "select count(*) from app.discarded_command where id='$(cmd 521)' and tournament_id is null and actor='$G1'")" = 1 ] || fail "grant: discard row"
+# Organisers see their Tournament's grants; another tenant doesn't.
+[ "$(as $A "select count(*) from app.registration_grant")|$(as $B "select count(*) from app.registration_grant")" = 1\|0 ] || fail "grant: Organiser reads"
+
+# Another Season's Team: G3's grant for Z; once S6 starts, it reads but can't edit.
+[ "$(rd $G3 530 $TZ)|$(seen $G3)|$(et $G3 531 $Z 1 "kit_colour => '#ffffff'")" = "ok|$Z|ok" ] || fail "grant: G3 on S6"
+q "update app.season set status = 'started' where id='$S6'" >/dev/null
+[ "$(et $G3 532 $Z 2 "name => 'Late'")|$(form $G3)" = 'season_started|Grant Cup|2|started' ] || fail "grant: started Season"
+# Replacing the grant: G2 redeems Y, then B's W; Y is gone at once.
+[ "$(rd $G2 533 $TY)|$(seen $G2)|$(rd $G2 534 $TW)|$(seen $G2)|$(et $G2 535 $Y 1 "name => 'Gone'")" = "ok|$Y|ok|$W|not_authorized" ] \
+  || fail "grant: replaced"
+[ "$(q "select count(*) from app.registration_grant")" = 3 ] || fail "grant: one grant per user"
+# Revoke, then reissue: the old grant is dead at once and its token never redeems again; the new token does.
+[ "$(rv $A 540 $S5 $LX)|$(seen $G1)|$(form $G1)|$(et $G1 541 $X 8 "name => 'After'")|$(rd $G1 542 $TX)" = 'ok|none|none|not_authorized|link_dead' ] \
+  || fail "revoke: grant still works"
+refused_all $G1
+[ "$(ri $A 543 $S5 $X $LX2 $(hash $TX2))|$(seen $G1)|$(rd $G1 544 $TX)|$(rd $G1 545 $TX2)|$(seen $G1)" = "ok|none|link_dead|ok|$X" ] \
+  || fail "reissue after revoke: $(seen $G1)"
+[ "$(ri $A 546 $S5 $X $LX3 $(hash $TX3))|$(seen $G1)|$(form $G1)|$(et $G1 547 $X 8 "name => 'After'")|$(rd $G1 548 $TX2)" = 'ok|none|none|not_authorized|link_dead' ] \
+  || fail "reissue: old grant still works"
+# An anonymous user that never redeemed gets nothing.
+[ "$(seen $G4)|$(form $G4)" = 'none|none' ] || fail "grant: G4 reads"
+refused_all $G4
+for f in "redeem_registration_link('$(cmd 549)', '$TX3')" "edit_team('$(cmd 550)', '$X', 1, 'x')" "registration_form()" "granted_team()"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+! as anon "select count(*) from app.registration_grant" >/dev/null 2>&1 || fail "leak: anon reads registration_grant"
+for s in "insert into app.registration_grant (id, link_id, team_id, season_id, tournament_id) values ('$G4', '$LX3', '$X', '$S5', '$T5')" \
+    "update app.team set name = 'Direct'" "delete from app.registration_grant"; do
+  ! as $G1 "$s" >/dev/null 2>&1 || fail "grant holder wrote directly: $s"
+done
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

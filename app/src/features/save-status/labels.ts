@@ -32,6 +32,8 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   open_registration: () => 'Open registration',
   revoke_registration_link: () => 'Revoke a Registration link',
   reissue_registration_link: () => 'Make a new Registration link',
+  edit_team: (a) => (a.name != null ? `Rename the Team to ‘${String(a.name)}’`
+    : a.code != null ? `Change the Team code to ${String(a.code)}` : 'Change the kit colour'),
 }
 
 /** "rules", "description and rules": the fields an edit changes, in words. */
@@ -81,4 +83,6 @@ export const fieldLabels: Record<string, string> = {
   tiebreaks: 'Tie-breaks',
   caption: 'Caption',
   ad_paths: 'Ad images',
+  code: 'Team code',
+  kit_colour: 'Kit colour',
 }

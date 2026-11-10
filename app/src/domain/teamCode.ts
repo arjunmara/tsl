@@ -19,6 +19,10 @@ export function suggestCode(name: string, taken: Iterable<string> = []): string 
 }
 
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('')
+/** SHA-256 of a text as 64 lower-case hex, as the server's encode(sha256(convert_to(text, 'UTF8')), 'hex'). */
+export const sha256Hex = async (text: string) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))
+/** A Registration link token as newLink makes it. */
+export const TOKEN = /^[A-Za-z0-9_-]{43}$/
 
 /**
  * A new Registration link token: 256 random bits as base64url (43 characters), and its SHA-256 as 64 lower-case hex.
@@ -27,5 +31,5 @@ const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16)
 export async function newLink(): Promise<{ token: string; hash: string }> {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
   const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-  return { token, hash: hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))) }
+  return { token, hash: await sha256Hex(token) }
 }

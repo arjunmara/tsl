@@ -2,7 +2,7 @@
 
 // A token as #rrggbb (the build may shorten six-digit hex to three): a 2D canvas normalises any opaque CSS colour.
 let ctx: CanvasRenderingContext2D | null = null
-function token(name: string) {
+export function token(name: string) {
   ctx ??= document.createElement('canvas').getContext('2d')
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
   if (!ctx || !value) return ''

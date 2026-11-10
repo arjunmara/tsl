@@ -76,3 +76,6 @@ export function inZone(ts: string | number | Date, timeZone = 'Asia/Kathmandu'):
   }).formatToParts(new Date(ts)).map((x) => [x.type, x.value]))
   return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` }
 }
+
+/** "Kartik 14, 2083 BS (31 Oct 2026)": formatDate without the weekday, for sentences such as the Deadline banner. */
+export const formatDay = (ad: string) => formatDate(ad).replace(/^\w+ · /, '')

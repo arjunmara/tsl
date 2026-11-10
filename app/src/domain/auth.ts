@@ -100,6 +100,13 @@ export async function checkVerified(): Promise<'verified' | 'unverified' | 'none
 
 export const signOut = () => run(() => supabase.auth.signOut({ scope: 'local' }))
 
+/** A Registration link's Team-manager session: anonymous, no account, guarded by CAPTCHA like sign-in (AD-19). */
+export const signInAnonymously = (captchaToken?: string) =>
+  run(() => supabase.auth.signInAnonymously({ options: { captchaToken: captchaToken || undefined } }))
+
+/** True when this page has a stored session (it may be anonymous). */
+export const hasSession = async () => !!(await supabase.auth.getSession()).data.session
+
 /** Calls cb with the current session now and on every change; returns the unsubscribe. */
 export function onSession(cb: (s: Session | null) => void): () => void {
   const { data } = supabase.auth.onAuthStateChange((_event, s) => {

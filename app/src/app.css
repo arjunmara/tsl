@@ -567,3 +567,25 @@
 .team-page .body {
   overflow-wrap: anywhere;
 }
+
+/* Registration link form (Story 2.2): a sealed page, no App bar or tabs. The Deadline banner is information, not an error. */
+.register-bar .meta {
+  margin: 0;
+}
+.deadline-banner {
+  padding: var(--spacing-3) var(--spacing-4);
+  border: 2px solid var(--ink);
+  border-radius: var(--rounded-md);
+  background: var(--surface);
+}
+.deadline-banner p {
+  margin: 0;
+}
+.register-kit {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+.register-kit .ui-field {
+  flex: 1;
+}
