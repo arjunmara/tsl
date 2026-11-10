@@ -13,6 +13,9 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   set_setup_step: (a) => `Finish setup step ${String(a.step ?? '')}`,
   set_season_rules: (a) => `Change the season's ${changed(a)}`,
   set_season_dates: () => 'Change the season dates',
+  // Preset keys are their labels in lower case (futsal → Futsal, 7-a-side).
+  set_match_settings: (a) => (a.format_preset != null
+    ? `Change the format to ${String(a.format_preset).replace(/^./, (c) => c.toUpperCase())}` : 'Change the Match settings'),
 }
 
 /** "rules", "description and rules": the fields an edit changes, in words. */
@@ -35,4 +38,18 @@ export const fieldLabels: Record<string, string> = {
   starts_on: 'Season starts',
   ends_on: 'Season ends',
   registration_deadline: 'Registration deadline',
+  format_preset: 'Format preset',
+  periods: 'Periods',
+  period_minutes: 'Minutes per period',
+  clock: 'Clock',
+  half_time_minutes: 'Half-time (minutes)',
+  extra_time: 'Extra time',
+  extra_time_periods: 'Extra-time periods',
+  extra_time_minutes: 'Minutes per extra-time period',
+  shootout: 'Shootout',
+  substitutions: 'Substitutions',
+  max_substitutions: 'Maximum substitutions',
+  foul_warning: 'Accumulated-foul warning',
+  timeouts_per_period: 'Timeouts per team per period',
+  power_play_minutes: 'Power play (minutes)',
 }

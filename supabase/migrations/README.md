@@ -106,6 +106,17 @@ setup can be edited). Check with `select count(*) from information_schema.column
 table_name = 'season' and column_name in ('rules', 'registration_deadline');` (2). Then on the test preview, fill
 steps 2 and 3 and reopen them on another device.
 
+## Apply 0006_match_settings.sql (Story 1.10)
+
+Apply before the app deploy with wizard step 4 (test first, then live); the wizard reads the new columns, so it shows
+"Couldn't load this tournament" until this is applied. It adds `app.format_preset`, the one table of Format preset
+defaults (futsal from the FIFA Futsal Laws 2025-26; custom starts from futsal; 5-, 7- and 11-a-side have
+`confirmed = false` until the founder confirms their values), readable by every signed-in client; the Match settings
+columns on `app.season` with range checks; and the `set_match_settings` command (picking a preset copies its row; other
+arguments change single settings; versioned with the conflict envelope; allowed while setup can be edited). Re-running
+the file resets the preset rows to its values. Check with `select key, confirmed from app.format_preset order by sort;`
+(5 rows). Then on the test preview, pick a preset on step 4, change a value, switch preset, and reopen it on another device.
+
 Edit commands added later answer a stale `expected_version` with
 `{ok: false, code: 'version_conflict', conflict: {current_version, current, changed_by, changed_at}}`
 (see `app/README.md`, Conflict envelope).

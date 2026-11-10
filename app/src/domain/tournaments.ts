@@ -8,13 +8,26 @@ export type TournamentSummary = { id: string; name: string; logoUrl: string | nu
 export type SeasonAnswers = {
   description: string; rules: string; photo_consent: string; starts_on: string; ends_on: string; registration_deadline: string
 }
+/** A Season's Match settings, keyed as set_match_settings names them; every value is null until a preset is picked. */
+export type MatchSettings = {
+  format_preset: string | null; periods: number | null; period_minutes: number | null; clock: 'stopped' | 'running' | null
+  half_time_minutes: number | null; extra_time: boolean | null; extra_time_periods: number | null; extra_time_minutes: number | null
+  shootout: boolean | null; substitutions: 'rolling' | 'limited' | null; max_substitutions: number | null
+  foul_warning: number | null; timeouts_per_period: number | null; power_play_minutes: number | null
+}
+export const SETTINGS = ['format_preset', 'periods', 'period_minutes', 'clock', 'half_time_minutes', 'extra_time', 'extra_time_periods',
+  'extra_time_minutes', 'shootout', 'substitutions', 'max_substitutions', 'foul_warning', 'timeouts_per_period', 'power_play_minutes'] as const
+/** One row of app.format_preset: its defaults as Match settings (format_preset = its key). */
+export type FormatPreset = { key: string; label: string; futsalRules: boolean; settings: MatchSettings }
+
 /** One Tournament as the setup wizard needs it; brand colours are null when the server sent none. */
 export type TournamentSetup = {
   id: string; name: string; brandPrimary: string | null; brandSecondary: string | null; logoPath: string | null; version: number
-  season: (SeasonSummary & { answers: SeasonAnswers }) | null
+  season: (SeasonSummary & { answers: SeasonAnswers; settings: MatchSettings }) | null
 }
 
-type SeasonRow = { id: string; number: number; status: SeasonStatus; setup_step?: number; version?: number } & Partial<Record<keyof SeasonAnswers, string | null>>
+type SeasonRow = { id: string; number: number; status: SeasonStatus; setup_step?: number; version?: number }
+  & Partial<Record<keyof SeasonAnswers, string | null>> & Partial<MatchSettings>
 const ANSWERS = ['description', 'rules', 'photo_consent', 'starts_on', 'ends_on', 'registration_deadline'] as const
 type Row = {
   id: string; name: string; brand_primary?: string; brand_secondary?: string; logo_path?: string | null; version?: number
@@ -55,10 +68,11 @@ export async function myTournaments(): Promise<{ tournaments: TournamentSummary[
 export async function tournamentSetup(id: string): Promise<{ tournament: TournamentSetup | null } | { code: 'offline' | 'unknown' }> {
   try {
     const { data, error, status } = await supabase.schema('app').from('tournament')
-      .select('id, name, brand_primary, brand_secondary, logo_path, version, season(id, number, status, setup_step, version, description, rules, photo_consent, starts_on, ends_on, registration_deadline)')
+      .select('id, name, brand_primary, brand_secondary, logo_path, version, season(id, number, status, setup_step, version, description, rules, photo_consent, starts_on, ends_on, registration_deadline, ' +
+        `${SETTINGS.join(', ')})`)
       .eq('id', id)
     if (error) return failed(status)
-    const t = (data as Row[]).find((r) => r.id === id)
+    const t = (data as unknown as Row[]).find((r) => r.id === id)
     if (t && Number.isInteger(t.version)) await noteVersion(t.id, t.version!)
     const s = t && latest(t.season)
     const row = s && t.season.find((x) => x.id === s.id)
@@ -67,10 +81,46 @@ export async function tournamentSetup(id: string): Promise<{ tournament: Tournam
       tournament: t ? {
         id: t.id, name: t.name, brandPrimary: t.brand_primary ?? null, brandSecondary: t.brand_secondary ?? null,
         logoPath: t.logo_path ?? null, version: t.version ?? 1,
-        season: s && row ? { ...s, answers: Object.fromEntries(ANSWERS.map((k) => [k, row[k] ?? ''])) as SeasonAnswers } : null,
+        season: s && row ? {
+          ...s, answers: Object.fromEntries(ANSWERS.map((k) => [k, row[k] ?? ''])) as SeasonAnswers,
+          settings: Object.fromEntries(SETTINGS.map((k) => [k, row[k] ?? null])) as MatchSettings,
+        } : null,
       } : null,
     }
   } catch {
     return { code: 'offline' }
+  }
+}
+
+type PresetRow = Omit<MatchSettings, 'format_preset'> & { key: string; label: string; futsal_rules: boolean }
+const PRESETS_KEY = 'tsl-format-presets'
+
+/**
+ * The Format presets from app.format_preset, in order. The last answer is kept on the device, so the wizard's Format
+ * step opens offline after one online read; null when neither the server nor the device has them.
+ */
+export async function formatPresets(): Promise<FormatPreset[] | null> {
+  try {
+    const { data, error } = await supabase.schema('app').from('format_preset').select('*').order('sort')
+    if (!error && data?.length) {
+      const presets = (data as PresetRow[]).map((p) => ({
+        key: p.key, label: p.label, futsalRules: p.futsal_rules,
+        settings: Object.fromEntries(SETTINGS.map((k) => [k, k === 'format_preset' ? p.key : p[k] ?? null])) as MatchSettings,
+      }))
+      try {
+        localStorage.setItem(PRESETS_KEY, JSON.stringify(presets))
+      } catch {
+        // Storage full or blocked: only the offline fallback is lost.
+      }
+      return presets
+    }
+  } catch {
+    // Offline: fall back to the device's copy.
+  }
+  try {
+    const kept = JSON.parse(localStorage.getItem(PRESETS_KEY) ?? 'null') as FormatPreset[] | null
+    return Array.isArray(kept) && kept.length ? kept : null
+  } catch {
+    return null
   }
 }

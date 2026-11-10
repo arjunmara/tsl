@@ -25,6 +25,18 @@ function session() {
   return { access_token: jwt, token_type: 'bearer', expires_in: 3600, expires_at: exp, refresh_token: 'rt', user }
 }
 
+// app.format_preset as 0006 fills it.
+const presetCols = ['key', 'label', 'sort', 'confirmed', 'futsal_rules', 'periods', 'period_minutes', 'clock', 'half_time_minutes', 'extra_time',
+  'extra_time_periods', 'extra_time_minutes', 'shootout', 'substitutions', 'max_substitutions', 'foul_warning', 'timeouts_per_period', 'power_play_minutes']
+const PRESETS = [
+  ['futsal', 'Futsal', 1, true, true, 2, 20, 'stopped', 15, true, 2, 5, true, 'rolling', null, 5, 1, 2],
+  ['5-a-side', '5-a-side', 2, false, false, 2, 20, 'running', 5, false, 2, 5, true, 'rolling', null, null, null, null],
+  ['7-a-side', '7-a-side', 3, false, false, 2, 30, 'running', 10, false, 2, 10, true, 'rolling', null, null, null, null],
+  ['11-a-side', '11-a-side', 4, false, false, 2, 45, 'running', 15, true, 2, 15, true, 'limited', 5, null, null, null],
+  ['custom', 'Custom', 5, true, true, 2, 20, 'stopped', 15, true, 2, 5, true, 'rolling', null, 5, 1, 2],
+].map((v) => Object.fromEntries(presetCols.map((k, i) => [k, v[i]])))
+const SETTING_KEYS = presetCols.slice(5)
+
 const browser = await chromium.launch({ channel: 'chrome' })
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -62,6 +74,7 @@ async function fresh({ viewport = { width: 390, height: 844 }, rows = [] } = {})
     if (mock.down) return route.abort('internetdisconnected')
     const path = new URL(req.url()).pathname
     if (path === '/rest/v1/tournament') return json(route, [...mock.rows.values()].reverse())
+    if (path === '/rest/v1/format_preset') return json(route, PRESETS)
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     const name = path.replace('/rest/v1/rpc/', '')
     const a = JSON.parse(req.postData())
@@ -74,7 +87,7 @@ async function fresh({ viewport = { width: 390, height: 844 }, rows = [] } = {})
       r = { ...ok, version: 1 }
       mock.rows.set(a.tournament_id, { id: a.tournament_id, name: a.name, brand_primary: '#0a1a3f', brand_secondary: '#f58220', logo_path: null, version: 1,
         season: [{ id: a.season_id, number: 1, status: 'setup', setup_step: 0, version: 1, description: '', rules: '', photo_consent: '',
-          starts_on: null, ends_on: null, registration_deadline: null }] })
+          starts_on: null, ends_on: null, registration_deadline: null, format_preset: null, ...Object.fromEntries(SETTING_KEYS.map((k) => [k, null])) }] })
     } else if (name === 'set_tournament_branding') {
       const t = mock.rows.get(a.tournament_id)
       const refusal = mock.refuse.shift()
@@ -101,6 +114,21 @@ async function fresh({ viewport = { width: 390, height: 844 }, rows = [] } = {})
       } else if (next.ends_on && next.starts_on && next.ends_on < next.starts_on) {
         r = { ok: false, code: 'end_before_start', message: 'Refused.' }
       } else {
+        Object.assign(s, next)
+        s.version++
+        r = { ...ok, version: s.version }
+      }
+    } else if (name === 'set_match_settings') {
+      const s = [...mock.rows.values()].flatMap((t) => t.season).find((x) => x.id === a.season_id)
+      const p = PRESETS.find((x) => x.key === a.format_preset)
+      const next = { ...s, ...(p ? { format_preset: p.key, ...Object.fromEntries(SETTING_KEYS.map((k) => [k, p[k]])) } : {}) }
+      for (const k of SETTING_KEYS) if (a[k] != null) next[k] = a[k]
+      if (s.version !== a.expected_version) {
+        r = { ok: false, code: 'version_conflict', message: 'Someone else changed this first.', conflict: { current_version: s.version,
+          current: Object.fromEntries(['format_preset', ...SETTING_KEYS].map((k) => [k, s[k]])), changed_by: 'sita', changed_at: '2026-11-10T04:15:00Z' } }
+      } else if ((a.format_preset && !p) || !next.format_preset) r = { ok: false, code: 'preset_invalid', message: 'Refused.' }
+      else if (next.substitutions === 'limited' && next.max_substitutions == null) r = { ok: false, code: 'substitutions_max_needed', message: 'Refused.' }
+      else {
         Object.assign(s, next)
         s.version++
         r = { ...ok, version: s.version }
@@ -481,7 +509,7 @@ try {
   // --- Step 2: Next without the statement shows why and focuses it, no step command; rules save on leaving the field
   // with the Season's base version; Next saves the statement, sends set_setup_step(2) and opens step 3.
   // Step 3: each date shows BS + AD, linked to its input; a deadline after the start and an end before it say why and
-  // aren't saved; empty dates block Next; Next sends set_setup_step(3) and opens the step 4 placeholder. Reopened from
+  // aren't saved; empty dates block Next; Next sends set_setup_step(3) and opens step 4. Reopened from
   // the server, every value is shown.
   {
     const { context, mock, page } = await fresh()
@@ -537,7 +565,7 @@ try {
     await button(page, 'Next').click()
     await page.waitForURL(onStep(4))
     await page.getByRole('heading', { name: 'Step 4 of 7 · Format' }).waitFor()
-    await page.getByText('This step arrives in the next update.', { exact: true }).waitFor()
+    await page.getByRole('group', { name: 'Format preset' }).waitFor()
     await until(page, () => season().setup_step === 3, 'step 3 not finished')
     assert.deepEqual([season().starts_on, season().ends_on, season().registration_deadline], ['2026-10-31', '2026-11-14', '2026-10-20'])
     // Reopened on another device: the server's values.
@@ -624,6 +652,143 @@ try {
     await sheet.getByText('Change the season dates', { exact: true }).waitFor()
     const cols = await sheet.locator('section').evaluateAll((ss) => ss.map((s) => [...s.querySelectorAll('dt, dd')].map((d) => d.textContent)))
     assert.deepEqual(cols, [['Season starts', 'Saturday · Kartik 14, 2083 BS (31 Oct 2026)'], ['Season starts', 'Saturday · Kartik 21, 2083 BS (7 Nov 2026)']])
+    await context.close()
+  }
+
+  // --- Step 4 (Story 1.10): Next without a preset says why and focuses it; picking a preset sends only its key and
+  // fills the Match settings from the preset table; each value saves on leaving the field; out of range isn't sent;
+  // switching after edits asks first (Cancel keeps them), an unedited switch doesn't; futsal-only fields hide for
+  // other presets; Limited waits for a valid maximum; Custom starts from futsal; Next finishes step 4; reopened, and
+  // offline from the device's copy of the presets, the server's values show.
+  {
+    const { context, mock, page } = await fresh()
+    const id = await createVia(page, 'Gulmi Cup')
+    const season = () => mock.rows.get(id).season[0]
+    Object.assign(season(), { setup_step: 3, photo_consent: 'Photos may be posted.', starts_on: '2026-10-31', ends_on: '2026-11-14', registration_deadline: '2026-10-20' })
+    await page.goto(base + `/t/${id}/setup/4`)
+    await page.getByRole('heading', { name: 'Step 4 of 7 · Format' }).waitFor()
+    const radio = (name) => page.getByRole('radio', { name, exact: true })
+    const field = (name) => page.getByLabel(name, { exact: true })
+    const sent = () => calls(mock, 'set_match_settings').map(({ command_id: _c, cmd: _n, season_id: _s, ...a }) => a)
+    await radio('Futsal').waitFor()
+    assert.deepEqual(await page.getByRole('group', { name: 'Format preset' }).getByRole('radio').evaluateAll((rs) => rs.map((r) => r.labels[0].textContent)),
+      ['Futsal', '5-a-side', '7-a-side', '11-a-side', 'Custom'])
+    await button(page, 'Next').click()
+    await page.getByText('Pick a format preset.', { exact: true }).waitFor()
+    assert.ok(await radio('Futsal').evaluate((el) => el === document.activeElement), 'Next did not focus the presets')
+    assert.equal(calls(mock, 'set_setup_step').filter((c) => c.step === 4).length, 0, 'step 4 finished without a preset')
+
+    await radio('Futsal').check()
+    await until(page, () => sent().length === 1, 'preset not sent')
+    assert.deepEqual(sent()[0], { expected_version: 1, format_preset: 'futsal' })
+    await page.getByRole('heading', { name: 'Match settings · Futsal' }).waitFor()
+    const nums = async (...names) => Promise.all(names.map((n) => field(n).inputValue()))
+    assert.deepEqual(await nums('Periods', 'Minutes per period', 'Half-time (minutes)', 'Extra-time periods', 'Minutes per extra-time period',
+      'Accumulated-foul warning', 'Timeouts per team per period', 'Power play (minutes)'), ['2', '20', '15', '2', '5', '5', '1', '2'])
+    assert.deepEqual(await Promise.all(['Stopped clock', 'Extra time', 'Shootout', 'Rolling'].map((n) => field(n).isChecked())), [true, true, true, true])
+    await page.getByText("Unused timeouts don't carry over. None in extra time.", { exact: true }).waitFor()
+    await field('Minutes per period').fill('25')
+    await field('Minutes per period').press('Tab')
+    await until(page, () => sent().length === 2, 'edit not sent')
+    assert.deepEqual(sent()[1], { expected_version: 2, period_minutes: 25 })
+    await field('Half-time (minutes)').fill('31')
+    await field('Half-time (minutes)').press('Tab')
+    await page.getByText('Use a whole number from 0 to 30.', { exact: true }).waitFor()
+    await field('Half-time (minutes)').fill('15')
+    await field('Half-time (minutes)').press('Tab')
+
+    await radio('7-a-side').click()
+    const sheet = page.getByRole('dialog', { name: 'Replace your Match settings with the 7-a-side defaults?' })
+    await sheet.waitFor()
+    await sheet.getByText('Futsal (changed): 2 × 25 min, stopped clock, half-time 15, extra time 2 × 5, shootout, rolling substitutions, foul warning at 5, '
+      + 'timeouts per period 1, power play 2 min → to 7-a-side: 2 × 30 min, running clock, half-time 10, no extra time, shootout, rolling substitutions').waitFor()
+    assert.ok(await sheet.getByRole('button', { name: 'Cancel' }).evaluate((el) => el === document.activeElement), 'focus not on Cancel')
+    await sheet.getByRole('button', { name: 'Cancel' }).click()
+    await sheet.waitFor({ state: 'hidden' })
+    assert.equal(sent().length, 2, 'Cancel sent something')
+    assert.deepEqual([await radio('Futsal').isChecked(), await field('Minutes per period').inputValue()], [true, '25'])
+    await radio('7-a-side').click()
+    await sheet.getByRole('button', { name: 'Replace Match settings' }).click()
+    await until(page, () => sent().length === 3, '7-a-side not sent')
+    assert.deepEqual(sent()[2], { expected_version: 3, format_preset: '7-a-side' })
+    await page.getByRole('heading', { name: 'Match settings · 7-a-side' }).waitFor()
+    assert.deepEqual(await nums('Periods', 'Minutes per period', 'Half-time (minutes)'), ['2', '30', '10'])
+    assert.equal(await page.getByLabel('Accumulated-foul warning').count() + await page.getByLabel('Extra-time periods').count(), 0, 'futsal-only or extra-time fields shown')
+    assert.ok(await field('Running clock').isChecked())
+
+    await radio('5-a-side').click()
+    await until(page, () => sent().length === 4, 'unedited switch not sent')
+    assert.equal(await page.getByRole('dialog').count(), 0, 'unedited switch asked')
+    assert.deepEqual(sent()[3], { expected_version: 4, format_preset: '5-a-side' })
+
+    await field('Limited').check()
+    await page.getByText('Set the maximum substitutions.', { exact: true }).waitFor()
+    await field('Maximum substitutions').fill('0')
+    await field('Maximum substitutions').press('Tab')
+    await page.getByText('Set the maximum substitutions.', { exact: true }).waitFor()
+    await page.waitForTimeout(200)
+    assert.equal(sent().length, 4, 'Limited sent without a valid maximum')
+    await field('Maximum substitutions').fill('3')
+    await field('Maximum substitutions').press('Tab')
+    await until(page, () => sent().length === 5, 'maximum not sent')
+    assert.deepEqual(sent()[4], { expected_version: 5, substitutions: 'limited', max_substitutions: 3 })
+
+    await radio('Custom').click()
+    await page.getByRole('dialog', { name: 'Replace your Match settings with the Custom defaults?' }).getByRole('button', { name: 'Replace Match settings' }).click()
+    await page.getByRole('heading', { name: 'Match settings · Custom' }).waitFor()
+    assert.deepEqual(await nums('Minutes per period', 'Accumulated-foul warning', 'Power play (minutes)'), ['20', '5', '2'])
+    await button(page, 'Next').click()
+    await page.waitForURL(onStep(5))
+    await page.getByText('This step arrives in the next update.', { exact: true }).waitFor()
+    await until(page, () => season().setup_step === 4 && season().format_preset === 'custom', 'step 4 not finished')
+    assert.deepEqual(SETTING_KEYS.map((k) => season()[k]), SETTING_KEYS.map((k) => PRESETS[4][k]))
+
+    await page.goto(base + `/t/${id}/setup/4`)
+    await page.getByRole('heading', { name: 'Match settings · Custom' }).waitFor()
+    assert.ok(await radio('Custom').isChecked())
+    await context.setOffline(true)
+    mock.down = true
+    await button(page, 'Back').click()
+    await page.getByLabel('Season starts').waitFor()
+    await button(page, 'Next').click()
+    await page.getByRole('heading', { name: 'Match settings · Custom' }).waitFor()
+    assert.equal(await page.locator('main').getByRole('alert').count(), 0, 'offline step 4 shows an error')
+    await context.close()
+  }
+
+  // --- Step 4 offline: a queued preset and value show again after Back and Next, then replay in order. A conflict on a
+  // Match settings edit opens the hand-back with the command's words and On/Off for a switch.
+  {
+    const { context, mock, page } = await fresh()
+    const id = await createVia(page, 'Gulmi Cup')
+    const season = () => mock.rows.get(id).season[0]
+    Object.assign(season(), { setup_step: 3, photo_consent: 'Photos may be posted.', starts_on: '2026-10-31', ends_on: '2026-11-14', registration_deadline: '2026-10-20' })
+    await page.goto(base + `/t/${id}/setup/4`)
+    await page.getByRole('group', { name: 'Format preset' }).waitFor()
+    await context.setOffline(true)
+    mock.down = true
+    await page.getByRole('radio', { name: '7-a-side', exact: true }).check()
+    await page.getByLabel('Minutes per period', { exact: true }).fill('25')
+    await page.getByLabel('Minutes per period', { exact: true }).press('Tab')
+    await button(page, 'Back').click()
+    await page.getByLabel('Season starts').waitFor()
+    await button(page, 'Next').click()
+    await page.getByRole('heading', { name: 'Match settings · 7-a-side' }).waitFor()
+    assert.equal(await page.getByLabel('Minutes per period', { exact: true }).inputValue(), '25', 'queued value not shown')
+    mock.down = false
+    await context.setOffline(false)
+    await until(page, () => season().period_minutes === 25, 'queued settings not sent')
+    const order = [...new Map(calls(mock, 'set_match_settings').map((c) => [c.command_id, c])).values()].map((c) => [c.expected_version, c.format_preset ?? c.period_minutes])
+    assert.deepEqual(order, [[1, '7-a-side'], [2, 25]])
+
+    Object.assign(season(), { version: season().version + 1 })
+    await page.getByLabel('Shootout', { exact: true }).uncheck()
+    await status(page).getByRole('alert').getByText("Couldn't save", { exact: true }).waitFor()
+    await button(page, 'Review this change').click()
+    const sheet = page.getByRole('dialog')
+    await sheet.getByText('Change the Match settings', { exact: true }).waitFor()
+    const cols = await sheet.locator('section').evaluateAll((ss) => ss.map((s) => [...s.querySelectorAll('dt, dd')].map((d) => d.textContent)))
+    assert.deepEqual(cols, [['Shootout', 'Off'], ['Shootout', 'On']])
     await context.close()
   }
 

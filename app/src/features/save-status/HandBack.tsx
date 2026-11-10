@@ -11,9 +11,12 @@ const when = (ts: string) => {
   return `${z.time}, ${formatDate(z.date)}`
 }
 const DATES = new Set(['starts_on', 'ends_on', 'registration_deadline'])
-/** A field's value in words: dates in BS and AD, like every date the app shows; nothing set as "Not set". */
+// Match settings choices in the words the Format step uses.
+const WORDS: Record<string, string> = { stopped: 'Stopped clock', running: 'Running clock', rolling: 'Rolling', limited: 'Limited' }
+/** A field's value in words: dates in BS and AD, like every date the app shows; on/off for a switch; nothing set as "Not set". */
 const show = (k: string, v: unknown) =>
-  v == null || v === '' ? 'Not set' : typeof v !== 'string' ? JSON.stringify(v) : DATES.has(k) ? formatDate(v) || v : v
+  v == null || v === '' ? 'Not set' : typeof v === 'boolean' ? (v ? 'On' : 'Off')
+    : typeof v !== 'string' ? JSON.stringify(v) : DATES.has(k) ? formatDate(v) || v : WORDS[v] ?? v
 
 /**
  * The hand-back sheet: the user's choice for each refused change, oldest first, one at a time.
