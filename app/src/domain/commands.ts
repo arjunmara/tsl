@@ -10,7 +10,7 @@ export { discard, forgetRefused, resend, send, sendMine, useOutbox, whenEmpty, t
  * What every command returns. code is null on success. A refused edit of a versioned row returns
  * code 'version_conflict' with conflict (the row now, who changed it and when); it is passed through as is.
  */
-export type CommandResult = { ok: boolean; code: string | null; message: string | null; conflict?: Conflict; version?: number }
+export type CommandResult = { ok: boolean; code: string | null; message: string | null; conflict?: Conflict; version?: number; uploadFailed?: true }
 
 /**
  * Runs an `app` command. Only the outbox calls this; features use send(). Pass the same commandId to retry the same command: the server returns
@@ -35,15 +35,19 @@ export async function runCommand(
   }
 }
 
-/** Uploads a queued file to Storage (upsert: a retry overwrites the same path). Never throws. */
+/**
+ * Uploads a queued file to Storage (upsert: a retry overwrites the same path; without upsert, a retry that finds the
+ * file already there is done, since each path holds a fresh uuid). Never throws.
+ */
 async function uploadFile(u: Upload): Promise<CommandResult> {
   try {
-    const { error } = await supabase.storage.from(u.bucket).upload(u.path, u.blob, { upsert: true, contentType: u.contentType })
+    const { error } = await supabase.storage.from(u.bucket).upload(u.path, u.blob, { upsert: u.upsert ?? true, contentType: u.contentType })
     if (!error) return { ok: true, code: null, message: null }
     // Only a failed fetch is offline. Storage may answer an RLS refusal with HTTP 400 and statusCode "403" in the body.
     const e = error as { status?: number; statusCode?: string; originalError?: unknown }
     const status = e.status ?? 0
     const body = String(e.statusCode ?? '')
+    if (u.upsert === false && (status === 409 || body === '409')) return { ok: true, code: null, message: null }
     const code = !navigator.onLine || e.originalError instanceof TypeError ? 'offline'
       : status === 401 || body === '401' ? 'not_signed_in'
         : status === 403 || body === '403' ? 'not_authorized'

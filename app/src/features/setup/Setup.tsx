@@ -10,7 +10,8 @@ import { SecondaryButton } from '../../ui/Button'
 import { Field } from '../../ui/Field'
 import { useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
-import { brandDefaults, readable, resizeLogo, textColours } from './brand'
+import { resizeImage } from '../../domain/image'
+import { brandDefaults, readable, textColours } from './brand'
 import { StepFour } from './Format'
 import { Frame, SettingsMode, useLeave } from './Frame'
 import { StepFive, StepSix } from './LineupStructure'
@@ -374,7 +375,7 @@ function StepOne({ tournamentId, seasonId, initial, isNew = false }: { tournamen
     setLogoError(null)
     let blob: Blob
     try {
-      blob = await resizeLogo(file)
+      blob = await resizeImage(file)
     } catch (e) {
       if (pick === logoPick.current) setLogoError(e instanceof RangeError ? messages.image_too_large : messages.logo_unreadable)
       return

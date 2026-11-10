@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { discard, resend, sendMine, type OutboxEntry } from '../../domain/commands'
 import { formatDate, inZone } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
+import { DOCUMENT_TYPES, scanBucket } from '../../domain/registration'
 import { STAFF_ROLES, STRUCTURES, TIEBREAKS } from '../../domain/tournaments'
 import { Sheet } from '../../ui/Sheet'
 import { fieldLabels, labelFor } from './labels'
@@ -15,7 +16,7 @@ const DATES = new Set(['starts_on', 'ends_on', 'registration_deadline'])
 // Choices in the words the wizard steps use.
 const WORDS: Record<string, string> = {
   stopped: 'Stopped clock', running: 'Running clock', rolling: 'Rolling', limited: 'Limited',
-  ...Object.fromEntries([...STAFF_ROLES, ...STRUCTURES, ...TIEBREAKS]),
+  ...Object.fromEntries([...STAFF_ROLES, ...STRUCTURES, ...TIEBREAKS, ...DOCUMENT_TYPES]),
 }
 /**
  * A field's value in words: dates in BS and AD, like every date the app shows; on/off for a switch; a list in order;
@@ -145,7 +146,9 @@ export function HandBack({ open, entries, onClose }: { open: boolean; entries: O
           <>
             <div id={bodyId} className="ui-sheet-change">
               {intro}
-              <p className="body">{e.code === 'lineup_violation' && e.message ? e.message : messageFor(e.code ?? null)}</p>
+              {/* A refused entry still holding its scan was refused at the upload (the upload is dropped once done). */}
+              <p className="body">{e.upload?.bucket === scanBucket ? messages.scan_upload_failed
+                : e.code === 'lineup_violation' && e.message ? e.message : messageFor(e.code ?? null)}</p>
             </div>
             {problem}
             <div className="ui-sheet-actions">

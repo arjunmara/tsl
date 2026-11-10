@@ -41,6 +41,9 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   edit_staff: () => 'Change a Staff member',
   remove_staff: () => 'Remove a Staff member',
   submit_team: () => 'Send the Team for review',
+  add_eligibility: () => "Add a Player's document",
+  edit_eligibility: (a) => (a.scan_path != null ? "Upload a Player's document scan"
+    : a.document_type != null ? "Change a Player's document type" : "Change a Player's document number"),
 }
 
 /** "rules", "description and rules": the fields an edit changes, in words. */
@@ -97,4 +100,7 @@ export const fieldLabels: Record<string, string> = {
   consent: 'Photo consent',
   given_by: 'Consent given by',
   role: 'Role',
+  document_type: 'Document',
+  document_number: 'Document number',
+  scan_name: 'Document scan',
 }

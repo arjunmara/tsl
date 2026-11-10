@@ -83,7 +83,7 @@ async function fresh({ deadline = OPEN_DAY, status = 'registration', organiser =
     if (path === '/rest/v1/rpc/registration_form') return json(route, granted ? [mock.form] : [])
     if (path === '/rest/v1/tournament') return json(route, [])
     // The Squad (Story 2.3): empty here; squad.check.mjs covers it.
-    if (path === '/rest/v1/squad_entry' || path === '/rest/v1/staff') return json(route, [])
+    if (path === '/rest/v1/squad_entry' || path === '/rest/v1/staff' || path === '/rest/v1/rpc/registration_eligibility') return json(route, [])
     if (path === '/rest/v1/rpc/registration_rules') {
       return json(route, granted ? [{ consent_statement: 'Photos may be used.', starters: 5, max_bench: 9, staff_roles: ['manager'] }] : [])
     }

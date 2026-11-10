@@ -620,3 +620,14 @@
   padding-left: var(--spacing-4);
   overflow-wrap: anywhere;
 }
+/* A Player's Eligibility proof inside their card (Story 2.4): the scan shows only as its file name. */
+.eligibility {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.eligibility h3,
+.eligibility-file {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

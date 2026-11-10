@@ -79,7 +79,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -191,7 +191,7 @@ undeclared=$(psql <<<"$decl_sql")
 [ -z "$undeclared" ] || fail "tenant tables without a personal-field declaration: $undeclared"
 [ "$(q "select string_agg(c.relname || '=' || (string_to_array(encode(t.tgargs, 'escape'), '\\000'))[2], ' ' order by c.relname) from pg_trigger t join pg_class c on c.oid = t.tgrelid
          where t.tgfoid = 'app.log_change'::regproc and (string_to_array(encode(t.tgargs, 'escape'), '\\000'))[2] <> '{}'")" \
-  = 'organiser_invite={email,token} photo_consent={given_by} player={date_of_birth}' ] || fail "personal-field declarations changed"
+  = 'eligibility_record={document_number,scan_path,scan_name} organiser_invite={email,token} photo_consent={given_by} player={date_of_birth}' ] || fail "personal-field declarations changed"
 q "create table app.probe_a (id uuid primary key, tournament_id uuid, x text);
    create trigger log_change after insert on app.probe_a for each row execute function app.log_change('tournament_id');
    create table app.probe_b (id uuid primary key, tournament_id uuid, x text);
@@ -862,7 +862,7 @@ others=$(q "select string_agg(format('%s(%s)', p.proname, (select string_agg(for
     when a.t in ('text[]'::regtype, 'uuid[]'::regtype, 'jsonb'::regtype) then '''{}''' else '''x''' end), ', ' order by a.o)
     from unnest(p.proargnames, p.proargtypes::oid[]::regtype[]) with ordinality a(n, t, o))), E'\n' order by p.proname)
   from pg_proc p where p.pronamespace = 'app'::regnamespace and p.prorettype = 'jsonb'::regtype
-    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command,add_player,edit_player,remove_player,add_staff,edit_staff,remove_staff,submit_team}'::name[])")
+    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command,add_player,edit_player,remove_player,add_staff,edit_staff,remove_staff,submit_team,add_eligibility,edit_eligibility}'::name[])")
 [ "$(wc -l <<<"$others")" -ge 20 ] || fail "grant: too few commands listed: $others"
 refused_all() {
   while IFS= read -r f; do
@@ -1131,6 +1131,137 @@ for f in "conflict('$T5', 'player', '$P1', 1, '{}')"; do
   out=$(as $A "select app.$f" 2>&1 || true)
   [[ $out == *"permission denied for function"* ]] || fail "client can execute $f: $out"
 done
+
+# --- Eligibility proof (Story 2.4). A organises T5 (S5 in registration, S6 started); B organises T2. X's link was revoked
+# above: A reissues it (LX4) and G1 redeems it again. X's Squad: P1 (minor) and P5; G5 holds Y's grant (Y has no Players),
+# G3 Z's (S6 started), G4 none. Scans: <tournament>/<team>/<player>/<uuid>.webp in the private eligibility-scans bucket.
+LX4=81111111-0000-4000-8000-000000000007 TX4=${TK1/A/4}
+R1=b1111111-0000-4000-8000-000000000001 R2=b1111111-0000-4000-8000-000000000002 R3=b1111111-0000-4000-8000-000000000003
+U1=c2111111-0000-4000-8000-000000000001 U2=c2111111-0000-4000-8000-000000000002 U3=c2111111-0000-4000-8000-000000000003
+[ "$(ri $A 800 $S5 $X $LX4 $(hash $TX4))|$(rd $G1 801 $TX4)" = 'ok|ok' ] || fail "eligibility: fixture grant"
+[ "$(q "select case when public then 't' else 'f' end||' '||allowed_mime_types::text||' '||file_size_limit from storage.buckets where id='eligibility-scans'")" \
+  = 'f {image/webp,image/png} 1048576' ] || fail "eligibility: bucket missing, public, or without type and size limits"
+# Stricter than membership: the table has exactly one policy, Organisers' select (no Scorer or grant policy).
+[ "$(q "select string_agg(policyname||':'||cmd||':'||array_to_string(roles, ',')||':'||qual, ';') from pg_policies where schemaname='app' and tablename='eligibility_record'")" \
+  = 'organiser_read:SELECT:authenticated:app.is_member(tournament_id)' ] || fail "eligibility: table policies"
+
+# Storage: the grant adds its own Team's scans only, and reads none back, not even its own; Organisers read; nobody else.
+scan() { as "$1" "select count(*) from storage.objects where bucket_id = 'eligibility-scans'"; }
+obj $G1 eligibility-scans "$T5/$X/$P1/$U1.webp" >/dev/null || fail "scan: grant cannot upload into its Team's folder"
+for p in "$T5/$Y/$P1/$U2.webp" "$T5/$X/$P6/$U2.webp" "$T2/$X/$P1/$U2.webp" "$T5/$X/$U2.webp" "$T5/$X/$P1/x/$U2.webp" "$T5/$X/nope/$U2.webp"; do
+  ! obj $G1 eligibility-scans "$p" >/dev/null 2>&1 || fail "scan: grant uploaded to $p"
+done
+! obj $G1 tournament-assets "$T5/$X/$P1/$U2.webp" >/dev/null 2>&1 || fail "scan: grant wrote into tournament-assets"
+! obj $G5 eligibility-scans "$T5/$X/$P1/$U2.webp" >/dev/null 2>&1 || fail "scan: Y's grant uploaded into X's folder"
+! obj $B eligibility-scans "$T5/$X/$P1/$U2.webp" >/dev/null 2>&1 || fail "scan: another Tournament's Organiser uploaded"
+! obj $G3 eligibility-scans "$T5/$Z/$P1/$U2.webp" >/dev/null 2>&1 || fail "scan: grant uploaded once the Season started"
+! obj $G4 eligibility-scans "$T5/$X/$P1/$U2.webp" >/dev/null 2>&1 || fail "scan: anonymous user without a grant uploaded"
+! obj anon eligibility-scans "$T5/$X/$P1/$U2.webp" >/dev/null 2>&1 || fail "scan: anon uploaded"
+obj $A eligibility-scans "$T5/$X/$P5/$U2.webp" >/dev/null || fail "scan: Organiser cannot upload"
+[ "$(scan $G1)|$(scan $G5)|$(scan $B)|$(scan $G3)|$(scan $G4)|$(scan anon)|$(scan $A)" = '0|0|0|0|0|0|2' ] \
+  || fail "leak: scan objects read $(scan $G1) $(scan $B) $(scan anon) $(scan $A)"
+for who in $G1 $A; do
+  [ "$(as $who "with u as (update storage.objects set name = name where bucket_id = 'eligibility-scans' returning 1) select count(*) from u")|$(as $who "with d as (delete from storage.objects where bucket_id = 'eligibility-scans' returning 1) select count(*) from d")" = '0|0' ] \
+    || fail "scan: $who changed or deleted a scan object"
+done
+
+# add_eligibility: insert-only, any fields; the number is trimmed; a repeat answers alike; personal fields logged by name.
+ae() { tc "$1" "add_eligibility('$(cmd "$2")', '$3', '$4', '$5', $6)"; }
+ee() { tc "$1" "edit_eligibility('$(cmd "$2")', '$3', '$4', $5)"; }
+r=$(as $G1 "select app.add_eligibility('$(cmd 810)', '$X', '$P1', '$R1', 'emis', ' 430010248 ')")
+[ "$(q "select (r->>'ok')||coalesce(r->>'version', '-') from (select '$r'::jsonb r) x")" = true- ] || fail "add_eligibility: $r"
+[ "$(q "select concat_ws('|', tournament_id, player_id, season_id, document_type, document_number, coalesce(scan_path, '-'), version) from app.eligibility_record where id='$R1'")" \
+  = "$T5|$P1|$S5|emis|430010248|-|1" ] || fail "add_eligibility: row"
+[ "$(as $G1 "select app.add_eligibility('$(cmd 810)', '$X', '$P1', '$R1', 'passport', '1')")|$(q "select count(*) from app.eligibility_record")" = "$r|1" ] \
+  || fail "add_eligibility: repeat wrote again"
+[ "$(ae $G1 811 $X $P5 $R2 "scan_path => '$T5/$X/$P5/$U2.webp', scan_name => ' emis-yugal.jpg '")" = ok ] || fail "add_eligibility: scan only"
+[ "$(q "select concat_ws('|', document_type is null, scan_path, scan_name, scan_uploaded_at is not null) from app.eligibility_record where id='$R2'")" \
+  = "t|$T5/$X/$P5/$U2.webp|emis-yugal.jpg|t" ] || fail "add_eligibility: scan row"
+[ "$(q "select string_agg(table_name||':'||coalesce(after->>'document_number', '-')||':'||coalesce(after->>'scan_path', '-')||':'||coalesce(after->>'scan_name', '-')||':'||(actor = '$G1'), ',' order by id)
+       from app.activity_log where command_id in ('$(cmd 810)', '$(cmd 811)')")" \
+  = 'eligibility_record:document_number:-:-:true,eligibility_record:-:scan_path:scan_name:true' ] || fail "add_eligibility: log rows, or personal fields by value"
+for bad in "$P1|$R3|'emis'|eligibility_exists" "$P5|$R3|'emis'|eligibility_exists" "$P2|$R3|'emis'|player_missing" \
+    "$P1|$R3|'licence'|type_invalid" "$P1|$R3|null, repeat('9', 41)|number_invalid" "$P1|$R3|null, '   '|number_invalid" \
+    "$P1|$R3|null, E'12\\n3'|number_invalid" \
+    "$P1|$R3|scan_path => '$T5/$Y/$P1/$U3.webp', scan_name => 'a.jpg'|scan_invalid" \
+    "$P1|$R3|scan_path => '$T5/$X/$P5/$U3.webp', scan_name => 'a.jpg'|scan_invalid" \
+    "$P1|$R3|scan_path => '$T5/$X/$P1/$U3.png', scan_name => 'a.jpg'|scan_invalid" \
+    "$P1|$R3|scan_path => '$T5/$X/$P1/$U3.webp'|scan_invalid" "$P1|$R3|scan_name => 'a.jpg'|scan_invalid" \
+    "$P1|$R3|scan_path => '$T5/$X/$P1/$U3.webp', scan_name => repeat('n', 121)|scan_invalid"; do
+  IFS='|' read -r pl rid a want <<<"$bad"
+  [ "$(ae $G1 812 $X $pl $rid "$a")" = "$want" ] || fail "add_eligibility: $bad"
+  redo 812
+done
+q "delete from app.eligibility_record where id='$R2'" >/dev/null
+[ "$(ae $G1 813 $X $P5 $R1 "'emis'")" = already_exists ] || fail "add_eligibility: reused id"
+[ "$(ae $G1 814 $X $P5 $R2 "'citizenship', '12-34', '$T5/$X/$P5/$U2.webp', 'emis-yugal.jpg'")" = ok ] || fail "add_eligibility: all fields"
+
+# Fences: Y's grant, another Tournament's Organiser, a started Season and anon can't add or change X's records.
+[ "$(ae $G5 815 $X $P1 $R3 "'emis'")|$(ae $G5 816 $Y $P1 $R3 "'emis'")|$(ee $G5 817 $Y $P1 "1, document_number => '1'")|$(ae $B 818 $X $P1 $R3 "'emis'")|$(ee $B 819 $X $P1 "1, document_number => '1'")|$(ae $G3 820 $Z $P1 $R3 "'emis'")" \
+  = 'not_authorized|player_missing|player_missing|not_authorized|not_authorized|season_started' ] || fail "leak: eligibility commands across Teams"
+for f in "add_eligibility('$(cmd 821)', '$X', '$P1', '$R3', 'emis')" "edit_eligibility('$(cmd 822)', '$X', '$P1', 1, 'emis')" \
+    "registration_eligibility()" "can_upload_scan('$T5/$X/$P1/$U3.webp')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+out=$(as $A "select app.eligibility_invalid(null::app.team, null, null, null, null, null)" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "client can execute eligibility_invalid: $out"
+
+# Reads: the grant reads its own Team's records through the helper, without the scan path, and never the table.
+re() { as "$1" "select coalesce(string_agg(concat_ws(':', player_id, coalesce(document_type, '-'), coalesce(document_number, '-'), coalesce(scan_name, '-'), verified, version), ',' order by player_id), 'none') from app.registration_eligibility()"; }
+[ "$(re $G1)" = "$P1:emis:430010248:-:f:1,$P5:citizenship:12-34:emis-yugal.jpg:f:1" ] || fail "registration_eligibility: $(re $G1)"
+[ "$(as $G1 "select count(*) from app.registration_eligibility() r where to_jsonb(r)::text ~ '$U2'")" = 0 ] || fail "registration_eligibility: scan path read"
+rt() { as "$1" "select count(*) from app.eligibility_record"; }
+[ "$(rt $G1)|$(rt $G5)|$(rt $B)|$(rt $G3)|$(rt $G4)|$(rt $A)|$(re $G5)|$(re $B)|$(re $G4)|$(re $A)" = '0|0|0|0|0|2|none|none|none|none' ] \
+  || fail "leak: eligibility reads $(rt $G1) $(rt $B) $(rt $A)"
+! as anon "select count(*) from app.eligibility_record" >/dev/null 2>&1 || fail "leak: anon reads eligibility_record"
+for s in "insert into app.eligibility_record (id, tournament_id, player_id, season_id) values ('$R3', '$T5', '$P1', '$S5')" \
+    "update app.eligibility_record set document_number = '1'" "delete from app.eligibility_record"; do
+  ! as $G1 "$s" >/dev/null 2>&1 || fail "grant holder wrote eligibility_record directly: $s"
+  ! as $A "$s" >/dev/null 2>&1 || fail "Organiser wrote eligibility_record directly: $s"
+done
+
+# edit_eligibility: versioned, each field alone, scan path and name together; conflicts never carry the scan path.
+[ "$(ee $G1 830 $X $P1 "1, document_number => '430010249'")|$(ee $G1 831 $X $P1 "2, scan_path => '$T5/$X/$P1/$U1.webp', scan_name => 'emis-bisho.jpg'")|$(ee $G1 832 $X $P1 "3, document_type => 'birth_certificate'")" \
+  = 'ok|ok|ok' ] || fail "edit_eligibility: fields"
+[ "$(q "select concat_ws('|', document_type, document_number, scan_path, scan_name, scan_uploaded_at is not null, version) from app.eligibility_record where id='$R1'")" \
+  = "birth_certificate|430010249|$T5/$X/$P1/$U1.webp|emis-bisho.jpg|t|4" ] || fail "edit_eligibility: row"
+r=$(as $G1 "select app.edit_eligibility('$(cmd 833)', '$X', '$P1', 4)")
+[ "$(q "select (r->>'ok')||(r->>'version') from (select '$r'::jsonb r) x")" = true4 ] || fail "edit_eligibility: nothing to change: $r"
+[ "$(ee $A 834 $X $P1 "4, document_number => '430010250'")" = ok ] || fail "edit_eligibility: Organiser"
+r=$(as $G1 "select app.edit_eligibility('$(cmd 835)', '$X', '$P1', 4, document_number => 'mine')")
+[ "$(q "select concat_ws('|', r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'document_type', r->'conflict'->'current'->>'document_number', r->'conflict'->'current'->>'scan_name', r->'conflict'->>'changed_by', r::text ~ '$U1') from (select '$r'::jsonb r) x")" \
+  = 'version_conflict|5|birth_certificate|430010250|emis-bisho.jpg|Organiser|f' ] || fail "edit_eligibility: conflict: $r"
+r=$(as $A "select app.edit_eligibility('$(cmd 836)', '$X', '$P5', 9, document_number => 'x')")
+[ "$(q "select r->'conflict'->>'changed_by' from (select '$r'::jsonb r) x")" = 'Team manager' ] || fail "edit_eligibility: changed_by for the grant: $r"
+for bad in "document_type => 'licence'|type_invalid" "document_number => ''|number_invalid" "scan_path => '$T5/$X/$P5/$U3.webp', scan_name => 'a.jpg'|scan_invalid" \
+    "scan_name => 'a.jpg'|scan_invalid"; do
+  IFS='|' read -r a want <<<"$bad"
+  [ "$(ee $G1 837 $X $P1 "5, $a")" = "$want" ] || fail "edit_eligibility: $bad"
+  redo 837
+done
+q "update app.eligibility_record set verified_by = '$A', verified_at = now() where id = '$R2'" >/dev/null
+[ "$(ee $G1 838 $X $P5 "1, document_number => 'changed'")|$(re $G1 | cut -d, -f2 | cut -d: -f5)" = 'eligibility_verified|t' ] || fail "edit_eligibility: verified"
+[ "$(ee $G5 839 $Y $P5 "1, document_number => 'x'")|$(ee $G5 840 $X $P1 "5, document_number => 'x'")" = 'player_missing|not_authorized' ] || fail "leak: Y edits X's record"
+
+# A Player with no record: eligibility_missing; removing a Player takes their record with them.
+[ "$(ap $G1 841 $X $P4 "name => 'Extra', shirt_number => 12, date_of_birth => '$grown', consent => false")|$(ee $G1 842 $X $P4 "1, document_type => 'emis'")" \
+  = 'ok|eligibility_missing' ] || fail "edit_eligibility: no record"
+[ "$(ae $G1 843 $X $P4 $R3 "'passport', 'PA123'")|$(tc $G1 "remove_player('$(cmd 844)', '$X', '$P4', 1)")|$(q "select count(*) from app.eligibility_record where id='$R3'")|$(q "select count(*) from app.player where id='$P4'")" \
+  = 'ok|ok|0|0' ] || fail "remove_player: Eligibility record left"
+[ "$(q "select before->>'document_number' from app.activity_log where table_name='eligibility_record' and op='delete' and row_id='$R3'")" = document_number ] \
+  || fail "remove_player: record delete not logged by name"
+
+# No document number, file name or scan path ever reaches the Activity log.
+for v in 430010248 430010249 430010250 12-34 PA123 emis-yugal emis-bisho "$U1" "$U2"; do
+  [ "$(q "select count(*) from app.activity_log where strpos(coalesce(before::text, '') || coalesce(after::text, ''), '$v') > 0")" = 0 ] \
+    || fail "personal value in the Activity log: $v"
+done
+
+# Revoked link: no reads, no commands, no uploads.
+[ "$(rv $A 850 $S5 $LX4)|$(re $G1)|$(ee $G1 851 $X $P1 "5, document_number => 'x'")|$(ae $G1 852 $X $P1 $R3 "'emis'")" = 'ok|none|not_authorized|not_authorized' ] \
+  || fail "eligibility: revoked link"
+! obj $G1 eligibility-scans "$T5/$X/$P1/$U3.webp" >/dev/null 2>&1 || fail "scan: revoked grant uploaded"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

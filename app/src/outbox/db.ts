@@ -3,8 +3,11 @@ import { Dexie, type EntityTable } from 'dexie'
 /** A version_conflict refusal: the row as it is now on the server, and who changed it last. */
 export type Conflict = { current_version: number; current: Record<string, unknown>; changed_by: string; changed_at: string }
 
-/** A file to upload before the command runs (upsert, so a repeat is harmless). Removed from the entry once uploaded. */
-export type Upload = { bucket: string; path: string; blob: Blob; contentType: string }
+/**
+ * A file to upload before the command runs (upsert, so a repeat is harmless). Removed from the entry once uploaded.
+ * upsert false: for a bucket the uploader may add to but not read (eligibility-scans); a repeat finding the file there is done.
+ */
+export type Upload = { bucket: string; path: string; blob: Blob; contentType: string; upsert?: false }
 
 /** One queued command. Stored before any network call; deleted only once the server says ok. */
 export type Entry = {

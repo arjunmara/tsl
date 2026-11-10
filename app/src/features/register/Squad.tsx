@@ -1,8 +1,11 @@
-import { useId, useState } from 'react'
-import { forgetRefused, send } from '../../domain/commands'
+import { useId, useRef, useState } from 'react'
+import { forgetRefused, send, type Upload } from '../../domain/commands'
 import { formatDay, inZone } from '../../domain/format'
+import { resizeImage } from '../../domain/image'
 import { messageFor, messages } from '../../domain/messages'
-import { isMinor, noteNew, type RegistrationForm, type SquadPlayer, type StaffMember } from '../../domain/registration'
+import {
+  DOCUMENT_TYPES, documentLabel, isMinor, noteNew, scanBucket, type RegistrationForm, type SquadPlayer, type StaffMember,
+} from '../../domain/registration'
 import { serverNow } from '../../domain/clock'
 import { STAFF_ROLES } from '../../domain/tournaments'
 import { DestructiveButton, PrimaryButton } from '../../ui/Button'
@@ -11,14 +14,20 @@ import { StatusPill } from '../../ui/StatusPill'
 import { blocked, useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
 
-/** Sends one Squad command for the Team; returns the refusal in words (dropped from the queue), else null. */
-type Run = (name: string, args: Record<string, unknown>, versionOf?: string) => Promise<string | null>
+/** Sends one Squad command for the Team (after its file, if any); returns the refusal in words (dropped from the queue), else null. */
+type Run = (name: string, args: Record<string, unknown>, versionOf?: string, upload?: Upload) => Promise<string | null>
 const roleLabel = (k: string) => STAFF_ROLES.find(([r]) => r === k)?.[1] ?? k
 const today = () => inZone(serverNow()).date
 const SHIRT = /^\d{1,2}$/
 const checkName = (v: string) => (v.length > 80 ? messages.name_long : null)
 const checkDob = (v: string) => (v < '1940-01-01' || v > today() ? messages.dob_invalid : null)
 const consentLine = (p: SquadPlayer) => (p.consent ? `photo consent: ${p.givenBy ?? ''}` : 'no photo consent')
+/** "EMIS number added" once type, number and scan are all given; else what is still needed. */
+const documentLine = ({ eligibility: e }: SquadPlayer) =>
+  (e?.documentType && e.documentNumber && e.scanName ? `${documentLabel(e.documentType)} added` : 'document still needed')
+// Control characters a file name may carry are dropped; the server takes at most 120 characters.
+// eslint-disable-next-line no-control-regex
+const fileName = (f: File) => Array.from(f.name.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, '').trim()).slice(0, 120).join('') || 'document'
 
 /**
  * Players, Staff and "Send this Team for review" on the open Registration link form (Story 2.3). Each change is a
@@ -26,12 +35,13 @@ const consentLine = (p: SquadPlayer) => (p.consent ? `photo consent: ${p.givenBy
  */
 export function Squad({ form, reload }: { form: RegistrationForm; reload: () => Promise<void> }) {
   const teamId = form.team.id
-  const run: Run = async (name, args, versionOf) => {
-    const r = await send(name, { team_id: teamId, ...args }, { scope: teamId, ...(versionOf ? { versionOf } : {}) })
+  const run: Run = async (name, args, versionOf, upload) => {
+    const r = await send(name, { team_id: teamId, ...args }, { scope: teamId, ...(versionOf ? { versionOf } : {}), ...(upload ? { upload } : {}) })
     void reload()
     // A conflict waits in the hand-back sheet (Keep theirs / Send mine); any other refusal is said here and dropped.
     if (r.ok || r.code === 'queued' || r.code === 'version_conflict') return null
     if (r.commandId) void forgetRefused(r.commandId)
+    if (r.uploadFailed) return messages.scan_upload_failed
     return r.code === 'lineup_violation' && r.message ? r.message : messageFor(r.code)
   }
   const { starters, maxBench } = form.rules
@@ -161,7 +171,7 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
     <details className="squad-card">
       <summary>
         <span className="body-strong">{p.name} · #{p.shirtNumber}</span>
-        <span className="meta"> {consentLine(p)}</span>
+        <span className="meta"> {consentLine(p)} · {documentLine(p)}</span>
       </summary>
       <Field label="Player's name" value={p.name} onSave={(name) => void save({ name })} required requiredMessage={messages.player_name_required}
         validate={checkName} autoComplete="off" />
@@ -175,10 +185,103 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
         onSave={(given_by) => (setMissing(false), setHeldDob(null),
           void save({ consent: true, given_by, ...(heldDob ? { date_of_birth: heldDob } : {}) }))} />}
       <Problem text={problem} />
+      <EligibilityProof player={p} form={form} run={run} />
       <DestructiveButton label="Remove from the Squad" accessibleLabel={`Remove ${p.name} from the Squad`} sheetTitle={`Remove ${p.name}?`}
         before={`${p.name} in the Squad`} after="Removed, with their details" actionLabel={`Remove ${p.name}`}
         onConfirm={() => void run('remove_player', { player_id: p.id }, p.id).then(setProblem)} />
     </details>
+  )
+}
+
+/**
+ * The Player's Eligibility proof (Story 2.4): document type, number and a scan from the camera or gallery. Each saves on
+ * its own through the outbox; the scan is resized on the phone and uploaded before its command. Once uploaded only its
+ * file name shows: the Team manager can't open it again (only the organiser can).
+ */
+function EligibilityProof({ player: p, form, run }: { player: SquadPlayer; form: RegistrationForm; run: Run }) {
+  const e = p.eligibility
+  // The record this card created, so changes made before the next read edit it instead of adding a second one.
+  const created = useRef<string | null>(null)
+  // Saves run one after another, so a change made while the first add is still being stored never overtakes it.
+  const queue = useRef<Promise<unknown>>(Promise.resolve())
+  const [problem, setProblem] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileId = useId()
+  const typeId = useId()
+
+  function save(fields: Record<string, unknown>, upload?: Upload) {
+    const next = queue.current.then(() => store(fields, upload))
+    queue.current = next.catch(() => {})
+    return next
+  }
+  async function store(fields: Record<string, unknown>, upload?: Upload) {
+    setProblem(null)
+    const id = e?.id ?? created.current
+    if (id) return setProblem(await run('edit_eligibility', { player_id: p.id, ...fields }, id, upload))
+    const recordId = crypto.randomUUID()
+    created.current = recordId
+    await noteNew(recordId)
+    const refused = await run('add_eligibility', { player_id: p.id, record_id: recordId, ...fields }, undefined, upload)
+    if (refused) created.current = null
+    setProblem(refused)
+  }
+
+  async function pick(file: File | undefined) {
+    if (!file || uploading) return
+    setProblem(null)
+    setUploading(true)
+    try {
+      let blob: Blob
+      try {
+        blob = await resizeImage(file, 1600)
+      } catch (err) {
+        return setProblem(err instanceof RangeError ? messages.image_too_large : messages.scan_unreadable)
+      }
+      const path = `${form.team.tournamentId}/${form.team.id}/${p.id}/${crypto.randomUUID()}.webp`
+      await save({ scan_path: path, scan_name: fileName(file) },
+        { bucket: scanBucket, path, blob, contentType: blob.type || 'image/webp', upsert: false })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  if (e?.verified) {
+    return (
+      <section className="eligibility">
+        <h3 className="body-strong">Eligibility</h3>
+        <p className="body">{[documentLabel(e.documentType), e.documentNumber].filter(Boolean).join(' · ')}</p>
+        <p className="meta">Verified by the organiser.</p>
+      </section>
+    )
+  }
+  return (
+    <section className="eligibility" aria-label={`Eligibility for ${p.name}`}>
+      <h3 className="body-strong">Eligibility</h3>
+      <div className="ui-field">
+        <label htmlFor={typeId} className="body-strong">Document type</label>
+        <select id={typeId} className="ui-input" value={e?.documentType ?? ''}
+          onChange={(ev) => ev.target.value && void save({ document_type: ev.target.value })}>
+          {!e?.documentType && <option value="">Choose a document type</option>}
+          {DOCUMENT_TYPES.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+      </div>
+      <Field label="Document number" value={e?.documentNumber ?? ''} onSave={(document_number) => void save({ document_number })}
+        required requiredMessage={messages.document_number_required} validate={(v) => (v.length > 40 ? messages.number_long : null)}
+        autoComplete="off" />
+      <div className="ui-field">
+        <span className="body-strong">Document scan</span>
+        {e?.scanName && (
+          <p className="body eligibility-file"><span>{e.scanName}</span><span className="meta"> · Uploaded · only the organiser sees it</span></p>
+        )}
+        {/* Camera or gallery; the visible label is the button, the input keeps the focus (outline via CSS). */}
+        <input id={fileId} className="ui-visually-hidden file-input" type="file" accept="image/*" disabled={uploading}
+          onChange={(ev) => (void pick(ev.target.files?.[0]), (ev.target.value = ''))} />
+        <label htmlFor={fileId} className="ui-button ui-secondary file-button" aria-disabled={uploading || undefined}>
+          {uploading ? 'Uploading the document scan…' : e?.scanName ? 'Replace the document scan' : 'Upload the document scan'}
+        </label>
+      </div>
+      <Problem text={problem} />
+    </section>
   )
 }
 
@@ -288,14 +391,16 @@ function Submit({ form, run }: { form: RegistrationForm; run: Run }) {
   )
 }
 
-/** The Squad as text, once the form is closed: no date of birth, the consent's name only. */
+/** The Squad as text, once the form is closed: no date of birth or document number; the consent's name only. */
 export function ClosedSquad({ form }: { form: RegistrationForm }) {
   return (
     <>
       <section className="card">
         <h2 className="body-strong">Players · {form.players.length}</h2>
         <ul className="squad-list">
-          {form.players.map((p) => <li key={p.id} className="body">{p.name} · #{p.shirtNumber} · {consentLine(p)}</li>)}
+          {form.players.map((p) => <li key={p.id} className="body">
+            {p.name} · #{p.shirtNumber} · {documentLabel(p.eligibility?.documentType ?? null) || 'no document'} · {consentLine(p)}
+          </li>)}
         </ul>
       </section>
       <section className="card">

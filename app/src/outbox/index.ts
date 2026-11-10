@@ -61,7 +61,7 @@ export async function send(
       // ponytail: no IndexedDB (blocked storage): send directly, nothing survives a tab close.
       if (opts.upload) {
         const u = await config.upload(opts.upload)
-        if (!u.ok) return u
+        if (!u.ok) return { ...u, uploadFailed: true as const }
       }
       return config.run(name, args, commandId)
     }

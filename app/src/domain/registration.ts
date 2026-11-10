@@ -7,10 +7,28 @@ import type { TeamStatus } from './teams'
 import type { SeasonStatus } from './tournaments'
 
 // The Registration link form (Story 2.2): the Team a redeemed link's grant is for, and the Season facts its banner needs.
-export type RegistrationTeam = { id: string; name: string; code: string; kitColour: string | null; status: TeamStatus; version: number }
-/** A Player in this Team's Squad with their Photo consent for its Season. version: the Player card's (edit_player). */
+export type RegistrationTeam = {
+  id: string; tournamentId: string; name: string; code: string; kitColour: string | null; status: TeamStatus; version: number
+}
+/** Eligibility documents a Player can prove eligibility with, and their words. */
+export const DOCUMENT_TYPES = [
+  ['emis', 'EMIS number'], ['birth_certificate', 'Birth certificate'], ['citizenship', 'Citizenship'], ['passport', 'Passport'],
+] as const
+export type DocumentType = (typeof DOCUMENT_TYPES)[number][0]
+export const documentLabel = (t: string | null) => DOCUMENT_TYPES.find(([k]) => k === t)?.[1] ?? ''
+/** The private bucket for document scans: the Team manager may add a scan but never read one (Story 2.4). */
+export const scanBucket = 'eligibility-scans'
+/**
+ * A Player's Eligibility proof for the Season as the Team manager sees it: the scan only by its file name, never the
+ * scan itself. version: the record's (edit_eligibility).
+ */
+export type Eligibility = {
+  id: string; documentType: DocumentType | null; documentNumber: string; scanName: string | null; verified: boolean; version: number
+}
+/** A Player in this Team's Squad with their Photo consent and Eligibility proof for its Season. version: the Player card's (edit_player). */
 export type SquadPlayer = {
   id: string; name: string; shirtNumber: number; dateOfBirth: string; consent: boolean; givenBy: string | null; version: number
+  eligibility: Eligibility | null
 }
 export type StaffMember = { id: string; name: string; role: string; version: number }
 /** The Season's photo-consent statement and Line-up rules (null: not set). */
@@ -35,8 +53,9 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
   const kept = () => {
     try {
       const k = JSON.parse(localStorage.getItem(formKey) ?? 'null') as Kept | null
-      // A copy kept before Story 2.3 has no Squad: shown with an empty one.
-      if (k?.hash === hash && k.form?.team) return { form: { ...k.form, rules: k.form.rules ?? NO_RULES, players: k.form.players ?? [], staff: k.form.staff ?? [] } }
+      // A copy kept before Story 2.3 has no Squad, and before 2.4 no Eligibility: shown with none.
+      if (k?.hash === hash && k.form?.team) return { form: { ...k.form, rules: k.form.rules ?? NO_RULES,
+        players: (k.form.players ?? []).map((p) => ({ ...p, eligibility: p.eligibility ?? null })), staff: k.form.staff ?? [] } }
     } catch {
       // Blocked or bad storage: nothing kept.
     }
@@ -44,34 +63,40 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
   }
   try {
     const app = supabase.schema('app')
-    const [t, f, ru, sq, st] = await Promise.all([
-      app.from('team').select('id, name, code, kit_colour, status, version').limit(2),
+    const [t, f, ru, sq, st, el] = await Promise.all([
+      app.from('team').select('id, tournament_id, name, code, kit_colour, status, version').limit(2),
       app.rpc('registration_form'),
       app.rpc('registration_rules'),
       app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_consent(consent_given, given_by))')
         .order('shirt_number'),
       app.from('staff').select('team_id, id, name, role, version').order('created_at').order('id'),
+      app.rpc('registration_eligibility'),
     ])
-    const all = [t, f, ru, sq, st]
+    const all = [t, f, ru, sq, st, el]
     if (all.some((x) => x.error)) return all.some((x) => x.error && x.status === 0) || !navigator.onLine ? kept() : { code: 'unknown' }
-    const row = (t.data ?? [])[0] as { id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; version: number } | undefined
+    const row = (t.data ?? [])[0] as {
+      id: string; tournament_id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; version: number
+    } | undefined
     const s = ((f.data ?? []) as { tournament_name: string; season_number: number; season_status: SeasonStatus; registration_deadline: string | null }[])[0]
     if (!row || !s || (t.data ?? []).length > 1) {
       forgetForm()
       return { code: 'link_dead' }
     }
     const form: RegistrationForm = {
-      team: { id: row.id, name: row.name, code: row.code, kitColour: row.kit_colour, status: row.status, version: row.version },
+      team: { id: row.id, tournamentId: row.tournament_id, name: row.name, code: row.code, kitColour: row.kit_colour, status: row.status, version: row.version },
       tournamentName: s.tournament_name, seasonNumber: s.season_number, seasonStatus: s.season_status, deadline: s.registration_deadline,
       // RLS already limits the grant to its Team; the filter keeps any other Team's rows out of this form regardless.
-      rules: rulesFrom(ru.data), players: ((sq.data ?? []) as unknown as EntryRow[]).filter((e) => e.team_id === row.id).flatMap(playerFrom),
+      rules: rulesFrom(ru.data), players: withEligibility(((sq.data ?? []) as unknown as EntryRow[]).filter((e) => e.team_id === row.id)
+        .flatMap(playerFrom), el.data),
       staff: ((st.data ?? []) as (StaffMember & { team_id: string })[]).filter((x) => x.team_id === row.id)
         .map(({ id, name, role, version }) => ({ id, name, role, version })),
     }
-    await Promise.all([row, ...form.players, ...form.staff].map((x) => noteVersion(x.id, x.version)))
+    const records = form.players.flatMap((p) => (p.eligibility ? [p.eligibility] : []))
+    await Promise.all([row, ...form.players, ...form.staff, ...records].map((x) => noteVersion(x.id, x.version)))
     try {
-      // Once closed the form never shows a date of birth, so this phone stops keeping them.
-      const keep = registrationClosed(form) ? { ...form, players: form.players.map((p) => ({ ...p, dateOfBirth: '' })) } : form
+      // Once closed the form never shows a date of birth, document number or scan file name, so this phone stops keeping them.
+      const keep = registrationClosed(form) ? { ...form, players: form.players.map((p) => ({ ...p, dateOfBirth: '',
+        eligibility: p.eligibility && { ...p.eligibility, documentNumber: '', scanName: null } })) } : form
       localStorage.setItem(formKey, JSON.stringify({ hash, form: keep } satisfies Kept))
     } catch {
       // Storage full or blocked: only the offline fallback is lost.
@@ -114,8 +139,18 @@ type EntryRow = { team_id: string; shirt_number: number; player: { id: string; n
   photo_consent: { consent_given: boolean; given_by: string | null }[] } | null }
 const playerFrom = (e: EntryRow): SquadPlayer[] => e.player ? [{
   id: e.player.id, name: e.player.name, shirtNumber: e.shirt_number, dateOfBirth: e.player.date_of_birth ?? '', version: e.player.version,
-  consent: e.player.photo_consent[0]?.consent_given ?? false, givenBy: e.player.photo_consent[0]?.given_by ?? null,
+  consent: e.player.photo_consent[0]?.consent_given ?? false, givenBy: e.player.photo_consent[0]?.given_by ?? null, eligibility: null,
 }] : []
+type EligibilityRow = { id: string; player_id: string; document_type: DocumentType | null; document_number: string | null
+  scan_name: string | null; verified: boolean; version: number }
+function withEligibility(players: SquadPlayer[], data: unknown): SquadPlayer[] {
+  const rows = Array.isArray(data) ? (data as EligibilityRow[]) : []
+  return players.map((p) => {
+    const r = rows.find((x) => x.player_id === p.id)
+    return r ? { ...p, eligibility: { id: r.id, documentType: r.document_type, documentNumber: r.document_number ?? '', scanName: r.scan_name,
+      verified: r.verified, version: r.version } } : p
+  })
+}
 const NO_RULES: SquadRules = { consentStatement: '', starters: null, maxBench: null, staffRoles: [] }
 function rulesFrom(data: unknown): SquadRules {
   const r = ((data ?? []) as { consent_statement: string | null; starters: number | null; max_bench: number | null; staff_roles: string[] | null }[])[0]
@@ -132,7 +167,7 @@ export function isMinor(dateOfBirth: string, today = inZone(serverNow()).date): 
 /** A Player or Staff member added on this device starts at version 1, so its edits replay before any read. */
 export const noteNew = (id: string) => noteVersion(id, 1)
 
-/** The form with this session's pending Squad, Staff and submit commands laid over, in order. */
+/** The form with this session's pending Squad, Staff, Eligibility and submit commands laid over, in order. */
 export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): RegistrationForm {
   let players = form.players.map((p) => ({ ...p }))
   let staff = form.staff.map((x) => ({ ...x }))
@@ -141,7 +176,7 @@ export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): Reg
     if (a.team_id !== team.id) continue
     if (name === 'add_player' && !players.some((p) => p.id === a.player_id)) {
       players.push({ id: String(a.player_id), name: String(a.name), shirtNumber: Number(a.shirt_number), dateOfBirth: String(a.date_of_birth),
-        consent: a.consent === true, givenBy: a.consent === true ? String(a.given_by ?? '') : null, version: 1 })
+        consent: a.consent === true, givenBy: a.consent === true ? String(a.given_by ?? '') : null, version: 1, eligibility: null })
     } else if (name === 'edit_player') {
       const p = players.find((x) => x.id === a.player_id)
       if (!p) continue
@@ -151,6 +186,15 @@ export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): Reg
       if (typeof a.consent === 'boolean') p.consent = a.consent
       if (typeof a.given_by === 'string') p.givenBy = a.given_by
       if (!p.consent) p.givenBy = null
+    } else if (name === 'add_eligibility' || name === 'edit_eligibility') {
+      const p = players.find((x) => x.id === a.player_id)
+      if (!p || (name === 'add_eligibility' ? p.eligibility : !p.eligibility)) continue
+      const e: Eligibility = p.eligibility ? { ...p.eligibility }
+        : { id: String(a.record_id), documentType: null, documentNumber: '', scanName: null, verified: false, version: 1 }
+      if (typeof a.document_type === 'string') e.documentType = a.document_type as DocumentType
+      if (typeof a.document_number === 'string') e.documentNumber = a.document_number
+      if (typeof a.scan_name === 'string') e.scanName = a.scan_name
+      p.eligibility = e
     } else if (name === 'remove_player') players = players.filter((p) => p.id !== a.player_id)
     else if (name === 'add_staff' && !staff.some((x) => x.id === a.staff_id)) {
       staff.push({ id: String(a.staff_id), name: String(a.name), role: String(a.role), version: 1 })

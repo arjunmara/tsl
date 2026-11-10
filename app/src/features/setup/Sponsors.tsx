@@ -7,7 +7,7 @@ import { DestructiveButton, PrimaryButton, SecondaryButton } from '../../ui/Butt
 import { Field } from '../../ui/Field'
 import { useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
-import { resizeLogo } from './brand'
+import { resizeImage } from '../../domain/image'
 import { Frame, useLeave } from './Frame'
 
 type Ids = { tournamentId: string; seasonId: string }
@@ -200,7 +200,7 @@ function SponsorEditor({ tournamentId, seasonId, sponsor, blobs, onClose }: Ids 
   async function prepare(file: File, kind: 'logo' | 'ad', show: (t: string | null) => void): Promise<Upload | null> {
     show(null)
     try {
-      const blob = await resizeLogo(file, kind === 'logo' ? 512 : 1280)
+      const blob = await resizeImage(file, kind === 'logo' ? 512 : 1280)
       const path = `${tournamentId}/sponsor-${cur.current.id}-${kind}-${crypto.randomUUID()}.webp`
       return { bucket: assetBucket, path, blob, contentType: blob.type || 'image/webp' }
     } catch (e) {

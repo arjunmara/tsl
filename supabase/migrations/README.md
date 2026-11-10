@@ -248,3 +248,27 @@ must declare its fields in the same file; `check.sh` fails naming any tenant tab
 'submit_team');` (4). Then on the test preview, open a Registration link, add a minor with a guardian's name and an adult, add
 a Staff member, send the Team for review, and check the Organiser's Team row shows Submitted and that Activity log rows for
 the Player show `date_of_birth` and `given_by` instead of the values.
+
+## Apply 0014_eligibility.sql (Story 2.4)
+
+Apply after 0013 and before the app deploy with the Eligibility section on the `/register` Player cards (test first, then live);
+that page fails to load until this is applied. It adds `app.eligibility_record` (one per Player per Season: document type
+`emis`, `birth_certificate`, `citizenship` or `passport`, document number, scan path and file name, when the scan was
+uploaded, `verified_by`/`verified_at` for Story 2.7, `version`). Only the Tournament's Organisers read the table (stricter than
+the default membership: no Scorer device or Registration link grant); a grant reads its own Team's records through
+`app.registration_eligibility()`, which never returns the scan path. Commands `add_eligibility` (insert-only;
+`eligibility_exists` for a second record) and `edit_eligibility` (versioned with the conflict envelope; `eligibility_verified`
+once verified) take the Team, use the Season action `edit_squad`, and check the scan path is
+`<tournament id>/<team id>/<player id>/<uuid>.webp`. `remove_player` is redefined so a removed Player's record goes too.
+Document number, scan path and file name are logged by field name only.
+
+It also creates the **private `eligibility-scans` Storage bucket** (WebP or PNG, at most 1 MiB) with two policies: Organisers of
+the folder's Tournament read; Organisers, and a live grant for exactly that Team (for a Player in its Squad, while the Squad can change), add (never
+upsert). There is no update or delete policy and no public URL: a Team manager can't open a scan, even their own. Scans are
+deleted only through the Storage API by Story 2.7's scheduled job; until 2.7 ships, scans stay in the bucket, so don't
+collect real documents on live before then. Check with `select public from storage.buckets where id = 'eligibility-scans';`
+(one row, `false`) and `select count(*) from pg_policies where tablename = 'objects' and policyname like 'eligibility_scans%';`
+(2). Then on the test preview, open a Registration link on a phone, pick a document type, enter a number and upload a scan
+from the camera: the card shows the file name only. In Storage → eligibility-scans the file is under
+`<tournament>/<team>/<player>/`. Uploading as a Team manager relies on Supabase allowing an upload without upsert with only an
+insert policy; if it fails with a row-level security error, tell the developer before going further.

@@ -78,6 +78,7 @@ async function fresh({ deadline = OPEN_DAY, players = [], staff = [], roles = ['
         photo_consent: [{ consent_given: p.consent, given_by: p.givenBy }] } })))
     }
     if (path === '/rest/v1/staff') return json(route, mock.staff.map((x) => ({ ...x, team_id: TEAM })))
+    if (path === '/rest/v1/rpc/registration_eligibility') return json(route, [])
     const a = JSON.parse(req.postData() ?? '{}')
     const cmd = path.replace('/rest/v1/rpc/', '')
     mock.calls.push({ ...a, cmd })
@@ -385,8 +386,8 @@ try {
   {
     const { context, page } = await fresh({ deadline: '2026-11-03', players: [player('91111111-0000-4000-8000-000000000001', 'Bisho Basnet', 7, KID, true, 'Mina Basnet'),
       player('91111111-0000-4000-8000-000000000002', 'Dinesh Shrees', 8, ADULT)], staff: [{ id: 'a1', name: 'Ram Thapa', role: 'coach', version: 1 }] })
-    await text(page, 'Bisho Basnet · #7 · photo consent: Mina Basnet').waitFor()
-    await text(page, 'Dinesh Shrees · #8 · no photo consent').waitFor()
+    await text(page, 'Bisho Basnet · #7 · no document · photo consent: Mina Basnet').waitFor()
+    await text(page, 'Dinesh Shrees · #8 · no document · no photo consent').waitFor()
     await text(page, 'Ram Thapa · Coach').waitFor()
     assert.equal(await page.locator('input, textarea, select, button').count(), 0, 'inputs or buttons on a closed form')
     assert.equal(await page.getByText(/2012|Baisakh 1[89], 2069/).count(), 0, 'date of birth shown on a closed form')

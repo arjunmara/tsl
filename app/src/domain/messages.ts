@@ -86,6 +86,13 @@ export const messages = {
   staff_missing: 'That Staff member is no longer in this Team. Reload the page.',
   team_approved: 'This Team is already approved. Ask the organiser to change it.',
   lineup_violation: 'This change breaks the Line-up rules. Change the Squad, then try again.',
+  type_invalid: 'Choose a document type.',
+  number_invalid: 'A document number is 1 to 40 characters.',
+  scan_invalid: "Document didn't upload. Try again.",
+  scan_upload_failed: "Document didn't upload. Try again.",
+  eligibility_exists: "This Player's document was added on another phone. Reload the page.",
+  eligibility_missing: "This Player's document was removed. Reload the page.",
+  eligibility_verified: 'The organiser has already verified this document, so it can no longer change.',
   tournament_unknown: "Couldn't load this tournament. Try loading it again.",
   tournament_missing: "This tournament isn't available.",
   tournaments_unknown: "Couldn't load your tournaments. Try loading them again.",
@@ -117,6 +124,9 @@ export const messages = {
   dob_required: 'Add the date of birth.',
   team_code_required: 'Add a Team code of 2 to 5 letters or digits.',
   logo_unreadable: "Couldn't read that image. Choose a JPEG, PNG or WebP picture.",
+  scan_unreadable: "Couldn't read that picture. Take a photo of the document, or choose a JPEG, PNG or WebP picture.",
+  document_number_required: 'Add the document number.',
+  number_long: 'Use 40 characters or fewer.',
 } as const
 
 /** The words for a number field outside its range. */

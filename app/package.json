@@ -24,7 +24,8 @@
     "check:organisers": "node scripts/organisers.check.mjs",
     "check:teams": "node scripts/teams.check.mjs",
     "check:register": "node scripts/register.check.mjs",
-    "check:squad": "node scripts/squad.check.mjs"
+    "check:squad": "node scripts/squad.check.mjs",
+    "check:eligibility": "node scripts/eligibility.check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.119.0",
