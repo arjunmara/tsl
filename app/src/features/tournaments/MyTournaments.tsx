@@ -8,7 +8,7 @@ import { StatusPill } from '../../ui/StatusPill'
 import { Problem } from '../auth/Screen'
 import { useOnline } from '../app/online'
 import { useSession } from '../auth/session'
-import { STEPS } from '../setup/Setup'
+import { STEPS } from '../setup/Frame'
 import { AccountMenu } from './AccountMenu'
 
 /** "Step 1 is saved. Next: Description & rules." for k finished steps. */

@@ -207,6 +207,9 @@
   flex-direction: column;
   gap: var(--spacing-4);
 }
+.wizard-single {
+  max-width: 40rem;
+}
 @media (min-width: 1024.02px) {
   .wizard-body {
     display: grid;
@@ -338,4 +341,10 @@
 .card-waiting .ui-primary-wrap,
 .card-waiting .ui-primary {
   width: 100%;
+}
+
+/* Rules and statements keep their line breaks in the hand-back sheet. */
+.handback-value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

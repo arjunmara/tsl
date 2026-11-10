@@ -104,13 +104,21 @@ An edit of a versioned row takes `expected_version int` and, when the row's `ver
 
 ## Setup wizard (Story 1.8)
 
-`src/features/setup/Setup.tsx`: "Create new tournament" opens `/new`, which makes the Tournament and Season ids once (kept in `history.state` and `sessionStorage`, so a reload or retry creates the same Tournament). Leaving the name field the first time sends `create_tournament` and moves to `/t/:id/setup/1`; later edits send `set_tournament_branding` with only the changed field, queued with `versionOf: <tournament id>` and no `expected_version` (see Versioned edits). Colours or a logo picked before the name wait and follow the create. Next sends `set_setup_step`. Steps 2–7 are placeholders until their stories.
+`src/features/setup/Setup.tsx`: "Create new tournament" opens `/new`, which makes the Tournament and Season ids once (kept in `history.state` and `sessionStorage`, so a reload or retry creates the same Tournament). Leaving the name field the first time sends `create_tournament` and moves to `/t/:id/setup/1`; later edits send `set_tournament_branding` with only the changed field, queued with `versionOf: <tournament id>` and no `expected_version` (see Versioned edits). Colours or a logo picked before the name wait and follow the create. Next sends `set_setup_step`.
 
 - A logo is resized in the browser to fit 512×512, encoded WebP, and queued with the command: `send(..., { upload })` stores the blob in the outbox, and replay uploads it (upsert) to the `tournament-assets` bucket before running the command. That bucket is public: no personal data in it.
 - The sample Graphic uses only the brand colours and navy/white text from the tokens; when neither reaches 4.5:1 on the main colour, the panel behind the text is darkened (`src/features/setup/brand.ts`).
 - My tournaments shows a Resume card for each Tournament whose latest Season is in setup with `setup_step < 7`, read from the server.
 - Steps 2–7 load the Tournament and go back to step 1 when it is missing or the step is past the furthest finished one + 1; an id that isn't a UUID shows "This tournament isn't available." Back and Next replace the history entry.
 - `npm run check:setup` (needs Google Chrome) runs every case against a mocked server.
+
+Steps 2 and 3 (Story 1.9, `src/features/setup/RulesDates.tsx`) edit the Season with `set_season_rules` and `set_season_dates`, queued with `versionOf: <season id>`; each field sends only itself when left, Next sends every field, then `set_setup_step`. Each step re-reads the Tournament and lays pending changes over it; offline it uses the last read. A Season created offline gets base version 1 (`noteNewSeason`), so its edits replay without a conflict. Step 2 needs the photo-consent statement before Next; step 3 needs all three dates, with the deadline on or before the start and the end on or after it. Steps 4–7 are placeholders.
+
+## Dates and money
+
+Every date the app shows goes through `src/domain/format.ts`: `formatDate('2026-10-31')` gives "Saturday · Kartik 14, 2083 BS (31 Oct 2026)". Dates are stored as AD (`date`, or `timestamptz` shown as its day in Asia/Kathmandu with `inZone`). BS comes only from the month-length table there (2080–2090 BS); add a year's row when the calendar committee publishes it, and dates past the table show in AD only. Date inputs use `BS_RANGE` as min/max. `npm run check:dates` checks the first and last day of every month of 2082–2084 BS.
+
+Money is stored and passed as integer paisa plus an ISO 4217 currency code (`Money` in `format.ts`), never a float.
 
 ## Client errors
 

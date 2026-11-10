@@ -1,3 +1,5 @@
+import { BS_RANGE, formatDate } from './format'
+
 // Every failure text the app shows, in plain English. One map, keyed by code.
 export const messages = {
   invalid_credentials: 'Email or password is wrong.',
@@ -36,6 +38,9 @@ export const messages = {
   colour_invalid: "That colour couldn't be saved. Choose it again from the colour picker.",
   logo_invalid: "That logo couldn't be saved. Choose it again.",
   step_invalid: "That setup step doesn't exist. Reload the page.",
+  text_too_long: 'That text is too long. Shorten it, then try again.',
+  deadline_after_start: 'The registration deadline must be on or before the start date.',
+  end_before_start: "The end date can't be before the start date.",
   tournament_unknown: "Couldn't load this tournament. Try loading it again.",
   tournament_missing: "This tournament isn't available.",
   tournaments_unknown: "Couldn't load your tournaments. Try loading them again.",
@@ -45,6 +50,14 @@ export const messages = {
   code_format: 'Enter the code from the email.',
   name_long: 'Use 80 characters or fewer.',
   name_required: "Add the tournament's name.",
+  description_long: 'Use 1,000 characters or fewer.',
+  rules_long: 'Use 10,000 characters or fewer.',
+  consent_long: 'Use 2,000 characters or fewer.',
+  consent_required: 'Add the photo-consent statement Teams agree to.',
+  start_required: "Add the date the season starts.",
+  end_required: "Add the date the season ends.",
+  deadline_required: 'Add the registration deadline.',
+  date_out_of_range: `Pick a date from ${formatDate(BS_RANGE.min)} to ${formatDate(BS_RANGE.max)}.`,
   logo_unreadable: "Couldn't read that image. Choose a JPEG, PNG or WebP picture.",
 } as const
 

@@ -1,13 +1,19 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { discard, resend, sendMine, type OutboxEntry } from '../../domain/commands'
+import { formatDate, inZone } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
 import { Sheet } from '../../ui/Sheet'
 import { fieldLabels, labelFor } from './labels'
 
-const when = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Kathmandu', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-})
-const show = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v))
+/** "10:00, Tuesday · Kartik 24, 2083 BS (10 Nov 2026)" in Kathmandu time. */
+const when = (ts: string) => {
+  const z = inZone(ts)
+  return `${z.time}, ${formatDate(z.date)}`
+}
+const DATES = new Set(['starts_on', 'ends_on', 'registration_deadline'])
+/** A field's value in words: dates in BS and AD, like every date the app shows; nothing set as "Not set". */
+const show = (k: string, v: unknown) =>
+  v == null || v === '' ? 'Not set' : typeof v !== 'string' ? JSON.stringify(v) : DATES.has(k) ? formatDate(v) || v : v
 
 /**
  * The hand-back sheet: the user's choice for each refused change, oldest first, one at a time.
@@ -81,7 +87,7 @@ export function HandBack({ open, entries, onClose }: { open: boolean; entries: O
         if (e.state === 'conflict' && e.conflict) {
           const c = e.conflict
           const fields = Object.keys(e.args).filter((k) =>
-            k !== 'expected_version' && Object.hasOwn(c.current, k) && show(e.args[k]) !== show(c.current[k]))
+            k !== 'expected_version' && Object.hasOwn(c.current, k) && show(k, e.args[k]) !== show(k, c.current[k]))
           const column = (name: string, values: Record<string, unknown>) => (
             <section className="handback-col">
               <h3 className="body-strong">{name}</h3>
@@ -89,7 +95,7 @@ export function HandBack({ open, entries, onClose }: { open: boolean; entries: O
                 {fields.map((k) => (
                   <div key={k}>
                     <dt className="meta">{fieldLabels[k] ?? k}</dt>
-                    <dd className="body">{show(values[k])}</dd>
+                    <dd className="body handback-value">{show(k, values[k])}</dd>
                   </div>
                 ))}
               </dl>
@@ -107,7 +113,7 @@ export function HandBack({ open, entries, onClose }: { open: boolean; entries: O
                 ) : (
                   <p className="body">Nothing you changed differs from their version.</p>
                 )}
-                <p className="meta">Changed by {c.changed_by?.trim() || 'someone'} at {when.format(new Date(c.changed_at))}</p>
+                <p className="meta">Changed by {c.changed_by?.trim() || 'someone'} at {when(c.changed_at)}</p>
               </div>
               {problem}
               <div className="ui-sheet-actions">

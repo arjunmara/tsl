@@ -73,7 +73,8 @@ async function fresh({ viewport = { width: 390, height: 844 }, rows = [] } = {})
     else if (name === 'create_tournament') {
       r = { ...ok, version: 1 }
       mock.rows.set(a.tournament_id, { id: a.tournament_id, name: a.name, brand_primary: '#0a1a3f', brand_secondary: '#f58220', logo_path: null, version: 1,
-        season: [{ id: a.season_id, number: 1, status: 'setup', setup_step: 0 }] })
+        season: [{ id: a.season_id, number: 1, status: 'setup', setup_step: 0, version: 1, description: '', rules: '', photo_consent: '',
+          starts_on: null, ends_on: null, registration_deadline: null }] })
     } else if (name === 'set_tournament_branding') {
       const t = mock.rows.get(a.tournament_id)
       const refusal = mock.refuse.shift()
@@ -87,6 +88,22 @@ async function fresh({ viewport = { width: 390, height: 844 }, rows = [] } = {})
         if (a.logo_path != null) t.logo_path = a.logo_path || null
         t.version++
         r = { ...ok, version: t.version }
+      }
+    } else if (name === 'set_season_rules' || name === 'set_season_dates') {
+      const s = [...mock.rows.values()].flatMap((t) => t.season).find((x) => x.id === a.season_id)
+      const keys = name === 'set_season_rules' ? ['description', 'rules', 'photo_consent'] : ['starts_on', 'ends_on', 'registration_deadline']
+      const next = Object.fromEntries(keys.map((k) => [k, a[k] ?? s[k]]))
+      if (s.version !== a.expected_version) {
+        r = { ok: false, code: 'version_conflict', message: 'Someone else changed this first.', conflict: { current_version: s.version,
+          current: Object.fromEntries(keys.map((k) => [k, s[k]])), changed_by: 'sita', changed_at: '2026-11-10T04:15:00Z' } }
+      } else if (next.registration_deadline && next.starts_on && next.registration_deadline > next.starts_on) {
+        r = { ok: false, code: 'deadline_after_start', message: 'Refused.' }
+      } else if (next.ends_on && next.starts_on && next.ends_on < next.starts_on) {
+        r = { ok: false, code: 'end_before_start', message: 'Refused.' }
+      } else {
+        Object.assign(s, next)
+        s.version++
+        r = { ...ok, version: s.version }
       }
     } else if (name === 'set_setup_step') {
       for (const t of mock.rows.values()) for (const s of t.season) if (s.id === a.season_id) s.setup_step = Math.max(s.setup_step, a.step)
@@ -177,11 +194,10 @@ try {
     await button(page, 'Next').click()
     await page.waitForURL(onStep(2))
     await page.getByRole('heading', { name: 'Step 2 of 7 · Description & rules' }).waitFor()
-    await page.getByText('This step arrives in the next update.', { exact: true }).waitFor()
+    await page.getByLabel('Photo-consent statement').waitFor()
     await until(page, () => calls(mock, 'set_setup_step').length === 1, 'set_setup_step not sent')
     const { command_id: _e, cmd: _o, ...step } = calls(mock, 'set_setup_step')[0]
     assert.deepEqual(step, { season_id: mock.rows.get(id).season[0].id, step: 1 })
-    assert.equal(await button(page, 'Next').count(), 0, 'placeholder has Next')
     await button(page, 'Back').click()
     await page.waitForURL(onStep(1))
     // Reopened from the server: the saved values.
@@ -458,7 +474,156 @@ try {
     mock.down = false
     await context.setOffline(false)
     await button(page, 'Try loading again').click()
+    await page.getByLabel('Photo-consent statement').waitFor()
+    await context.close()
+  }
+
+  // --- Step 2: Next without the statement shows why and focuses it, no step command; rules save on leaving the field
+  // with the Season's base version; Next saves the statement, sends set_setup_step(2) and opens step 3.
+  // Step 3: each date shows BS + AD, linked to its input; a deadline after the start and an end before it say why and
+  // aren't saved; empty dates block Next; Next sends set_setup_step(3) and opens the step 4 placeholder. Reopened from
+  // the server, every value is shown.
+  {
+    const { context, mock, page } = await fresh()
+    const id = await createVia(page, 'Gulmi Cup')
+    const season = () => mock.rows.get(id).season[0]
+    await button(page, 'Next').click()
+    await page.getByRole('heading', { name: 'Step 2 of 7 · Description & rules' }).waitFor()
+    await button(page, 'Next').click()
+    await page.getByText('Add the photo-consent statement Teams agree to.', { exact: true }).waitFor()
+    assert.ok(await page.getByLabel('Photo-consent statement').evaluate((el) => el === document.activeElement), 'Next did not focus the statement')
+    await page.waitForTimeout(200)
+    assert.equal(calls(mock, 'set_setup_step').filter((c) => c.step === 2).length, 0, 'step 2 finished without the statement')
+    await page.getByLabel('Rules').fill('Fair play.\nNo slide tackles.')
+    await page.getByLabel('Rules').press('Tab')
+    await until(page, () => calls(mock, 'set_season_rules').length === 1, 'rules not sent')
+    const { command_id: _a, cmd: _b, ...rules } = calls(mock, 'set_season_rules')[0]
+    assert.deepEqual(rules, { season_id: season().id, expected_version: 1, rules: 'Fair play.\nNo slide tackles.' })
+    await page.getByLabel('Photo-consent statement').fill('Photos of the matches may be posted.')
+    await button(page, 'Next').click()
+    await page.getByRole('heading', { name: 'Step 3 of 7 · Dates' }).waitFor()
+    await until(page, () => season().photo_consent === 'Photos of the matches may be posted.' && season().setup_step === 2, 'step 2 not saved')
+    assert.equal(calls(mock, 'set_season_rules').at(-1).expected_version, 2)
+
+    await button(page, 'Next').click()
+    await page.getByText('Add the date the season starts.', { exact: true }).waitFor()
+    assert.ok(await page.getByLabel('Season starts').evaluate((el) => el === document.activeElement), 'Next did not focus the start date')
+    const start = page.getByLabel('Season starts')
+    assert.deepEqual([await start.getAttribute('type'), await start.getAttribute('min'), await start.getAttribute('max')], ['date', '2023-04-14', '2034-04-13'])
+    await start.fill('2026-10-31')
+    await page.getByText('Saturday · Kartik 14, 2083 BS (31 Oct 2026)', { exact: true }).waitFor()
+    const described = await start.evaluate((el) => el.getAttribute('aria-describedby').split(' ').map((i) => document.getElementById(i)?.textContent))
+    assert.deepEqual(described, ['Saturday · Kartik 14, 2083 BS (31 Oct 2026)'], 'BS/AD line not linked to the input')
+    await start.blur()
+    await until(page, () => season().starts_on === '2026-10-31', 'start not saved')
+    const { command_id: _c, cmd: _d, ...dates } = calls(mock, 'set_season_dates')[0]
+    assert.deepEqual(dates, { season_id: season().id, expected_version: 3, starts_on: '2026-10-31' })
+    const deadline = page.getByLabel('Registration deadline')
+    await deadline.fill('2026-11-02')
+    await deadline.blur()
+    await page.getByText('The registration deadline must be on or before the start date.', { exact: true }).waitFor()
+    assert.equal(await deadline.getAttribute('aria-invalid'), 'true')
+    await deadline.fill('2026-10-20')
+    await page.getByText('Tuesday · Kartik 3, 2083 BS (20 Oct 2026)', { exact: true }).waitFor()
+    await deadline.blur()
+    const end = page.getByLabel('Season ends')
+    await end.fill('2026-10-30')
+    await end.blur()
+    await page.getByText("The end date can't be before the start date.", { exact: true }).waitFor()
+    await page.waitForTimeout(200)
+    assert.equal(calls(mock, 'set_season_dates').some((c) => c.ends_on === '2026-10-30' || c.registration_deadline === '2026-11-02'), false, 'a refused date was sent')
+    await end.fill('2026-11-14')
+    await end.blur()
+    await button(page, 'Next').click()
+    await page.waitForURL(onStep(4))
+    await page.getByRole('heading', { name: 'Step 4 of 7 · Format' }).waitFor()
     await page.getByText('This step arrives in the next update.', { exact: true }).waitFor()
+    await until(page, () => season().setup_step === 3, 'step 3 not finished')
+    assert.deepEqual([season().starts_on, season().ends_on, season().registration_deadline], ['2026-10-31', '2026-11-14', '2026-10-20'])
+    // Reopened on another device: the server's values.
+    await page.goto(base + `/t/${id}/setup/3`)
+    await page.getByText('Saturday · Kartik 28, 2083 BS (14 Nov 2026)', { exact: true }).waitFor()
+    assert.equal(await page.getByLabel('Registration deadline').inputValue(), '2026-10-20')
+    await button(page, 'Back').click()
+    await page.waitForURL(onStep(2))
+    await page.getByLabel('Rules').waitFor()
+    assert.equal(await page.getByLabel('Rules').inputValue(), 'Fair play.\nNo slide tackles.')
+    assert.equal(await page.getByLabel('Photo-consent statement').inputValue(), 'Photos of the matches may be posted.')
+    await context.close()
+  }
+
+  // --- Created offline, then steps 2 and 3 offline from the queue: the first Season edit replays with version 1.
+  {
+    const { context, mock, page } = await fresh()
+    await page.goto(base + '/new')
+    await page.getByLabel('Tournament name').waitFor()
+    await context.setOffline(true)
+    mock.down = true
+    await page.getByLabel('Tournament name').fill('Hill Cup')
+    await page.getByLabel('Tournament name').press('Tab')
+    await page.waitForURL(onStep(1), { timeout: 5000 })
+    const id = new URL(page.url()).pathname.split('/')[2]
+    await button(page, 'Next').click()
+    await page.getByLabel('Photo-consent statement').fill('Photos may be posted.')
+    await button(page, 'Next').click()
+    await page.getByRole('heading', { name: 'Step 3 of 7 · Dates' }).waitFor()
+    await page.getByLabel('Season starts').fill('2026-10-31')
+    await page.getByLabel('Season starts').blur()
+    await button(page, 'Back').click()
+    await page.waitForURL(onStep(2))
+    assert.equal(await page.getByLabel('Photo-consent statement').inputValue(), 'Photos may be posted.', 'queued statement not shown')
+    mock.down = false
+    await context.setOffline(false)
+    await status(page).getByText('Saved', { exact: true }).waitFor({ timeout: 15000 })
+    const order = [...new Map(mock.calls.map((c) => [c.command_id, c])).values()].map((c) => [c.cmd, c.expected_version ?? c.step ?? null])
+    assert.deepEqual(order, [['create_tournament', null], ['set_setup_step', 1], ['set_season_rules', 1], ['set_setup_step', 2], ['set_season_dates', 2]])
+    const s = mock.rows.get(id).season[0]
+    assert.deepEqual([s.photo_consent, s.starts_on, s.version, s.setup_step], ['Photos may be posted.', '2026-10-31', 3, 2])
+    await context.close()
+  }
+
+  // --- Offline after an online read: the next steps open from the last read and pending changes, not an error.
+  {
+    const { context, mock, page } = await fresh()
+    const id = await createVia(page, 'Gulmi Cup')
+    await button(page, 'Next').click()
+    await page.getByLabel('Photo-consent statement').waitFor()
+    await status(page).getByText('Saved', { exact: true }).waitFor({ state: 'detached', timeout: 6000 }).catch(() => {})
+    await context.setOffline(true)
+    mock.down = true
+    await page.getByLabel('Photo-consent statement').fill('Photos may be posted.')
+    await button(page, 'Next').click()
+    await page.getByLabel('Season starts').waitFor()
+    assert.equal(await page.locator('main').getByRole('alert').count(), 0, 'offline step 3 shows an error')
+    await button(page, 'Back').click()
+    await page.waitForURL(onStep(2))
+    assert.equal(await page.getByLabel('Photo-consent statement').inputValue(), 'Photos may be posted.')
+    mock.down = false
+    await context.setOffline(false)
+    await until(page, () => mock.rows.get(id).season[0].photo_consent === 'Photos may be posted.', 'statement not sent')
+    await context.close()
+  }
+
+  // --- A date edit conflicts: the hand-back names the change and shows both dates in BS and AD.
+  {
+    const { context, mock, page } = await fresh()
+    const id = await createVia(page, 'Gulmi Cup')
+    const season = () => mock.rows.get(id).season[0]
+    await button(page, 'Next').click()
+    await page.getByLabel('Photo-consent statement').fill('Photos may be posted.')
+    await button(page, 'Next').click()
+    await page.getByLabel('Season starts').waitFor()
+    await until(page, () => season().setup_step === 2, 'step 2 not finished')
+    Object.assign(season(), { version: season().version + 1, starts_on: '2026-11-07' })
+    await page.getByLabel('Season starts').fill('2026-10-31')
+    await page.getByLabel('Season ends').fill('2026-11-14')
+    await page.getByLabel('Season ends').blur()
+    await status(page).getByRole('alert').getByText("Couldn't save", { exact: true }).waitFor()
+    await button(page, 'Review this change').click()
+    const sheet = page.getByRole('dialog')
+    await sheet.getByText('Change the season dates', { exact: true }).waitFor()
+    const cols = await sheet.locator('section').evaluateAll((ss) => ss.map((s) => [...s.querySelectorAll('dt, dd')].map((d) => d.textContent)))
+    assert.deepEqual(cols, [['Season starts', 'Saturday · Kartik 14, 2083 BS (31 Oct 2026)'], ['Season starts', 'Saturday · Kartik 21, 2083 BS (7 Nov 2026)']])
     await context.close()
   }
 

@@ -19,7 +19,7 @@ export function useForm() {
     const form = ref.current
     if (!form || focusFirstInvalid(form)) return null
     return Object.fromEntries(
-      [...form.querySelectorAll('input')].map((i) => [i.name || i.autocomplete, i.type === 'password' ? i.value : i.value.trim()]),
+      [...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')].map((i) => [i.name || i.autocomplete, i.type === 'password' ? i.value : i.value.trim()]),
     )
   }
   return { ref, showErrors, values }

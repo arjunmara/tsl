@@ -1,34 +1,15 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router'
 import { forgetRefused, queuedFor, send, type OutboxEntry, type Upload } from '../../domain/commands'
 import { messageFor, messages } from '../../domain/messages'
-import { assetBucket, logoUrl, tournamentSetup } from '../../domain/tournaments'
-import { PrimaryButton, SecondaryButton } from '../../ui/Button'
+import { assetBucket, logoUrl, noteNewSeason, tournamentSetup, type SeasonAnswers } from '../../domain/tournaments'
+import { SecondaryButton } from '../../ui/Button'
 import { Field } from '../../ui/Field'
 import { useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
 import { brandDefaults, readable, resizeLogo, textColours } from './brand'
-
-export const STEPS = ['Name & logo', 'Description & rules', 'Dates', 'Format', 'Line-up rules', 'Structure', 'Sponsors']
-
-/** The wizard frame: "Step n of 7 · Name", a thin bar of the steps finished before this one, and the fixed Back / Next bar. */
-function Frame({ step, onBack, onNext, children }: { step: number; onBack: () => void; onNext?: () => void; children: ReactNode }) {
-  return (
-    <main className="wizard">
-      <h1 className="title">Step {step} of 7 · {STEPS[step - 1]}</h1>
-      <div className="wizard-progress" aria-hidden="true">
-        <div style={{ width: `${((step - 1) / 7) * 100}%` }} />
-      </div>
-      {children}
-      <div className="wizard-bar">
-        <div className="wizard-bar-inner">
-          <SecondaryButton label="Back" onClick={onBack} />
-          {onNext && <PrimaryButton label="Next" onClick={onNext} />}
-        </div>
-      </div>
-    </main>
-  )
-}
+import { Frame } from './Frame'
+import { StepThree, StepTwo } from './RulesDates'
 
 type Values = { name: string; primary: string; secondary: string; logoPath: string | null; logoBlob: Blob | null }
 type Branding = { name?: string; brand_primary?: string; brand_secondary?: string; logo_path?: string }
@@ -110,22 +91,45 @@ function Unavailable() {
   )
 }
 
-type Loaded = { seasonId: string; initial: Values; setupStep: number }
+type Base = { seasonId: string; values: Values; answers: SeasonAnswers; setupStep: number }
+type Loaded = { step: number; seasonId: string; initial: Values; answers: SeasonAnswers; setupStep: number }
+
+const noAnswers: SeasonAnswers = { description: '', rules: '', photo_consent: '', starts_on: '', ends_on: '', registration_deadline: '' }
+const SEASON_EDITS = ['set_season_rules', 'set_season_dates']
+
+/** Applies this user's pending Season edits over the Season's answers, in order. */
+function overlayAnswers(base: SeasonAnswers, queued: OutboxEntry[]): SeasonAnswers {
+  const v = { ...base }
+  for (const e of queued) {
+    if (!SEASON_EDITS.includes(e.name)) continue
+    for (const k of Object.keys(v) as (keyof SeasonAnswers)[]) if (typeof e.args[k] === 'string') v[k] = e.args[k]
+  }
+  return v
+}
 
 /**
- * Reads the Tournament, then lays this device's pending changes over it; a pending create needs no server.
- * A step beyond the furthest finished one + 1 (counting pending set_setup_step) goes back to step 1.
+ * Reads the Tournament on every step, then lays this device's pending changes over it; a pending create needs no
+ * server, and offline the last read stands in. A step beyond the furthest finished one + 1 (counting pending
+ * set_setup_step) goes back to step 1.
  */
+// The last server read per Tournament: offline, the next step shows it (each step remounts on navigation).
+// ponytail: kept for this page load only; a reload offline shows "Can't reach the server".
+const lastRead = new Map<string, Base>()
+
 function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }) {
   const navigate = useNavigate()
   const [loaded, setLoaded] = useState<Loaded | 'missing' | null>(null)
-  const [problem, setProblem] = useState<string | null>(null)
+  const [problem, setProblem] = useState<{ step: number; text: string } | null>(null)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let live = true
     const queuedStep = (q: OutboxEntry[]) =>
       Math.max(0, ...q.filter((e) => e.name === 'set_setup_step').map((e) => Number(e.args.step) || 0))
+    const show = (b: Base, queued: OutboxEntry[]) => live && setLoaded({
+      step, seasonId: b.seasonId, initial: overlay(b.values, queued), answers: overlayAnswers(b.answers, queued),
+      setupStep: Math.max(b.setupStep, queuedStep(queued)),
+    })
     void (async () => {
       const d = brandDefaults()
       const defaults: Values = { name: '', primary: d.primary, secondary: d.secondary, logoPath: null, logoBlob: null }
@@ -133,39 +137,51 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
       const create = pending.find((e) => e.name === 'create_tournament')
       if (create) {
         // Not on the server yet (or on its way): no need to wait for a read that may not answer offline.
-        if (live) setLoaded({ seasonId: String(create.args.season_id), initial: overlay(defaults, pending), setupStep: queuedStep(pending) })
-        return
+        // Its Season starts at version 1, even if the page closed before the create's first answer.
+        const seasonId = String(create.args.season_id)
+        await noteNewSeason(seasonId)
+        return show({ seasonId, values: defaults, answers: noAnswers, setupStep: 0 }, pending)
       }
       const r = await tournamentSetup(tournamentId)
       if (!live) return
-      if ('code' in r) return setProblem(r.code === 'offline' ? messages.offline : messages.tournament_unknown)
+      if ('code' in r) {
+        const last = lastRead.get(tournamentId)
+        if (r.code === 'offline' && last) return show(last, await queuedFor(tournamentId))
+        return setProblem({ step, text: r.code === 'offline' ? messages.offline : messages.tournament_unknown })
+      }
       const t = r.tournament
       if (!t || !t.season) return setLoaded('missing')
-      const base: Values = {
-        name: t.name, primary: t.brandPrimary ?? d.primary, secondary: t.brandSecondary ?? d.secondary, logoPath: t.logoPath, logoBlob: null,
+      const base: Base = {
+        seasonId: t.season.id, answers: t.season.answers, setupStep: t.season.setupStep,
+        values: { name: t.name, primary: t.brandPrimary ?? d.primary, secondary: t.brandSecondary ?? d.secondary, logoPath: t.logoPath, logoBlob: null },
       }
       // Entries pending before the read and gone after it may have been applied after the read answered: count
       // both lists, so neither a value nor a finished step is lost in that gap.
       const after = await queuedFor(tournamentId)
-      const queued = [...new Map([...pending, ...after].map((e) => [e.seq, e])).values()].sort((a, b) => a.seq - b.seq)
-      if (live) setLoaded({ seasonId: t.season.id, initial: overlay(base, queued), setupStep: Math.max(t.season.setupStep, queuedStep(queued)) })
+      lastRead.set(tournamentId, base)
+      show(base, [...new Map([...pending, ...after].map((e) => [e.seq, e])).values()].sort((a, b) => a.seq - b.seq))
     })()
     return () => {
       live = false
     }
-  }, [tournamentId, attempt])
+  }, [tournamentId, step, attempt])
 
   const back = () => navigate(step === 1 ? '/' : `/t/${tournamentId}/setup/${step - 1}`, { replace: true })
   if (loaded === 'missing') return step === 1 ? <Unavailable /> : <Navigate to={`/t/${tournamentId}/setup/1`} replace />
-  if (loaded && step > loaded.setupStep + 1) return <Navigate to={`/t/${tournamentId}/setup/1`} replace />
-  if (loaded && step === 1) return <StepOne tournamentId={tournamentId} seasonId={loaded.seasonId} initial={loaded.initial} />
+  const ready = loaded?.step === step ? loaded : null
+  const failed = problem?.step === step && !ready ? problem.text : null
+  if (ready && step > ready.setupStep + 1) return <Navigate to={`/t/${tournamentId}/setup/1`} replace />
+  const props = ready && { tournamentId, seasonId: ready.seasonId, initial: ready.answers }
+  if (ready && step === 1) return <StepOne tournamentId={tournamentId} seasonId={ready.seasonId} initial={ready.initial} />
+  if (props && step === 2) return <StepTwo {...props} />
+  if (props && step === 3) return <StepThree {...props} />
   return (
     <Frame step={step} onBack={back}>
-      {loaded ? (
+      {ready ? (
         <p className="body">This step arrives in the next update.</p>
-      ) : problem ? (
+      ) : failed ? (
         <>
-          <Problem text={problem} />
+          <Problem text={failed} />
           <SecondaryButton label="Try loading again" onClick={() => (setProblem(null), setAttempt((n) => n + 1))} />
         </>
       ) : (
@@ -244,6 +260,8 @@ function StepOne({ tournamentId, seasonId, initial, isNew = false }: { tournamen
         return
       }
       created.current = 'yes'
+      // The new Season's edits replay from version 1 even if this create is still queued.
+      await noteNewSeason(seasonId)
       const { fields, upload } = draft.current
       draft.current = { fields: {} }
       // A logo picked and removed before the create needs nothing on the server.

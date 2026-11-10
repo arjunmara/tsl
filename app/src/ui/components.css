@@ -176,3 +176,7 @@ button.ui-save-toggle {
   padding-inline-start: var(--spacing-5);
   color: var(--ink);
 }
+.ui-textarea {
+  padding: var(--spacing-2) var(--spacing-3);
+  resize: vertical;
+}

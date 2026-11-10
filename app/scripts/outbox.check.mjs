@@ -345,7 +345,7 @@ try {
     const cols = await sheet.locator('section').evaluateAll((ss) => ss.map((s) => [s.querySelector('h3').textContent,
       [...s.querySelectorAll('dt, dd')].map((d) => d.textContent)]))
     assert.deepEqual(cols, [['Your change', ['Name', 'Mine Cup']], ['Their version', ['Name', 'Theirs Cup']]])
-    await sheet.getByText('Changed by Sita at 10 Nov 2026, 10:00', { exact: true }).waitFor()
+    await sheet.getByText('Changed by Sita at 10:00, Tuesday · Kartik 24, 2083 BS (10 Nov 2026)', { exact: true }).waitFor()
     await button(page2, 'Send my version').click()
     await status(page2).getByText('Saved', { exact: true }).waitFor()
     const [, again, next] = mock.calls
@@ -395,7 +395,7 @@ try {
     await button(page2, 'Review this change').click()
     const sheet = page2.getByRole('dialog')
     await sheet.getByText('Nothing you changed differs from their version.', { exact: true }).waitFor()
-    await sheet.getByText('Changed by someone at 10 Nov 2026, 10:00', { exact: true }).waitFor()
+    await sheet.getByText('Changed by someone at 10:00, Tuesday · Kartik 24, 2083 BS (10 Nov 2026)', { exact: true }).waitFor()
     assert.equal(await sheet.locator('section').count(), 0, 'columns shown with nothing differing')
     await button(page2, 'Keep their version').waitFor()
     await button(page2, 'Send my version').waitFor()

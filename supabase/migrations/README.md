@@ -95,6 +95,17 @@ Check with `select public from storage.buckets where id = 'tournament-assets';` 
 test preview, create a tournament through the wizard, pick colours and a logo, and open My tournaments on
 another device: the Resume card opens step 2 once step 1 is finished with Next.
 
+## Apply 0005_wizard_rules_dates.sql (Story 1.9)
+
+Apply before the app deploy with wizard steps 2 and 3 (test first, then live); the wizard reads the new columns, so
+it shows "Couldn't load this tournament" until this is applied. It adds `description`, `rules`, `photo_consent`,
+`starts_on`, `ends_on` and `registration_deadline` to `app.season` (dates are AD days in Asia/Kathmandu; the deadline is
+the last day registration is open), a check that the deadline is on or before the start and the end on or after it,
+and the `set_season_rules` and `set_season_dates` commands (versioned edits with the conflict envelope; allowed while
+setup can be edited). Check with `select count(*) from information_schema.columns where table_schema = 'app' and
+table_name = 'season' and column_name in ('rules', 'registration_deadline');` (2). Then on the test preview, fill
+steps 2 and 3 and reopen them on another device.
+
 Edit commands added later answer a stale `expected_version` with
 `{ok: false, code: 'version_conflict', conflict: {current_version, current, changed_by, changed_at}}`
 (see `app/README.md`, Conflict envelope).
