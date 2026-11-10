@@ -24,6 +24,10 @@ export const commandLabels: Record<string, (args: Args) => string> = {
     : a.logo_path != null ? "Change a Sponsor's logo" : "Change a Sponsor's ad images"),
   delete_sponsor: () => 'Delete a Sponsor',
   reorder_sponsors: () => 'Change the Sponsor order',
+  invite_organiser: (a) => `Invite ${String(a.email ?? '')} to organise the tournament`,
+  cancel_invite: () => 'Cancel an invite',
+  accept_invite: () => 'Accept an invite to organise a tournament',
+  remove_organiser: () => 'Remove an organiser',
 }
 
 /** "rules", "description and rules": the fields an edit changes, in words. */

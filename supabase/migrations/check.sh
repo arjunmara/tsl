@@ -79,7 +79,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -588,6 +588,102 @@ q "insert into storage.buckets (id, name) values ('other', 'other')" >/dev/null
 [ "$(as $B "select count(*) from storage.objects")|$(as $A "select count(*) from storage.objects")" = 0\|1 ] || fail "storage: select scope"
 [ "$(as $A "with u as (update storage.objects set name = name returning 1) select count(*) from u")" = 1 ] || fail "storage: member cannot update (upsert)"
 [ "$(as $A "with d as (delete from storage.objects returning 1) select count(*) from d")" = 1 ] || fail "storage: member cannot delete"
+
+# --- Co-organisers (Story 1.14). A organises T1, B organises T2; C and D are verified, U is not.
+C=dddddddd-0000-4000-8000-000000000004 D=eeeeeeee-0000-4000-8000-000000000005
+q "insert into auth.users values ('$C','c@x.test',now()), ('$D','d@x.test',now())" >/dev/null
+oc() { as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.$2 r"; }
+inv() { oc "$1" "invite_organiser('$(cmd "$2")', '$3', '$4', '$5')"; }
+acc() { oc "$1" "accept_invite('$(cmd "$2")', '$3')"; }
+rm_() { oc "$1" "remove_organiser('$(cmd "$2")', '$3', '$4')"; }
+cnl() { oc "$1" "cancel_invite('$(cmd "$2")', '$3', '$4')"; }
+members() { q "select string_agg(user_id::text, ',' order by created_at, user_id) from app.organiser_membership where tournament_id='$T1'"; }
+tokof() { q "select token from app.organiser_invite where id='$1'"; }
+I1=41111111-0000-4000-8000-000000000001 I2=41111111-0000-4000-8000-000000000002 I3=41111111-0000-4000-8000-000000000003
+I4=41111111-0000-4000-8000-000000000004 I5=41111111-0000-4000-8000-000000000005 I6=41111111-0000-4000-8000-000000000006
+r=$(as $A "select app.invite_organiser('$(cmd 200)', '$I1', '$T1', '  C@X.Test ')")
+tok=$(q "select '$r'::jsonb->>'token'")
+[ "$(q "select ('$r'::jsonb->>'ok')||' '||(('$r'::jsonb->>'expires_at')::timestamptz between now() + interval '13 days' and now() + interval '15 days')")" = 'true true' ] \
+  || fail "invite: not ok with a 14-day expiry: $r"
+[[ $tok =~ ^[A-Za-z0-9_-]{43}$ ]] || fail "invite: token not 43 base64url characters: $tok"
+[ "$(q "select email||'|'||token||'|'||invited_by from app.organiser_invite where id='$I1'")" = "c@x.test|$tok|$A" ] || fail "invite: row"
+[ "$(as $A "select app.invite_organiser('$(cmd 200)', '$I1', '$T1', 'C@x.test')")" = "$r" ] || fail "invite: repeat gave another answer"
+[ "$(q "select count(*) from app.activity_log where table_name='organiser_invite' and row_id='$I1' and after->>'token'='token' and after->>'email'='email'")|$(q "select count(*) from app.activity_log where strpos(after::text, '$tok') > 0 or strpos(before::text, '$tok') > 0")" = 1\|0 ] \
+  || fail "invite: token or email in the Activity log"
+[ "$(inv $A 201 $I2 $T1 c@x.test)" = already_invited ] || fail "invite: second pending invite to the same email"
+[ "$(inv $A 202 $I2 $T1 ' A@X.TEST')" = already_organiser ] || fail "invite: an Organiser's email"
+for bad in nope 'a b@x.test' '@x.test' "$(printf 'x%.0s' $(seq 250))@x.test" $'d\u200b@x.test' $'d\u00a0x@x.test'; do
+  [ "$(inv $A 203 $I2 $T1 "$bad")" = email_invalid ] || fail "invite: accepted email $bad"
+  q "delete from app.command_result where command_id='$(cmd 203)'" >/dev/null
+done
+[ "$(inv $A 204 $I1 $T1 d@x.test)" = already_exists ] || fail "invite: reused id"
+[ "$(q "select count(*) from app.organiser_invite")" = 1 ] || fail "invite: refusals wrote"
+# Only T1's Organisers read its invites, tokens and Organisers.
+[ "$(as $A "select count(*) from app.organiser_invite")|$(as $A "select string_agg(email, ',') from app.organisers('$T1')")" = '1|a@x.test' ] || fail "invite: A cannot read"
+[ "$(as $B "select count(*) from app.organiser_invite")|$(as $B "select count(*) from app.organisers('$T1')")" = 0\|0 ] || fail "invite: B reads T1's invites or Organisers"
+# Leak: another tenant (B) can't invite, cancel, remove or accept someone else's invite; nothing changes.
+[ "$(inv $B 205 $I2 $T1 b2@x.test)|$(cnl $B 206 $I1 $T1)|$(rm_ $B 207 $T1 $A)|$(acc $B 208 "$tok")" = 'not_authorized|not_authorized|not_authorized|invite_wrong_email' ] \
+  || fail "leak: B's co-organiser commands on T1"
+[ "$(inv $B 209 $I2 $T2 c@x.test)" = ok ] && q "delete from app.organiser_invite where id='$I2'" >/dev/null || fail "invite: B on own T2"
+[ "$(acc $U 210 "$tok")" = email_not_verified ] || fail "accept: unverified"
+out=$(as anon "select app.accept_invite('$(cmd 211)', '$tok')" 2>&1 || true)
+[[ $out == *"permission denied for function accept_invite"* ]] || fail "anon: can execute accept_invite: $out"
+[ "$(members)|$(q "select coalesce(accepted_at::text, 'pending') from app.organiser_invite where id='$I1'")" = "$A|pending" ] || fail "accept: wrong email changed something"
+# Accept: C organises T1 only.
+r=$(as $C "select app.accept_invite('$(cmd 212)', '$tok')")
+[ "$(q "select ('$r'::jsonb->>'ok')||('$r'::jsonb->>'tournament_id')")" = "true$T1" ] || fail "accept: $r"
+[ "$(members)" = "$A,$C" ] || fail "accept: no membership"
+[ "$(as $C "select count(*) from app.tournament")|$(as $C "select count(*) from app.organisers('$T1')")|$(as $C "select count(*) from app.season where tournament_id='$T2'")" = 1\|2\|0 ] \
+  || fail "accept: C's reads"
+[ "$(acc $C 213 "$tok")|$(acc $B 214 "$tok")|$(acc $D 215 "$tok")|$(acc $D 216 nope)" = 'ok|invite_wrong_email|invite_wrong_email|invite_missing' ] \
+  || fail "accept: used token"
+[ "$(cnl $A 217 $I1 $T1)" = invite_used ] || fail "cancel: used invite"
+# Cancelled and expired invites say so; a new invite is allowed after either.
+[ "$(inv $A 218 $I2 $T1 d@x.test)|$(cnl $A 219 $I2 $T1)|$(cnl $A 220 $I2 $T1)|$(acc $D 221 "$(tokof $I2)")" = 'ok|ok|ok|invite_cancelled' ] || fail "cancel"
+[ "$(inv $A 222 $I3 $T1 $' \u00a0d@x.test\u200b')|$(q "select email from app.organiser_invite where id='$I3'")" = 'ok|d@x.test' ] \
+  || fail "invite after cancel, with invisible characters around the email"
+q "update app.organiser_invite set expires_at = now() - interval '1 second' where id='$I3'" >/dev/null
+[ "$(acc $D 223 "$(tokof $I3)")|$(inv $C 224 $I4 $T1 d@x.test)|$(cnl $A 225 $I4 $T2)" = 'invite_expired|ok|not_authorized' ] || fail "expired"
+[ "$(members)" = "$A,$C" ] || fail "cancelled or expired invite granted something"
+# Remove C: C's reads of T1 are empty and C's next commands are not_authorized; C's pending invites are cancelled.
+[ "$(rm_ $A 227 $T1 $C)|$(members)" = "ok|$A" ] || fail "remove C"
+[ "$(q "select count(*) from app.organiser_invite where id='$I4' and cancelled_at is not null")" = 1 ] || fail "remove: C's invite still pending"
+for t in tournament season organiser_membership organiser_invite activity_log sponsor; do
+  [ "$(as $C "select count(*) from app.$t where to_jsonb($t)::text like '%$T1%'")" = 0 ] || fail "removed C still reads $t"
+done
+[ "$(as $C "select count(*) from app.organisers('$T1')")" = 0 ] || fail "removed C reads the Organisers"
+[ "$(brand $C 228 $T1 2 "name => 'Taken'")|$(inv $C 229 $I5 $T1 x@x.test)|$(cnl $C 230 $I1 $T1)|$(rm_ $C 231 $T1 $A)|$(acc $C 232 "$tok")" \
+  = 'not_authorized|not_authorized|not_authorized|not_authorized|invite_used' ] || fail "leak: removed C's commands"
+[ "$(rm_ $A 233 $T1 $A)|$(members)" = "last_organiser|$A" ] || fail "remove: last Organiser"
+[ "$(rm_ $A 234 $T1 $D)" = ok ] || fail "remove: non-member not ok"
+# Self-removal with two Organisers; a pending invite to the removed email is cancelled too.
+[ "$(inv $A 235 $I5 $T1 c@x.test)|$(acc $C 236 "$(tokof $I5)")|$(inv $A 237 $I6 $T1 d@x.test)" = ok\|ok\|ok ] || fail "re-invite C"
+q "insert into app.organiser_invite (id, tournament_id, email, token, invited_by, expires_at)
+   values ('41111111-0000-4000-8000-000000000009', '$T1', 'c@x.test', repeat('c', 43), '$A', now() + interval '1 day')" >/dev/null
+[ "$(rm_ $C 238 $T1 $C)|$(members)" = "ok|$A" ] || fail "remove self"
+[ "$(q "select string_agg(id::text || ':' || (cancelled_at is not null), ',' order by id) from app.organiser_invite
+        where id in ('$I6', '41111111-0000-4000-8000-000000000009')")" = "$I6:false,41111111-0000-4000-8000-000000000009:true" ] \
+  || fail "remove: invite to the removed email not cancelled, or another invite cancelled"
+# Concurrent removals: A removes C while C removes A; then both remove themselves. One Organiser is always left.
+I7=41111111-0000-4000-8000-000000000007 I8=41111111-0000-4000-8000-000000000008
+[ "$(inv $A 239 $I7 $T1 c@x.test)|$(acc $C 240 "$(tokof $I7)")" = ok\|ok ] || fail "re-invite C (2)"
+as $A "select app.remove_organiser('$(cmd 241)', '$T1', '$C'); select pg_sleep(1)" >/dev/null & held=$!
+for _ in $(seq 100); do [ "$(q "select count(*) from pg_stat_activity where state = 'active' and query like '%pg_sleep(1)%' and pid <> pg_backend_pid()")" = 1 ] && break; sleep 0.1; done
+[ "$(rm_ $C 242 $T1 $A)" = not_authorized ] || fail "race: removed C removed A"
+wait $held
+[ "$(members)" = "$A" ] || fail "race: members after A removed C"
+[ "$(inv $A 243 $I8 $T1 c@x.test)|$(acc $C 244 "$(tokof $I8)")" = ok\|ok ] || fail "re-invite C (3)"
+as $A "select app.remove_organiser('$(cmd 245)', '$T1', '$A'); select pg_sleep(1)" >/dev/null & held=$!
+for _ in $(seq 100); do [ "$(q "select count(*) from pg_stat_activity where state = 'active' and query like '%pg_sleep(1)%' and pid <> pg_backend_pid()")" = 1 ] && break; sleep 0.1; done
+[ "$(rm_ $C 246 $T1 $C)" = last_organiser ] || fail "race: both left"
+wait $held
+[ "$(members)" = "$C" ] || fail "race: members after both left"
+for f in "invite_organiser('$(cmd 247)', '$I2', '$T1', 'x@x.test')" "cancel_invite('$(cmd 248)', '$I2', '$T1')" \
+    "remove_organiser('$(cmd 249)', '$T1', '$C')" "organisers('$T1')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+[ "$(q "select has_function_privilege('authenticated', 'app.lock_membership(uuid, uuid)', 'execute')")" = f ] || fail "lock_membership granted"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

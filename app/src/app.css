@@ -505,3 +505,14 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Settings → Co-organisers (Story 1.14). Long emails and links wrap instead of scrolling the page sideways. */
+.co-organisers section,
+.co-organisers .card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.co-organisers .body {
+  overflow-wrap: anywhere;
+}

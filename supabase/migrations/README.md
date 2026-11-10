@@ -143,6 +143,23 @@ the rest after; bumps no version). Finishing the wizard is the existing `set_set
 `select count(*) from app.season_action where action = 'edit_sponsors';` (3). Then on the test preview, add a Sponsor
 with a logo and two ads on step 7, reorder and delete one, finish the wizard, and edit Sponsors from Settings on another device.
 
+## Apply 0009_co_organisers.sql (Story 1.14)
+
+Apply before the app deploy with Settings → Co-organisers (test first, then live); that page and `/invite/<token>` fail until this
+is applied. It adds `app.organiser_invite` (email in lower case, a 244-bit token, 14-day expiry, inviter, accepted / cancelled
+times, `version`) readable only by that Tournament's Organisers; the read helper `app.organisers(tournament_id)` (Organisers and
+their sign-in emails, no rows for anyone else) and the internal helper `app.lock_membership` (no client grant); and the commands
+`invite_organiser` (insert-only; `email_invalid`, `already_organiser`, `already_invited`), `cancel_invite` (`invite_used` once used),
+`accept_invite` (only for the invited email, verified; `invite_wrong_email`, `invite_used`, `invite_cancelled`, `invite_expired`,
+`invite_missing`) and `remove_organiser` (yourself included; `last_organiser`; also cancels invites the removed person sent or
+that were sent to their email). Membership changes for one Tournament run one at a time (the Tournament row is locked and the
+caller's membership checked again). It also redefines `app.authorize` (accept_invite needs only a verified account) and
+`app.log_change` (an invite `token` is logged by name only). No email is sent: the Organiser shares the link. Check with
+`select count(*) from pg_proc where proname in ('invite_organiser', 'accept_invite', 'remove_organiser', 'cancel_invite');` (4).
+Then on the test preview, with two accounts: invite the second, open the link signed out, sign up with the invited email, accept,
+and check both see the Tournament; open a second invite while signed in with another email (refused); remove the second account
+while it has an offline change waiting, and check that change comes back for review.
+
 Edit commands added later answer a stale `expected_version` with
 `{ok: false, code: 'version_conflict', conflict: {current_version, current, changed_by, changed_at}}`
 (see `app/README.md`, Conflict envelope).

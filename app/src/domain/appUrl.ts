@@ -8,3 +8,8 @@ export function appUrl(): string {
 export function callbackUrl(): string {
   return appUrl() + '/auth/callback'
 }
+
+/** The link that opens a co-organiser invite. */
+export function inviteUrl(token: string): string {
+  return `${appUrl()}/invite/${token}`
+}

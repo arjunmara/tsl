@@ -1,4 +1,5 @@
 import { noteVersion } from '../outbox'
+import { serverNow } from './clock'
 import { supabase } from './supabase'
 
 export type SeasonStatus = 'setup' | 'registration' | 'started' | 'finished'
@@ -187,5 +188,29 @@ export async function formatPresets(): Promise<FormatPreset[] | null> {
     return Array.isArray(kept) && kept.length ? kept : null
   } catch {
     return null
+  }
+}
+
+/** One Organiser of a Tournament, by sign-in email. */
+export type Organiser = { userId: string; email: string }
+/** A pending invite: its token makes the link (inviteUrl); expiresAt is a timestamp. */
+export type Invite = { id: string; email: string; token: string; expiresAt: string }
+
+/** The Tournament's Organisers (oldest first) and its pending invites; nothing for a Tournament not the caller's. */
+export async function coOrganisers(tournamentId: string): Promise<{ organisers: Organiser[]; invites: Invite[] } | { code: 'offline' | 'unknown' }> {
+  try {
+    const [o, i] = await Promise.all([
+      supabase.schema('app').rpc('organisers', { p_tournament_id: tournamentId }),
+      supabase.schema('app').from('organiser_invite').select('id, email, token, expires_at').eq('tournament_id', tournamentId)
+        .is('accepted_at', null).is('cancelled_at', null).gt('expires_at', serverNow().toISOString()).order('created_at'),
+    ])
+    if (o.error || i.error) return failed(o.error ? o.status : i.status)
+    return {
+      organisers: ((o.data ?? []) as { user_id: string; email: string }[]).map((r) => ({ userId: r.user_id, email: r.email })),
+      invites: ((i.data ?? []) as { id: string; email: string; token: string; expires_at: string }[])
+        .map((r) => ({ id: r.id, email: r.email, token: r.token, expiresAt: r.expires_at })),
+    }
+  } catch {
+    return { code: 'offline' }
   }
 }

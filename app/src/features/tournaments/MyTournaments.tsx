@@ -7,6 +7,7 @@ import { PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { StatusPill } from '../../ui/StatusPill'
 import { Problem } from '../auth/Screen'
 import { useOnline } from '../app/online'
+import { pendingInvite } from '../auth/Invite'
 import { useSession } from '../auth/session'
 import { STEPS } from '../setup/Frame'
 import { AccountMenu } from './AccountMenu'
@@ -31,6 +32,14 @@ export function MyTournaments() {
   // A finished setup step still waiting to send counts, so "Finish setup" offline hides the Resume card at once.
   const stepOf = (s: SeasonSummary) => Math.max(s.setupStep,
     ...mine.filter((e) => e.name === 'set_setup_step' && e.state === 'pending' && e.args.season_id === s.id).map((e) => Number(e.args.step) || 0))
+
+  // An invite opened before signing in, signing up or verifying: back to it first.
+  // Only once verified: an unverified account is sent to "Check your email" by the invite and would loop here.
+  const verified = !!session?.verified
+  useEffect(() => {
+    const token = verified && pendingInvite()
+    if (token) navigate(`/invite/${token}`, { replace: true })
+  }, [navigate, verified])
 
   // Loads on open, on "Try loading again", and again when the signal comes back.
   useEffect(() => {

@@ -12,6 +12,8 @@ import { MyTournaments } from './features/tournaments/MyTournaments'
 import { NewTournament, SettingsSection, SetupStep } from './features/setup/Setup'
 import { Home } from './features/home/Home'
 import { Settings } from './features/home/Settings'
+import { CoOrganisers } from './features/home/CoOrganisers'
+import { Invite } from './features/auth/Invite'
 import { SaveStatusBar } from './features/save-status/SaveStatusBar'
 import { PrimaryButton } from './ui/Button'
 
@@ -65,6 +67,7 @@ export function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/invite/:token" element={<Invite />} />
           <Route element={<RequireSession />}>
             <Route path="/" element={<MyTournaments />} />
             <Route element={<RequireVerified />}>
@@ -72,6 +75,7 @@ export function App() {
               <Route path="/t/:tournamentId/setup/:step" element={<SetupStep />} />
               <Route path="/t/:tournamentId" element={<Home />} />
               <Route path="/t/:tournamentId/settings" element={<Settings />} />
+              <Route path="/t/:tournamentId/settings/co-organisers" element={<CoOrganisers />} />
               <Route path="/t/:tournamentId/settings/:section" element={<SettingsSection />} />
             </Route>
           </Route>

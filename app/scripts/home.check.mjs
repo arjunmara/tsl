@@ -191,7 +191,7 @@ try {
     await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
     const list = await page.locator('.home-list .ui-button').allTextContents()
     assert.deepEqual(list, ['Change name and logo', 'Change description and rules', 'Change dates', 'Change Format', 'Change Line-up rules',
-      'Change Structure', 'Change Sponsors'])
+      'Change Structure', 'Change Sponsors', 'Manage co-organisers'])
     await button(page, 'Change Structure').click()
     await page.getByRole('heading', { name: 'Settings · Structure' }).waitFor()
     assert.equal(await button(page, 'Next').count(), 0, 'Next shown in Settings')

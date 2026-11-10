@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { signOut } from '../../domain/auth'
 import { SecondaryButton } from '../../ui/Button'
+import { dropInvite } from '../auth/Invite'
 import { applyTheme, currentTheme, type Theme } from './theme'
 
 const themes: [Theme, string][] = [['device', 'Same as this phone'], ['light', 'Light'], ['dark', 'Dark']]
@@ -27,6 +28,7 @@ export function AccountMenu({ email }: { email: string }) {
         </fieldset>
         <SecondaryButton label="Sign out" onClick={async () => {
           await signOut()
+          dropInvite()
           navigate('/sign-in', { replace: true })
         }} />
       </div>
