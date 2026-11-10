@@ -1,0 +1,40 @@
+# Founder decision 2026-11-10: cut token use. One review layer (Edge Case Hunter,
+# which found the real bugs), run on a cheaper model. Empty instruction disables a layer.
+
+[[workflow.review_layers]]
+id = "blind-hunter"
+name = "Blind Hunter"
+instruction = ""
+
+[[workflow.review_layers]]
+id = "verification-gap"
+name = "Verification Gap Reviewer"
+instruction = ""
+
+[[workflow.review_layers]]
+id = "edge-case-hunter"
+name = "Edge Case Hunter"
+instruction = """
+Launch a context-free subagent on the Sonnet model (model: sonnet — this overrides the "same model capability" rule in the review step) with this prompt:
+
+Read `{skill-root}/review-prompts/edge-case-hunter.md` completely and follow it as your review instructions.
+
+claims_file (leave unread until your instructions call for it): {claims_file}
+
+Review content: the unified diff at `{diff_file}`. Read that file — it is the content under review.
+
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Keep tool output short: print only summary lines of any test runs. If the instruction file is unreadable, report that exact failure and stop. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.
+
+"""
+
+[[workflow.oneshot_review_layers]]
+id = "blind-hunter"
+name = "Blind Hunter"
+instruction = """
+Launch a context-free subagent on the Sonnet model (model: sonnet) with this prompt:
+
+Review the changed files in the current worktree for edge cases and bugs: unhandled branches, boundary values, missing guards. Inspect them directly. Output a Markdown list of findings only.
+
+Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message.
+
+"""
