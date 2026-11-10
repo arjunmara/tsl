@@ -64,6 +64,9 @@ async function fresh({ stored, refreshDelay = 0, init, offlineVerifies = 0, rpc,
     const bad = (code, msg, status = 400) => json(status, { code: status, error_code: code, msg })
     switch (path) {
       case '/signup': return json(200, body.email === 'taken@example.com' ? { ...user(body.email, true), identities: [] } : user(body.email, false))
+      case '/otp':
+        if (!body.gotrue_meta_security?.captcha_token) return bad('captcha_failed', 'captcha protection: request disallowed')
+        return body.email === 'nobody@example.com' ? bad('otp_disabled', 'Signups not allowed for otp', 422) : json(200, {})
       case '/resend':
       case '/recover': return body.gotrue_meta_security?.captcha_token ? json(200, {}) : bad('captcha_failed', 'captcha protection: request disallowed')
       case '/verify':
@@ -229,6 +232,44 @@ try {
     await button(page, 'Sign in').click()
     await waitPath(page, '/check-email')
     assert.match(await page.locator('main').textContent(), /unverified@example\.com/, 'email not kept')
+    await context.close()
+  }
+
+  // --- Sign in by emailed code (Story 1.14b): from Sign in; no account is made; unknown email and wrong code in words.
+  {
+    const { context, page } = await fresh()
+    await page.goto(base + '/sign-in')
+    await page.getByRole('link', { name: 'Email me a sign-in code', exact: true }).click()
+    await waitPath(page, '/sign-in/code')
+    const send = button(page, 'Email me a sign-in code')
+    assert.ok(await send.isDisabled(), 'send enabled before the robot check')
+    await pass(page)
+    await send.click()
+    await page.getByText('Email is required.').waitFor()
+    assert.equal(called('/otp').length, 0)
+    await page.getByLabel('Email').fill('nobody@example.com')
+    await send.click()
+    await page.locator('main').getByRole('alert').waitFor()
+    assert.equal(await alertText(page), 'No account uses this email. Check it, or create an account.')
+    await page.getByLabel('Email').fill('stored@example.com')
+    await pass(page)
+    await send.click()
+    const code = page.getByLabel('Code')
+    await code.waitFor()
+    assert.deepEqual([await code.getAttribute('autocomplete'), await code.getAttribute('inputmode')], ['one-time-code', 'numeric'])
+    const otp = called('/otp').at(-1).body
+    assert.deepEqual([otp.email, otp.create_user, otp.gotrue_meta_security?.captcha_token], ['stored@example.com', false, 'tok'])
+    assert.equal(await page.locator('input[type="password"]').count(), 0, 'password asked for')
+    await code.fill('999999')
+    await button(page, 'Sign in with this code').click()
+    await page.locator('main').getByRole('alert').waitFor()
+    assert.equal(await alertText(page), "That code didn't work or has expired.")
+    await code.fill('123456')
+    await button(page, 'Sign in with this code').click()
+    await waitPath(page, '/')
+    await page.getByText('No tournaments yet.').waitFor()
+    const v = called('/verify').at(-1).body
+    assert.deepEqual([v.type, v.email, v.token], ['email', 'stored@example.com', '123456'])
     await context.close()
   }
 

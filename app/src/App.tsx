@@ -6,7 +6,7 @@ import { CheckEmail } from './features/auth/CheckEmail'
 import { ForgotPassword } from './features/auth/ForgotPassword'
 import { ResetPassword } from './features/auth/ResetPassword'
 import { RequireSession, RequireVerified, SessionProvider } from './features/auth/session'
-import { SignIn } from './features/auth/SignIn'
+import { SignIn, SignInCode } from './features/auth/SignIn'
 import { SignUp } from './features/auth/SignUp'
 import { MyTournaments } from './features/tournaments/MyTournaments'
 import { NewTournament, SettingsSection, SetupStep } from './features/setup/Setup'
@@ -63,6 +63,7 @@ export function App() {
         <Routes>
           <Route path="/sign-up" element={<SignUp />} />
           <Route path="/sign-in" element={<SignIn />} />
+          <Route path="/sign-in/code" element={<SignInCode />} />
           <Route path="/check-email" element={<CheckEmail />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />

@@ -5,6 +5,7 @@ import { databaseRef } from '../../domain/env'
 import { messages } from '../../domain/messages'
 import { PrimaryButton } from '../../ui/Button'
 import { Field } from '../../ui/Field'
+import { EmailCode } from './EmailCode'
 import { blocked, checkEmail, noop, useForm } from './form'
 import { Problem, Screen } from './Screen'
 import { Turnstile } from './Turnstile'
@@ -43,9 +44,23 @@ export function SignIn() {
         <Problem text={error} />
         <PrimaryButton label="Sign in" onClick={() => void submit()} {...blocked(busy ? 'Signing in…' : token === null && messages.captcha_wait)} />
       </form>
+      <p className="body"><Link to="/sign-in/code">Email me a sign-in code</Link></p>
       <p className="body"><Link to="/forgot-password">Forgot your password?</Link></p>
       <p className="body">New here? <Link to="/sign-up">Create an account</Link></p>
       <p className="meta">{db ? `Database: ${db}` : 'No database configured'}</p>
+    </Screen>
+  )
+}
+
+/** /sign-in/code: sign in to an existing account with an emailed code instead of the password. */
+export function SignInCode() {
+  const navigate = useNavigate()
+  return (
+    <Screen title="Sign in with a code">
+      <p className="body">We'll email you a code and a link. Either one signs you in.</p>
+      <EmailCode create={false} sendLabel="Email me a sign-in code" verifyLabel="Sign in with this code" verifyingLabel="Signing in…"
+        onSignedIn={() => navigate('/', { replace: true })} />
+      <p className="body"><Link to="/sign-in">Sign in with a password</Link></p>
     </Screen>
   )
 }

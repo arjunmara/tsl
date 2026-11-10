@@ -13,16 +13,15 @@ const T = '22222222-0000-4000-8000-000000000001'
 const TOK = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcde'
 const outDir = 'node_modules/.organisers-dist'
 Object.assign(process.env, { VITE_SUPABASE_URL: SUPA, VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_fake' })
-delete process.env.VITE_TURNSTILE_SITE_KEY
+process.env.VITE_TURNSTILE_SITE_KEY = '1x00000000000000000000AA' // Cloudflare's always-passes test key; Turnstile is mocked
 delete process.env.VITE_APP_URL
 await build({ logLevel: 'silent', build: { outDir, emptyOutDir: true } })
 const server = await preview({ logLevel: 'silent', build: { outDir }, preview: { port: 4186 } })
 const base = server.resolvedUrls.local[0].replace(/\/$/, '')
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
-function session(verified = true) {
+function session(verified = true, email = 'org@example.com') {
   const exp = Math.floor(Date.now() / 1000) + 3600
-  const email = 'org@example.com'
   const jwt = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: ME, email, exp, role: 'authenticated', aud: 'authenticated' })}.sig`
   const user = { id: ME, aud: 'authenticated', role: 'authenticated', email, email_confirmed_at: verified ? '2026-11-08T00:00:00Z' : null,
     app_metadata: {}, user_metadata: {}, identities: [{ id: 'i1' }], created_at: '2026-11-08T00:00:00Z' }
@@ -47,14 +46,32 @@ async function fresh({ signedIn = true, verified = true, share = 'none' } = {}) 
       { user_id: SITA, email: 'sita@example.com', created_at: '2026-11-02T00:00:00Z' }],
     invites: [{ id: '33333333-0000-4000-8000-000000000001', email: 'ram@example.com', token: TOK.replace('A', 'Z'), expires_at: inFuture }],
     answers: {}, calls: [], down: false, inviteQuery: null,
+    // Story 1.14b: the signed-out invite. preview: app.invite_preview's rows; auth: every /auth/v1 call; otpFail: next /otp error code.
+    preview: [{ status: 'pending', email: 'new@example.com', tournament_name: 'Gulmi Cup' }], previewCalls: [], auth: [], otpFail: null,
   }
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } })
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base })
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort())
   const json = (route, data) => route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(data) })
-  await context.route(`${SUPA}/auth/v1/**`, (route) => {
+  // Turnstile: renders nothing; window.__pass() completes the check with token "tok".
+  await context.route('https://challenges.cloudflare.com/**', (r) => r.fulfill({
+    contentType: 'text/javascript',
+    body: `window.turnstile = { render(el, o) { window.__pass = () => o.callback('tok'); return 'w' }, remove() { window.__pass = undefined } }`,
+  }))
+  await context.route(`${SUPA}/auth/v1/**`, async (route) => {
     const req = route.request()
     if (req.method() === 'OPTIONS' || req.url().includes('/logout')) return route.fulfill({ status: 204, headers: cors })
+    const path = new URL(req.url()).pathname.replace('/auth/v1', '')
+    const body = req.postData() ? JSON.parse(req.postData()) : {}
+    mock.auth.push({ path, body })
+    const bad = (code, status = 400) => route.fulfill({ status, headers: cors, contentType: 'application/json', body: JSON.stringify({ code: status, error_code: code, msg: code }) })
+    if (path === '/otp') {
+      await new Promise((r) => setTimeout(r, 300))
+      if (!body.gotrue_meta_security?.captcha_token) return bad('captcha_failed')
+      if (mock.otpFail) return bad(mock.otpFail, 429)
+      return json(route, {})
+    }
+    if (path === '/verify') return body.token === '123456' ? json(route, session(true, body.email)) : bad('otp_expired', 403)
     return json(route, session(verified))
   })
   await context.route(`${SUPA}/rest/v1/**`, (route) => {
@@ -66,6 +83,11 @@ async function fresh({ signedIn = true, verified = true, share = 'none' } = {}) 
     if (path === '/rest/v1/organiser_invite') return (mock.inviteQuery = new URL(req.url()).searchParams, json(route, mock.invites))
     if (path === '/rest/v1/sponsor') return json(route, [])
     if (path === '/rest/v1/rpc/organisers') return json(route, mock.organisers)
+    if (path === '/rest/v1/rpc/invite_preview') {
+      mock.previewCalls.push(JSON.parse(req.postData()))
+      if (mock.preview === 500) return route.fulfill({ status: 500, headers: cors, contentType: 'application/json', body: '{"code":"XX000","message":"boom"}' })
+      return json(route, mock.preview)
+    }
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     const a = JSON.parse(req.postData())
     const cmd = path.replace('/rest/v1/rpc/', '')
@@ -94,6 +116,12 @@ const until = async (page, fn, what, ms = 8000) => {
 }
 const noScroll = async (page) => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390, 'horizontal scroll')
 const kept = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('tsl-invite') ?? 'null')?.token ?? null)
+const auth = (mock, p) => mock.auth.filter((c) => c.path === p)
+/** Completes the (mocked) Turnstile check of the widget currently mounted. */
+async function pass(page) {
+  await page.waitForFunction(() => typeof window.__pass === 'function')
+  await page.evaluate(() => window.__pass())
+}
 const refused = (code) => ({ ok: false, code, message: 'No.' })
 const outbox = (page) => page.evaluate(() => new Promise((res) => {
   const r = indexedDB.open('tsl-outbox')
@@ -227,13 +255,106 @@ try {
     await context.close()
   }
 
-  // --- Signed out: the invite asks to sign in or sign up, and signing in later comes back to it.
+  // --- Signed out, by emailed code (Story 1.14b): the invited email and Tournament from the preview; "Email me a code"
+  // sends the captcha token for exactly that email and may make the account; a wrong code says so; "Send a new code"
+  // waits for the check, ignores a double tap and says when the sender's limit is hit; the right code signs in and accepts.
   {
     const { context, mock, page } = await fresh({ signedIn: false })
     await page.goto(base + `/invite/${TOK}`)
     await page.getByRole('heading', { name: 'Help run a tournament' }).waitFor()
-    await button(page, 'Create an account to accept the invite').waitFor()
-    await button(page, 'Sign in to accept the invite').click()
+    await page.locator('main strong', { hasText: 'Gulmi Cup' }).waitFor()
+    await page.locator('main strong', { hasText: 'new@example.com' }).waitFor()
+    assert.deepEqual(mock.previewCalls, [{ p_token: TOK }])
+    await until(page, async () => (await kept(page)) === TOK, 'invite not kept')
+    const send = button(page, 'Email me a code')
+    assert.ok(await send.isDisabled(), 'send enabled before the robot check')
+    await pass(page)
+    await send.click()
+    const code = page.getByLabel('Code')
+    await code.waitFor()
+    assert.deepEqual([await code.getAttribute('autocomplete'), await code.getAttribute('inputmode')], ['one-time-code', 'numeric'])
+    const [otp] = auth(mock, '/otp')
+    assert.deepEqual([otp.body.email, otp.body.create_user, otp.body.gotrue_meta_security?.captcha_token], ['new@example.com', true, 'tok'])
+    assert.equal(await page.locator('input[type="password"]').count(), 0, 'password asked for')
+    await code.fill('999999')
+    await button(page, 'Accept this invite').click()
+    await page.locator('main').getByRole('alert').getByText("That code didn't work or has expired.", { exact: true }).waitFor()
+    assert.equal(calls(mock, 'accept_invite').length, 0, 'accepted with a wrong code')
+    // Send a new code: the used captcha token isn't reused; then a double tap sends once.
+    await button(page, 'Send a new code').click()
+    await text(page, "Checking you're not a robot…").waitFor()
+    assert.equal(auth(mock, '/otp').length, 1, 'resent without a new captcha token')
+    await pass(page)
+    await button(page, 'Send a new code').dblclick()
+    await text(page, 'We sent a new code to new@example.com.').waitFor()
+    assert.equal(auth(mock, '/otp').length, 2, 'double tap sent twice')
+    assert.equal(auth(mock, '/otp')[1].body.gotrue_meta_security?.captcha_token, 'tok')
+    mock.otpFail = 'over_email_send_rate_limit'
+    await pass(page)
+    await button(page, 'Send a new code').click()
+    await page.locator('main').getByRole('alert').getByText('Too many emails sent. Wait a few minutes, then try again.', { exact: true }).waitFor()
+    await code.fill('123456')
+    await button(page, 'Accept this invite').click()
+    await page.waitForURL((u) => u.pathname === `/t/${T}`)
+    const verify = auth(mock, '/verify').at(-1).body
+    assert.deepEqual([verify.type, verify.email, verify.token], ['email', 'new@example.com', '123456'])
+    assert.deepEqual(calls(mock, 'accept_invite').map((c) => c.token), [TOK])
+    await context.close()
+  }
+
+  // --- Signed in by code, but the invite expired meanwhile: the refusal shows, signed in, on the invite.
+  {
+    const { context, mock, page } = await fresh({ signedIn: false })
+    mock.answers.accept_invite = [refused('invite_expired')]
+    await page.goto(base + `/invite/${TOK}`)
+    await pass(page)
+    await button(page, 'Email me a code').click()
+    await page.getByLabel('Code').fill('123456')
+    await button(page, 'Accept this invite').click()
+    await page.getByRole('alert').getByText('This invite has expired. Ask for a new invite.', { exact: true }).waitFor()
+    await text(page, 'new@example.com').waitFor()
+    await button(page, 'Open My tournaments').waitFor()
+    assert.equal(new URL(page.url()).pathname, `/invite/${TOK}`)
+    await context.close()
+  }
+
+  // --- Signed out, dead or unknown token: says so in words before sign-in, and shows nobody's email. Preview offline:
+  // words and "Load the invite again".
+  {
+    const { context, mock, page } = await fresh({ signedIn: false })
+    for (const [rows, words] of [[[{ status: 'used', email: null, tournament_name: null }], 'This invite has already been used. Ask for a new invite if you need one.'],
+      [[{ status: 'cancelled', email: null, tournament_name: null }], 'This invite was cancelled. Ask for a new invite if you need one.'],
+      [[{ status: 'expired', email: null, tournament_name: null }], 'This invite has expired. Ask for a new invite.'],
+      [[], "This invite link doesn't work. Ask for a new invite."]]) {
+      mock.preview = rows
+      await page.goto(base + `/invite/${TOK}`)
+      await page.getByRole('alert').getByText(words, { exact: true }).waitFor()
+      assert.equal(await button(page, 'Email me a code').count(), 0)
+      await button(page, 'Open the sign-in page').waitFor()
+      await until(page, async () => (await kept(page)) === null, 'dead invite kept')
+    }
+    // A server error (e.g. 0010 not applied yet) isn't a dead link: words, a retry and the password way in.
+    mock.preview = 500
+    await page.goto(base + `/invite/${TOK}`)
+    await page.getByRole('alert').getByText('Something went wrong. Try again.', { exact: true }).waitFor()
+    await button(page, 'Load the invite again').waitFor()
+    await button(page, 'Sign in with a password').waitFor()
+    mock.preview = [{ status: 'pending', email: 'new@example.com', tournament_name: 'Gulmi Cup' }]
+    mock.down = true
+    await page.goto(base + `/invite/${TOK}`)
+    await page.getByRole('alert').getByText(/^Can't reach the server\./).waitFor()
+    mock.down = false
+    await button(page, 'Load the invite again').click()
+    await button(page, 'Email me a code').waitFor()
+    await context.close()
+  }
+
+  // --- Signed out: "Sign in with a password" still works, and signing in later comes back to the invite.
+  {
+    const { context, mock, page } = await fresh({ signedIn: false })
+    await page.goto(base + `/invite/${TOK}`)
+    await page.getByRole('heading', { name: 'Help run a tournament' }).waitFor()
+    await button(page, 'Sign in with a password').click()
     await page.waitForURL((u) => u.pathname === '/sign-in')
     assert.equal(await kept(page), TOK)
     await page.evaluate((v) => localStorage.setItem('sb-fake-auth-token', v), JSON.stringify(session()))
@@ -291,15 +412,18 @@ try {
       await button(page, 'Accept this invite').click()
       await page.getByRole('alert').getByText(words, { exact: true }).waitFor()
       assert.equal(new URL(page.url()).pathname, `/invite/${TOK}`)
-      assert.equal(await button(page, 'Sign out to use another account').count(), code === 'invite_wrong_email' ? 1 : 0)
+      assert.equal(await button(page, 'Sign out and use the invited email').count(), code === 'invite_wrong_email' ? 1 : 0)
       await button(page, 'Open My tournaments').waitFor()
     }
     await until(page, async () => (await outbox(page)).length === 0, 'refused accept left in the outbox')
     mock.answers.accept_invite = [refused('invite_wrong_email')]
     await page.goto(base + `/invite/${TOK}`)
     await button(page, 'Accept this invite').click()
-    await button(page, 'Sign out to use another account').click()
-    await page.waitForURL((u) => u.pathname === '/sign-in')
+    // Signs out and stays on the invite, which now offers a code to the invited email.
+    await button(page, 'Sign out and use the invited email').click()
+    await button(page, 'Email me a code').waitFor()
+    await page.locator('main strong', { hasText: 'new@example.com' }).waitFor()
+    assert.equal(new URL(page.url()).pathname, `/invite/${TOK}`)
     await until(page, async () => (await kept(page)) === TOK, 'invite not kept after switching account')
     // A malformed token never reaches the server.
     await page.goto(base + '/invite/short')

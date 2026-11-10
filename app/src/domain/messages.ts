@@ -14,6 +14,7 @@ export const messages = {
   same_password: 'Choose a password different from your old one.',
   user_already_exists: 'An account with this email already exists.',
   not_verified_yet: 'Your email is not verified yet. Enter the code or tap the link in the email.',
+  otp_disabled: 'No account uses this email. Check it, or create an account.',
   email_address_invalid: "That email address doesn't look right.",
   over_email_send_rate_limit: 'Too many emails sent. Wait a few minutes, then try again.',
   over_request_rate_limit: 'Too many tries. Wait a few minutes, then try again.',

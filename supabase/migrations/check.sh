@@ -79,7 +79,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -664,6 +664,16 @@ q "insert into app.organiser_invite (id, tournament_id, email, token, invited_by
 [ "$(q "select string_agg(id::text || ':' || (cancelled_at is not null), ',' order by id) from app.organiser_invite
         where id in ('$I6', '41111111-0000-4000-8000-000000000009')")" = "$I6:false,41111111-0000-4000-8000-000000000009:true" ] \
   || fail "remove: invite to the removed email not cancelled, or another invite cancelled"
+# Invite preview (Story 1.14b): anyone with the link sees the email and Tournament name while pending; a dead or
+# unknown token gives only its status, or no row. It writes nothing.
+pv() { as "$1" "select concat_ws('|', status, email, tournament_name) from app.invite_preview('$2')"; }
+name1=$(q "select name from app.tournament where id='$T1'")
+logs=$(q "select count(*) from app.activity_log")
+[ "$(pv anon "$(tokof $I6)")|$(pv $B "$(tokof $I6)")" = "pending|d@x.test|$name1|pending|d@x.test|$name1" ] || fail "preview: pending"
+[ "$(pv anon "$tok")/$(pv anon "$(tokof $I2)")/$(pv anon "$(tokof $I3)")/$(pv anon nope)/$(pv anon '')" = 'used/cancelled/expired//' ] \
+  || fail "preview: dead or unknown tokens"
+[ "$(q "select count(*) from app.activity_log")" = "$logs" ] || fail "preview: wrote"
+! as anon "select count(*) from app.organiser_invite" >/dev/null 2>&1 || fail "preview: anon reads organiser_invite"
 # Concurrent removals: A removes C while C removes A; then both remove themselves. One Organiser is always left.
 I7=41111111-0000-4000-8000-000000000007 I8=41111111-0000-4000-8000-000000000008
 [ "$(inv $A 239 $I7 $T1 c@x.test)|$(acc $C 240 "$(tokof $I7)")" = ok\|ok ] || fail "re-invite C (2)"

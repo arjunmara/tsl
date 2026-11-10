@@ -160,6 +160,15 @@ Then on the test preview, with two accounts: invite the second, open the link si
 and check both see the Tournament; open a second invite while signed in with another email (refused); remove the second account
 while it has an offline change waiting, and check that change comes back for review.
 
+## Apply 0010_invite_code.sql (Story 1.14b)
+
+Apply before the app deploy where the invite page offers "Email me a code" (test first, then live); a signed-out visit to
+`/invite/<token>` fails to load until this is applied. It adds the read helper `app.invite_preview(token)`, callable signed out:
+one row for a known token with `status` (`pending`, `used`, `cancelled`, `expired`) and, only while pending, the invited email and
+the Tournament's name; no row for an unknown token. It writes nothing. **Set the Magic Link email template (see `app/README.md`,
+Auth) in the same project first**: without it, existing accounts get an email with no code to type. Check with `select count(*) from app.invite_preview('nope');` (0). Then on the test preview, open an invite link signed out
+with an email that has no account, tap "Email me a code", enter the code and land on the Tournament home.
+
 Edit commands added later answer a stale `expected_version` with
 `{ok: false, code: 'version_conflict', conflict: {current_version, current, changed_by, changed_at}}`
 (see `app/README.md`, Conflict envelope).

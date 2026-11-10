@@ -60,6 +60,17 @@ export const resendSignupCode = (email: string, captchaToken?: string) =>
 export const signIn = (email: string, password: string, captchaToken?: string) =>
   run(() => supabase.auth.signInWithPassword({ email, password, options: { captchaToken: captchaToken || undefined } }))
 
+/**
+ * Emails a sign-in code (and link) to email. create: make the account if the email has none (an invite); Supabase then
+ * sends its Confirm signup email, else its Magic Link email. Guarded by CAPTCHA like sign-in.
+ */
+export const emailSignInCode = (email: string, create: boolean, captchaToken?: string) =>
+  run(() => supabase.auth.signInWithOtp({ email, options: { ...redirect(), shouldCreateUser: create, captchaToken: captchaToken || undefined } }))
+
+/** Signs in with the emailed code; this also marks the email verified. */
+export const verifySignInCode = (email: string, code: string) =>
+  run(() => supabase.auth.verifyOtp({ email, token: code, type: 'email' }))
+
 export const requestPasswordReset = (email: string, captchaToken?: string) =>
   run(() => supabase.auth.resetPasswordForEmail(email, { redirectTo: callbackUrl(), captchaToken: captchaToken || undefined }))
 

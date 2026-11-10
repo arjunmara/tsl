@@ -3,7 +3,9 @@ import { Navigate, useNavigate, useParams } from 'react-router'
 import { signOut } from '../../domain/auth'
 import { forgetRefused, send } from '../../domain/commands'
 import { messageFor, messages } from '../../domain/messages'
+import { invitePreview } from '../../domain/tournaments'
 import { PrimaryButton, SecondaryButton } from '../../ui/Button'
+import { EmailCode } from './EmailCode'
 import { blocked } from './form'
 import { Problem, Screen } from './Screen'
 import { useSession } from './session'
@@ -41,7 +43,10 @@ export function dropInvite() {
 // app.invite_organiser makes 43-character base64url tokens.
 const TOKEN = /^[A-Za-z0-9_-]{40,64}$/
 
-/** /invite/:token: a co-organiser invite. Signed out: sign in or sign up first. Verified: "Accept this invite". */
+/**
+ * /invite/:token: a co-organiser invite. Signed out: which Tournament and email it's for, then a code emailed there signs
+ * the person in (account made if needed) and accepts. Verified: "Accept this invite".
+ */
 export function Invite() {
   const { token = '' } = useParams()
   const session = useSession()
@@ -52,6 +57,22 @@ export function Invite() {
   const [wrongEmail, setWrongEmail] = useState(false)
   const [queued, setQueued] = useState(false)
   const verified = !!session?.verified
+  const signedOut = session === null
+  const [preview, setPreview] = useState<Awaited<ReturnType<typeof invitePreview>> | null>(null)
+  const [loads, setLoads] = useState(0)
+  useEffect(() => {
+    if (!valid || !signedOut) return
+    let live = true
+    void invitePreview(token).then((p) => {
+      if (!live) return
+      setPreview(p)
+      // A dead link isn't worth coming back to after signing in.
+      if (!('code' in p) && p.status !== 'pending') dropInvite()
+    })
+    return () => {
+      live = false
+    }
+  }, [valid, signedOut, token, loads])
   // Kept from the moment the session is known until a verified account sees the invite.
   useEffect(() => {
     if (!valid || session === undefined) return
@@ -70,14 +91,34 @@ export function Invite() {
   }
   if (session && !session.verified) return <Navigate to="/check-email" replace state={{ email: session.email }} />
   if (!session) {
+    if (!preview) return <main className="screen" aria-busy="true"><p className="ui-visually-hidden">Loading</p></main>
+    if ('code' in preview) {
+      return (
+        <Screen title="Help run a tournament">
+          <Problem text={messageFor(preview.code)} />
+          <PrimaryButton label="Load the invite again" onClick={() => (setPreview(null), setLoads((n) => n + 1))} />
+          <SecondaryButton label="Sign in with a password" onClick={() => navigate('/sign-in')} />
+        </Screen>
+      )
+    }
+    if (preview.status !== 'pending') {
+      return (
+        <Screen title="This invite isn't working">
+          <Problem text={messageFor(`invite_${preview.status}`)} />
+          <SecondaryButton label="Open the sign-in page" onClick={() => navigate('/sign-in')} />
+        </Screen>
+      )
+    }
     return (
       <Screen title="Help run a tournament">
         <p className="body">
-          You've been invited to organise a tournament. Sign in, or create an account, with the email this invite was sent
-          to. You'll come back to this invite afterwards.
+          You've been invited to organise <strong>{preview.tournamentName}</strong>, with full rights in that tournament
+          only. The invite is for <strong>{preview.email}</strong>. We'll email a code there to sign you in; no password
+          needed.
         </p>
-        <PrimaryButton label="Sign in to accept the invite" onClick={() => navigate('/sign-in')} />
-        <SecondaryButton label="Create an account to accept the invite" onClick={() => navigate('/sign-up')} />
+        <EmailCode email={preview.email} create sendLabel="Email me a code" verifyLabel="Accept this invite"
+          verifyingLabel="Accepting the invite…" onSignedIn={() => void accept()} />
+        <SecondaryButton label="Sign in with a password" onClick={() => navigate('/sign-in')} />
       </Screen>
     )
   }
@@ -99,10 +140,12 @@ export function Invite() {
     setWrongEmail(r.code === 'invite_wrong_email')
   }
 
+  // Back to this invite signed out, which offers a code to the invited email.
   async function switchAccount() {
     keep(token)
     await signOut()
-    navigate('/sign-in', { replace: true })
+    setProblem(null)
+    setWrongEmail(false)
   }
 
   return (
@@ -119,7 +162,7 @@ export function Invite() {
       ) : !problem && (
         <PrimaryButton label="Accept this invite" onClick={() => void accept()} {...blocked(busy && 'Accepting the invite…')} />
       )}
-      {wrongEmail && <SecondaryButton label="Sign out to use another account" onClick={() => void switchAccount()} />}
+      {wrongEmail && <SecondaryButton label="Sign out and use the invited email" onClick={() => void switchAccount()} />}
       {(problem || queued) && <SecondaryButton label="Open My tournaments" onClick={() => navigate('/', { replace: true })} />}
     </Screen>
   )

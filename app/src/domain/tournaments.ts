@@ -191,6 +191,23 @@ export async function formatPresets(): Promise<FormatPreset[] | null> {
   }
 }
 
+/** What an invite link is for: while pending, the invited email and the Tournament's name; else why it's dead. */
+export type InvitePreview = { status: 'pending'; email: string; tournamentName: string } | { status: 'used' | 'cancelled' | 'expired' | 'missing' }
+
+/** Readable signed out: the token is the secret. */
+export async function invitePreview(token: string): Promise<InvitePreview | { code: 'offline' | 'unknown' }> {
+  try {
+    const { data, error, status } = await supabase.schema('app').rpc('invite_preview', { p_token: token })
+    if (error) return failed(status)
+    const row = (data as { status: string; email: string | null; tournament_name: string | null }[] | null)?.[0]
+    if (!row) return { status: 'missing' }
+    if (row.status === 'pending') return { status: 'pending', email: row.email ?? '', tournamentName: row.tournament_name ?? '' }
+    return { status: row.status as 'used' | 'cancelled' | 'expired' }
+  } catch {
+    return { code: 'offline' }
+  }
+}
+
 /** One Organiser of a Tournament, by sign-in email. */
 export type Organiser = { userId: string; email: string }
 /** A pending invite: its token makes the link (inviteUrl); expiresAt is a timestamp. */

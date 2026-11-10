@@ -67,6 +67,14 @@ Founder setup, in each Supabase project (test, then live):
 4. Authentication > Email Templates:
    - Confirm signup: show the code `{{ .Token }}` and the link `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup`.
    - Reset password: show `{{ .Token }}` and `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery`.
+   - Magic Link (Story 1.14b; **tsl-test only for now**): the invite page and Sign in → "Email me a sign-in code" send it to existing, verified accounts, and the app asks for the code. Subject `Your Tamghas Super League sign-in code`, body:
+     ```html
+     <h2>Your sign-in code</h2>
+     <p>Enter this code in the app: <strong>{{ .Token }}</strong></p>
+     <p>Or tap this link on the phone you're signing in on: <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email">Sign in</a></p>
+     <p>If you didn't ask for this, ignore this email.</p>
+     ```
+     New or unconfirmed emails get the Confirm signup email instead (it already shows the code), so an invitee with no account needs nothing else.
 5. Authentication > URL Configuration: Site URL = the live app URL (test project: the preview URL you use). Redirect URLs: the live URL, `https://*.tsl-eby.pages.dev/**`, `http://localhost:5173/**`.
 6. Cloudflare Pages > Settings > Variables and Secrets: `VITE_TURNSTILE_SITE_KEY` in both Production and Preview (a Cloudflare build fails without it). Optional `VITE_APP_URL` fixes the base for email links.
 
@@ -128,7 +136,7 @@ Steps 5 and 6 (Story 1.11, `src/features/setup/LineupStructure.tsx`) edit the Se
 
 Settings → "Manage co-organisers" (`/t/:id/settings/co-organisers`, `src/features/home/CoOrganisers.tsx`) lists the Organisers (`organisers` read helper, with their emails), the invites waiting (`app.organiser_invite`, readable only by that Tournament's Organisers) and an invite form. "Send invite" sends `invite_organiser`; its answer carries the token, and the page shows `inviteUrl(token)` (`<appUrl()>/invite/<token>`) as selectable text with "Share invite link" (Web Share API, else copied to the clipboard). There is no invite email yet: the Organiser sends the link themselves. Each waiting invite has "Share invite link" and "Cancel invite" (Confirm sheet); each Organiser "Remove organiser", and you "Leave this tournament" (Confirm sheets; the last Organiser gets `last_organiser`). Refusals show beside the form or the lists and are dropped from the queue (`forgetRefused`).
 
-`/invite/:token` (`src/features/auth/Invite.tsx`) is outside the signed-in routes. Signed out, it offers sign in or sign up; unverified, it goes to "Check your email". Either way the token is kept in `localStorage` `tsl-invite`, and My tournaments (where sign-in, sign-up and verify all land) sends the person back to it; a verified visit drops it. "Accept this invite" sends `accept_invite` (scope `invite:<token>`) and opens the Tournament home. Any refusal (different email, used, cancelled, expired, unknown) is shown in words; a different email also offers "Sign out to use another account". A removed Organiser's queued changes come back `not_authorized` and wait in the hand-back sheet. `npm run check:organisers` (needs Google Chrome) runs every case against a mocked server.
+`/invite/:token` (`src/features/auth/Invite.tsx`) is outside the signed-in routes. Signed out, it reads `invite_preview` (migration 0010; the invited email and Tournament name while pending, else only why the link is dead) and offers "Email me a code": a code sent to exactly the invited email (`emailSignInCode`, Supabase email OTP with `shouldCreateUser: true` and the Turnstile token), then the code field and "Accept this invite", which signs in (`verifySignInCode`, which also verifies the email) and accepts in one step; no password. "Sign in with a password" stays as the other way in. Unverified, it goes to "Check your email". Either way the token is kept in `localStorage` `tsl-invite`, and My tournaments (where sign-in, sign-up and verify all land) sends the person back to it; a verified visit drops it. "Accept this invite" sends `accept_invite` (scope `invite`) and opens the Tournament home. Any refusal (different email, used, cancelled, expired, unknown) is shown in words; a different email also offers "Sign out and use the invited email", which signs out and stays on the invite. A removed Organiser's queued changes come back `not_authorized` and wait in the hand-back sheet. `npm run check:organisers` (needs Google Chrome) runs every case against a mocked server.
 
 ## Dates and money
 
