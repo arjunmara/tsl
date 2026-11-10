@@ -5,11 +5,52 @@
 // currency code, never a float, e.g. { paisa: 150000, currency: 'NPR' } for Rs 1,500.
 export type Money = { paisa: number; currency: string }
 
-// Days in each BS month, Baisakh to Chaitra, from 2080 BS. The rows agree in nepali-date-converter 3.4.2,
+// Days in each BS month, Baisakh to Chaitra, from 2040 BS (dates of birth need the older years). The rows agree in nepali-date-converter 3.4.2,
 // @sbmdkl/nepali-date-converter 2.0.5 and bikram-sambat 1.8.1 (checked 2026-11-10). Add a row per year as the
-// calendar committee publishes it; dates past the last row show in AD only.
-const FIRST_YEAR = 2080
+// calendar committee publishes it; dates past the last row show in AD only. 2040–2079 agree in the same three
+// packages (checked 2026-11-10).
+const FIRST_YEAR = 2040
 const LENGTHS = [
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2040
+  [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30], // 2041
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31], // 2042
+  [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30], // 2043
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2044
+  [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30], // 2045
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31], // 2046
+  [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30], // 2047
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2048
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30], // 2049
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31], // 2050
+  [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30], // 2051
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2052
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30], // 2053
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31], // 2054
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2055
+  [31, 31, 32, 31, 32, 30, 30, 29, 30, 29, 30, 30], // 2056
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31], // 2057
+  [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31], // 2058
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2059
+  [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30], // 2060
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31], // 2061
+  [30, 32, 31, 32, 31, 31, 29, 30, 29, 30, 29, 31], // 2062
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2063
+  [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30], // 2064
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31], // 2065
+  [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 29, 31], // 2066
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2067
+  [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30], // 2068
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31], // 2069
+  [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30], // 2070
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2071
+  [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30], // 2072
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31], // 2073
+  [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30], // 2074
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2075
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30], // 2076
+  [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31], // 2077
+  [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30], // 2078
+  [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2079
   [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30], // 2080
   [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31], // 2081
   [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], // 2082
@@ -23,8 +64,8 @@ const LENGTHS = [
   [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30], // 2090
 ]
 const DAY = 86_400_000
-/** 1 Baisakh 2080 BS. */
-const FIRST_DAY = Date.UTC(2023, 3, 14)
+/** 1 Baisakh 2040 BS. */
+const FIRST_DAY = Date.UTC(1983, 3, 14)
 const TOTAL = LENGTHS.flat().reduce((a, b) => a + b, 0)
 const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
 
@@ -32,8 +73,8 @@ export const BS_MONTHS = ['Baisakh', 'Jestha', 'Asar', 'Shrawan', 'Bhadra', 'Asw
 const AD_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-/** The AD days the table covers, as YYYY-MM-DD: limits for date inputs. */
-export const BS_RANGE = { min: iso(FIRST_DAY), max: iso(FIRST_DAY + (TOTAL - 1) * DAY) }
+/** Limits for Season date inputs, as YYYY-MM-DD: 1 Baisakh 2080 BS to the table's last day. */
+export const BS_RANGE = { min: iso(Date.UTC(2023, 3, 14)), max: iso(FIRST_DAY + (TOTAL - 1) * DAY) }
 
 /** Midnight UTC of a real YYYY-MM-DD day, else null. */
 function utc(ad: string): number | null {

@@ -155,6 +155,14 @@ try {
     await context.close()
   }
 
+  // --- A Team its manager sent for review (Story 2.3): its row shows the Submitted pill.
+  {
+    const { context, page } = await fresh({ teams: [{ ...teamRow('55555555-0000-4000-8000-0000000000f1', 'Sent FC', 'SFC'), status: 'submitted' }] })
+    await teamsTab(page)
+    await page.locator('.team-row', { hasText: 'Sent FC' }).getByText('Submitted', { exact: true }).waitFor()
+    await context.close()
+  }
+
   // --- Setup incomplete: no deadline → the tab asks to finish setup, with no form.
   {
     const { context, page } = await fresh({ season: { registration_deadline: null } })

@@ -78,7 +78,8 @@ async function pass(): Promise<'done' | 'retry'> {
       settle(e.seq, r)
     } else {
       // A version_conflict without a usable payload can't be shown side by side: a plain refusal.
-      await db.entries.update(e.seq, { state: 'failed', code: r.code === 'version_conflict' ? 'request_failed' : r.code ?? 'unknown' })
+      await db.entries.update(e.seq, { state: 'failed', code: r.code === 'version_conflict' ? 'request_failed' : r.code ?? 'unknown',
+        ...(r.code === 'lineup_violation' && r.message ? { message: r.message } : {}) })
       stopped.add(e.scope)
       settle(e.seq, r)
     }

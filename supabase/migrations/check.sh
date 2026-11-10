@@ -79,7 +79,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -172,10 +172,35 @@ done
 
 # Personal fields are logged by name only.
 q "create table app.probe_person (id uuid primary key, tournament_id uuid, email text, phone text, nick text);
-   create trigger log_change after insert on app.probe_person for each row execute function app.log_change();
+   create trigger log_change after insert on app.probe_person for each row execute function app.log_change('tournament_id', '{email,phone}');
    insert into app.probe_person values ('$S3', '$T3', 'kid@x.test', '98000', 'Ram');
    drop table app.probe_person" >/dev/null
 [ "$(q "select (after->>'email')||(after->>'phone')||(after->>'nick') from app.activity_log where row_id='$S3'")" = emailphoneRam ] || fail "personal fields logged"
+# Every tenant table (tournament, or any table with tournament_id except the log itself) declares its personal fields on
+# its log_change trigger (second argument, real columns only); a trigger without the declaration refuses to log.
+decl_sql=$(cat <<'SQL'
+select coalesce(string_agg(c.relname, ', ' order by c.relname), '') from pg_class c
+where c.relnamespace = 'app'::regnamespace and c.relkind in ('r', 'p') and c.relname <> 'activity_log'
+  and (c.relname = 'tournament' or exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = 'tournament_id' and not a.attisdropped))
+  and not exists (select 1 from pg_trigger t where t.tgrelid = c.oid and t.tgfoid = 'app.log_change'::regproc and t.tgnargs = 2
+    and not exists (select 1 from unnest((string_to_array(encode(t.tgargs, 'escape'), '\000'))[2]::text[]) f
+      where not exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = f and not a.attisdropped)))
+SQL
+)
+undeclared=$(psql <<<"$decl_sql")
+[ -z "$undeclared" ] || fail "tenant tables without a personal-field declaration: $undeclared"
+[ "$(q "select string_agg(c.relname || '=' || (string_to_array(encode(t.tgargs, 'escape'), '\\000'))[2], ' ' order by c.relname) from pg_trigger t join pg_class c on c.oid = t.tgrelid
+         where t.tgfoid = 'app.log_change'::regproc and (string_to_array(encode(t.tgargs, 'escape'), '\\000'))[2] <> '{}'")" \
+  = 'organiser_invite={email,token} photo_consent={given_by} player={date_of_birth}' ] || fail "personal-field declarations changed"
+q "create table app.probe_a (id uuid primary key, tournament_id uuid, x text);
+   create trigger log_change after insert on app.probe_a for each row execute function app.log_change('tournament_id');
+   create table app.probe_b (id uuid primary key, tournament_id uuid, x text);
+   create trigger log_change after insert on app.probe_b for each row execute function app.log_change('tournament_id', '{y}');
+   create table app.probe_c (id uuid primary key, tournament_id uuid)" >/dev/null
+undeclared=$(psql <<<"$decl_sql")
+[ "$undeclared" = 'probe_a, probe_b, probe_c' ] || fail "declaration check did not name the probes: $undeclared"
+! q "insert into app.probe_a values ('$S3', '$T3', 'x')" >/dev/null 2>&1 || fail "log_change logged without a declaration"
+q "drop table app.probe_a, app.probe_b, app.probe_c" >/dev/null
 
 # Season rule.
 S9=29999999-0000-4000-8000-000000000009
@@ -837,7 +862,7 @@ others=$(q "select string_agg(format('%s(%s)', p.proname, (select string_agg(for
     when a.t in ('text[]'::regtype, 'uuid[]'::regtype, 'jsonb'::regtype) then '''{}''' else '''x''' end), ', ' order by a.o)
     from unnest(p.proargnames, p.proargtypes::oid[]::regtype[]) with ordinality a(n, t, o))), E'\n' order by p.proname)
   from pg_proc p where p.pronamespace = 'app'::regnamespace and p.prorettype = 'jsonb'::regtype
-    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command}'::name[])")
+    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command,add_player,edit_player,remove_player,add_staff,edit_staff,remove_staff,submit_team}'::name[])")
 [ "$(wc -l <<<"$others")" -ge 20 ] || fail "grant: too few commands listed: $others"
 refused_all() {
   while IFS= read -r f; do
@@ -930,6 +955,181 @@ done
 for s in "insert into app.registration_grant (id, link_id, team_id, season_id, tournament_id) values ('$G4', '$LX3', '$X', '$S5', '$T5')" \
     "update app.team set name = 'Direct'" "delete from app.registration_grant"; do
   ! as $G1 "$s" >/dev/null 2>&1 || fail "grant holder wrote directly: $s"
+done
+
+# --- Players and Staff (Story 2.3). A organises T5 (S5 in registration, S6 started); B organises T2. G1 holds X's grant
+# (link LX3), G5 Y's (LY), G2 W's (B's T2), G3 Z's (S6). S5: 2 starters, 1 on the bench (Squad 2 to 3), Staff manager
+# and coach. Minor: under 18 on today's Kathmandu date; exactly 18 today is an adult.
+G5=f1111111-0000-4000-8000-000000000005
+P1=91111111-0000-4000-8000-000000000001 P2=91111111-0000-4000-8000-000000000002 P3=91111111-0000-4000-8000-000000000003
+P4=91111111-0000-4000-8000-000000000004 P5=91111111-0000-4000-8000-000000000005 P6=91111111-0000-4000-8000-000000000006
+SF1=a1111111-0000-4000-8000-000000000001 SF2=a1111111-0000-4000-8000-000000000002 SF3=a1111111-0000-4000-8000-000000000003
+q "insert into auth.users (id, is_anonymous) values ('$G5', true);
+   update app.season set starters = 2, max_bench = 1, staff_roles = '{manager,coach}', photo_consent = 'Photos may be used.' where id = '$S5'" >/dev/null
+[ "$(rd $G1 600 $TX3)|$(rd $G5 601 $TY)" = 'ok|ok' ] || fail "squad: fixture grants"
+kt="(now() at time zone 'Asia/Kathmandu')::date"
+today=$(q "select $kt") adult=$(q "select ($kt - interval '18 years')::date") minor=$(q "select ($kt - interval '18 years' + interval '1 day')::date")
+kid=$(q "select ($kt - interval '12 years')::date") grown=$(q "select ($kt - interval '25 years')::date") later=$(q "select ($kt + 1)")
+ap() { tc "$1" "add_player('$(cmd "$2")', '$3', '$4', $5)"; }
+ep() { tc "$1" "edit_player('$(cmd "$2")', '$3', '$4', $5)"; }
+pv() { q "select version from app.player where id='$1'"; }
+redo() { q "delete from app.command_result where command_id='$(cmd "$1")'" >/dev/null; }
+msg() { as "$1" "select r->>'message' from app.$2 r"; }
+
+# lineup_violations: a complete Squad needs at least the starters; other callers see no minimum.
+[ "$(lv $S5 '{"players": [1], "complete": true}')|$(lv $S5 '{"players": [1]}')|$(lv $S5 '{"players": [1, 2], "complete": true}')" \
+  = "Squad needs at least 2 Players. You have 1.||" ] || fail "lineup_violations: minimum"
+[ "$(lv $S2 '{"players": [], "complete": true}')" = "Squad needs at least 1 Player. You have 0." ] || fail "lineup_violations: minimum singular"
+
+# Add: a minor with a guardian's name; one call writes the Player, the Squad entry and the consent; repeat answers alike.
+[ "$(ap $G1 610 $X $P1 "name => '  Bisho Basnet ', shirt_number => 7, date_of_birth => '$kid', consent => true, given_by => ' Mina Basnet '")" = ok ] \
+  || fail "add_player: minor with guardian"
+[ "$(q "select concat_ws('|', p.tournament_id, p.name, p.date_of_birth, p.version, e.team_id, e.shirt_number, c.season_id, c.consent_given, c.given_by)
+       from app.player p join app.squad_entry e on e.player_id = p.id join app.photo_consent c on c.player_id = p.id where p.id = '$P1'")" \
+  = "$T5|Bisho Basnet|$kid|1|$X|7|$S5|t|Mina Basnet" ] || fail "add_player: rows"
+[ "$(ap $G1 610 $X $P1 "name => 'Again', shirt_number => 8, date_of_birth => '$kid', consent => false")|$(q "select count(*) from app.player")" = 'ok|1' ] \
+  || fail "add_player: repeat wrote again"
+[ "$(q "select string_agg(table_name || ':' || (actor = '$G1') || ':' || coalesce(after->>'date_of_birth', after->>'given_by', '-'), ',' order by id)
+       from app.activity_log where command_id = '$(cmd 610)'")" = 'player:true:date_of_birth,squad_entry:true:-,photo_consent:true:given_by' ] \
+  || fail "add_player: log rows, or personal fields logged by value"
+# Consent needs a name: a parent or guardian's for a minor (the day before the 18th birthday too), else the giver's.
+[ "$(ap $G1 611 $X $P2 "name => 'Anup', shirt_number => 9, date_of_birth => '$minor', consent => true")" = guardian_required ] || fail "minor without guardian"
+[ "$(msg $G1 "add_player('$(cmd 612)', '$X', '$P2', 'Anup', 9, '$kid', true, '   ')")" = "Add the parent or guardian's name." ] || fail "minor: blank guardian"
+[ "$(ap $G1 613 $X $P2 "name => 'Anup', shirt_number => 9, date_of_birth => '$adult', consent => true")" = consent_name_required ] || fail "adult without a name"
+[ "$(ap $G1 614 $X $P2 "name => 'Anup', shirt_number => 9, date_of_birth => '$minor', consent => false, given_by => 'Ignored'")" = ok ] || fail "minor without consent"
+[ "$(q "select concat(c.consent_given, coalesce(c.given_by, 'null')) from app.photo_consent c where c.player_id = '$P2'")" = fnull ] || fail "no consent kept a name"
+for bad in "name => '', shirt_number => 10, date_of_birth => '$grown', consent => false|name_invalid" \
+    "name => 'Z', shirt_number => 0, date_of_birth => '$grown', consent => false|shirt_invalid" \
+    "name => 'Z', shirt_number => 100, date_of_birth => '$grown', consent => false|shirt_invalid" \
+    "name => 'Z', shirt_number => 10, date_of_birth => '$later', consent => false|dob_invalid" \
+    "name => 'Z', shirt_number => 10, date_of_birth => '1939-12-31', consent => false|dob_invalid" \
+    "name => 'Z', shirt_number => 10, date_of_birth => null, consent => false|dob_invalid" \
+    "name => 'Z', shirt_number => 10, date_of_birth => '$grown', consent => true, given_by => repeat('x', 81)|given_by_invalid" \
+    "name => 'Z', shirt_number => 7, date_of_birth => '$grown', consent => false|shirt_taken" \
+    "name => 'Z', shirt_number => 10, date_of_birth => '$grown', consent => false, player_id => '$P1'|already_exists"; do
+  IFS='|' read -r a want <<<"$bad"
+  pid=$P6; [[ $a == *"player_id =>"* ]] && { pid=; a=${a/, player_id => /|}; IFS='|' read -r a pid <<<"$a"; pid=${pid//\'/}; }
+  [ "$(ap $G1 615 $X $pid "$a")" = "$want" ] || fail "add_player: $bad"
+  redo 615
+done
+[ "$(q "select count(*) from app.player")|$(q "select count(*) from app.squad_entry where player_id = '$P1'")" = '2|1' ] || fail "add_player: refusals wrote"
+# Squad size: the 3rd Player fits, the 4th is refused in words.
+[ "$(ap $G1 616 $X $P3 "name => 'Sita KC', shirt_number => 10, date_of_birth => '$grown', consent => true, given_by => 'Sita KC'")" = ok ] || fail "3rd player"
+[ "$(msg $G1 "add_player('$(cmd 617)', '$X', '$P4', 'Extra', 11, '$grown', false)")|$(as $G1 "select r->>'code' from app.add_player('$(cmd 617)', '$X', '$P4', 'Extra', 11, '$grown', false) r")" \
+  = 'Squad can have at most 3 Players. You have 4.|lineup_violation' ] || fail "squad full"
+[ "$(q "select count(*) from app.player where id = '$P4'")" = 0 ] || fail "squad full: wrote"
+
+# Reads: the grant reads its own Team's Squad and consent; Y's grant, another Tournament's Organiser and grant read none.
+squad() { as "$1" "select (select count(*) from app.player)||'/'||(select count(*) from app.squad_entry)||'/'||(select count(*) from app.photo_consent)||'/'||(select count(*) from app.staff)"; }
+[ "$(squad $G1)|$(squad $A)|$(squad $G5)|$(squad $B)|$(squad $G2)|$(squad $G3)|$(squad $G4)" = '3/3/3/0|3/3/3/0|0/0/0/0|0/0/0/0|0/0/0/0|0/0/0/0|0/0/0/0' ] \
+  || fail "leak: squad reads $(squad $G5) $(squad $B)"
+for t in player squad_entry photo_consent staff; do
+  ! as anon "select count(*) from app.$t" >/dev/null 2>&1 || fail "leak: anon reads $t"
+done
+rr() { as "$1" "select coalesce((select concat_ws('|', consent_statement, starters, max_bench, staff_roles) from app.registration_rules()), 'none')"; }
+[ "$(rr $G1)|$(rr $A)|$(rr $G4)" = 'Photos may be used.|2|1|{manager,coach}|none|none' ] || fail "registration_rules: $(rr $G1) $(rr $A)"
+# Y's grant can't touch X's Players, through Y or X.
+[ "$(ep $G5 620 $Y $P1 "1, name => 'Stolen'")|$(ep $G5 621 $X $P1 "1, name => 'Stolen'")|$(ap $G5 622 $X $P5 "name => 'Z', shirt_number => 20, date_of_birth => '$grown', consent => false")" \
+  = 'player_missing|not_authorized|not_authorized' ] || fail "leak: Y's grant changes X's Player"
+[ "$(tc $G5 "remove_player('$(cmd 623)', '$Y', '$P1', 1)")|$(tc $G5 "remove_player('$(cmd 624)', '$X', '$P1', 1)")|$(tc $G5 "submit_team('$(cmd 625)', '$X')")" \
+  = 'ok|not_authorized|not_authorized' ] || fail "leak: Y's grant removes or submits for X"
+[ "$(q "select count(*) from app.squad_entry where player_id = '$P1' and team_id = '$X'")|$(q "select status from app.team where id = '$X'")" = '1|invited' ] \
+  || fail "leak: X's Squad changed by Y's grant"
+[ "$(ep $B 626 $X $P1 "1, name => 'Stolen'")|$(tc $B "add_staff('$(cmd 627)', '$X', '$SF3', 'Z', 'coach')")" = 'not_authorized|not_authorized' ] \
+  || fail "leak: another Tournament's Organiser changes X"
+
+# Edit: each field alone, versioned; the Organiser too; conflicts name a role; consent and the minor rule.
+[ "$(ep $G1 630 $X $P1 "1, name => 'Bisho B'")|$(ep $G1 631 $X $P1 "2, shirt_number => 9")|$(ep $G1 632 $X $P1 "2, shirt_number => 8")|$(pv $P1)" = 'ok|shirt_taken|ok|3' ] \
+  || fail "edit_player: name and shirt"
+r=$(as $G1 "select app.edit_player('$(cmd 633)', '$X', '$P1', 3, date_of_birth => '$minor')")
+[ "$(q "select (r->>'ok')||(r->>'version') from (select '$r'::jsonb r) x")|$(q "select date_of_birth from app.player where id='$P1'")" = "true4|$minor" ] \
+  || fail "edit_player: date of birth: $r"
+[ "$(ep $G1 634 $X $P1 "4")|$(pv $P1)" = 'ok|4' ] || fail "edit_player: nothing to change bumped the version"
+[ "$(ep $G1 635 $X $P1 "4, consent => false")|$(q "select concat(consent_given, coalesce(given_by, 'null')) from app.photo_consent where player_id='$P1'")" = 'ok|fnull' ] \
+  || fail "edit_player: consent withdrawn"
+[ "$(ep $G1 636 $X $P1 "5, consent => true")|$(ep $G1 637 $X $P1 "5, consent => true, given_by => 'Hari Basnet'")" = 'guardian_required|ok' ] \
+  || fail "edit_player: consent again for a minor"
+[ "$(q "select concat(consent_given, given_by) from app.photo_consent where player_id='$P1'")" = 'tHari Basnet' ] || fail "edit_player: consent row"
+# An adult consenting for themselves who turns out a minor: the guardian's name is needed with the change.
+[ "$(ep $G1 638 $X $P3 "1, date_of_birth => '$kid'")|$(ep $G1 639 $X $P3 "1, date_of_birth => '$kid', given_by => 'Gita KC'")" = 'guardian_required|ok' ] \
+  || fail "edit_player: becoming a minor"
+[ "$(ep $A 640 $X $P1 "6, name => 'Bisho Basnet'")" = ok ] || fail "edit_player: Organiser"
+r=$(as $G1 "select app.edit_player('$(cmd 641)', '$X', '$P1', 6, name => 'Mine')")
+[ "$(q "select concat_ws('|', r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'name', r->'conflict'->'current'->>'shirt_number',
+         r->'conflict'->'current'->>'date_of_birth', r->'conflict'->'current'->>'consent', r->'conflict'->'current'->>'given_by', r->'conflict'->>'changed_by') from (select '$r'::jsonb r) x")" \
+  = "version_conflict|7|Bisho Basnet|8|$minor|true|Hari Basnet|Organiser" ] || fail "edit_player: conflict: $r"
+[ "$(ep $G1 642 $X $P1 "7, name => 'Bisho'")" = ok ] || fail "edit_player: after conflict"
+r=$(as $A "select app.edit_player('$(cmd 643)', '$X', '$P1', 7, name => 'Theirs')")
+[ "$(q "select r->'conflict'->>'changed_by' from (select '$r'::jsonb r) x")" = 'Team manager' ] || fail "edit_player: changed_by for the grant: $r"
+for bad in "name => ''|name_invalid" "shirt_number => 100|shirt_invalid" "date_of_birth => '$later'|dob_invalid" "given_by => repeat('x', 81)|given_by_invalid"; do
+  IFS='|' read -r a want <<<"$bad"
+  [ "$(ep $G1 644 $X $P1 "8, $a")" = "$want" ] || fail "edit_player: $bad"
+  redo 644
+done
+[ "$(pv $P1)" = 8 ] || fail "edit_player: refusals wrote"
+
+# No date of birth or consent name ever reaches the Activity log, only the field names.
+for v in "$kid" "$minor" "$grown" Mina Hari Gita; do
+  [ "$(q "select count(*) from app.activity_log where strpos(coalesce(before::text, '') || coalesce(after::text, ''), '$v') > 0 and table_name <> 'season'")" \
+    = 0 ] || fail "personal value in the Activity log: $v"
+done
+[ "$(q "select count(*) from app.activity_log where table_name = 'player' and after->>'date_of_birth' = 'date_of_birth'")" -ge 5 ] || fail "player log rows"
+
+# Remove: versioned; a Player in no other Squad goes with their consent; already gone is ok.
+[ "$(tc $G1 "remove_player('$(cmd 650)', '$X', '$P2', 2)")|$(tc $G1 "remove_player('$(cmd 651)', '$X', '$P2', 1)")" = 'version_conflict|ok' ] || fail "remove_player"
+[ "$(q "select concat((select count(*) from app.player where id='$P2'), (select count(*) from app.photo_consent where player_id='$P2'), (select count(*) from app.squad_entry where player_id='$P2'))")" = 000 ] \
+  || fail "remove_player: rows left"
+[ "$(q "select before->>'date_of_birth' from app.activity_log where table_name='player' and op='delete' and row_id='$P2'")|$(tc $G1 "remove_player('$(cmd 652)', '$X', '$P2', 1)")" = 'date_of_birth|ok' ] \
+  || fail "remove_player: log or repeat"
+# A Player also in another Squad stays (Organiser puts P1 in Y too), only X's entry goes.
+q "insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T5', '$Y', '$P1', 4)" >/dev/null
+[ "$(tc $A "remove_player('$(cmd 653)', '$Y', '$P1', $(pv $P1))")|$(q "select count(*) from app.player where id='$P1'")|$(q "select count(*) from app.photo_consent where player_id='$P1'")" = 'ok|1|1' ] \
+  || fail "remove_player: Player in another Squad"
+
+# Staff: only allowed roles; versioned edits and removes; Y's grant can't reach X's Staff.
+ast() { tc "$1" "add_staff('$(cmd "$2")', '$3', '$4', $5)"; }
+[ "$(ast $G1 660 $X $SF1 "' Ram Thapa ', 'manager'")|$(q "select concat_ws('|', tournament_id, team_id, name, role, version) from app.staff where id='$SF1'")" = "ok|$T5|$X|Ram Thapa|manager|1" ] \
+  || fail "add_staff"
+[ "$(msg $G1 "add_staff('$(cmd 661)', '$X', '$SF2', 'Hari', 'physio')")|$(ast $G1 662 $X $SF2 "'Hari', null")|$(ast $G1 663 $X $SF2 "'', 'coach'")|$(ast $G1 664 $X $SF1 "'Dup', 'coach'")" \
+  = "Physio isn't an allowed Staff role.|role_required|name_invalid|already_exists" ] || fail "add_staff: refusals"
+[ "$(ast $G1 665 $X $SF2 "'Hari', 'coach'")" = ok ] || fail "add_staff: coach"
+es() { tc "$1" "edit_staff('$(cmd "$2")', '$3', '$4', $5)"; }
+[ "$(es $G1 666 $X $SF1 "1, role => 'coach'")|$(es $G1 667 $X $SF1 "2, role => 'doctor'")|$(es $G1 668 $X $SF1 "1, name => 'Old'")|$(es $G5 669 $Y $SF1 "2, name => 'Stolen'")|$(es $G1 670 $X $SF1 "2")" \
+  = 'ok|lineup_violation|version_conflict|staff_missing|ok' ] || fail "edit_staff"
+r=$(as $G1 "select app.edit_staff('$(cmd 671)', '$X', '$SF1', 1, name => 'Old')")
+[ "$(q "select concat_ws('|', r->'conflict'->>'current_version', r->'conflict'->'current'->>'name', r->'conflict'->'current'->>'role', r->'conflict'->>'changed_by') from (select '$r'::jsonb r) x")" \
+  = '2|Ram Thapa|coach|Team manager' ] || fail "edit_staff: conflict: $r"
+
+# Send for review: the whole Squad and Staff against the rules, in words; then Submitted (version kept); Organiser sees it.
+q "update app.season set staff_roles = '{manager}' where id = '$S5'" >/dev/null
+[ "$(msg $G1 "submit_team('$(cmd 680)', '$X')")" = "Coach isn't an allowed Staff role." ] || fail "submit_team: staff role"
+q "update app.season set staff_roles = '{manager,coach}' where id = '$S5'" >/dev/null
+[ "$(tc $G1 "remove_staff('$(cmd 681)', '$X', '$SF2', 2)")|$(tc $G1 "remove_staff('$(cmd 682)', '$X', '$SF2', 1)")|$(tc $G1 "remove_staff('$(cmd 683)', '$X', '$SF2', 1)")|$(q "select count(*) from app.staff where id='$SF2'")" \
+  = 'version_conflict|ok|ok|0' ] || fail "remove_staff"
+[ "$(tc $G1 "remove_player('$(cmd 689)', '$X', '$P3', $(pv $P3))")" = ok ] || fail "remove P3"
+[ "$(msg $G1 "submit_team('$(cmd 684)', '$X')")" = "Squad needs at least 2 Players. You have 1." ] || fail "submit_team: too few"
+[ "$(ap $G1 685 $X $P5 "name => 'Yugal', shirt_number => 11, date_of_birth => '$grown', consent => false")" = ok ] || fail "squad: 2nd player"
+tv=$(ver $X)
+[ "$(tc $G1 "submit_team('$(cmd 686)', '$X')")|$(q "select status from app.team where id='$X'")|$(ver $X)|$(tc $G1 "submit_team('$(cmd 687)', '$X')")" = "ok|submitted|$tv|ok" ] \
+  || fail "submit_team"
+[ "$(as $A "select status from app.team where id='$X'")|$(as $B "select count(*) from app.team where id='$X'")" = 'submitted|0' ] || fail "submit_team: Organiser reads"
+q "update app.team set status = 'approved' where id = '$Y'" >/dev/null
+[ "$(tc $A "submit_team('$(cmd 688)', '$Y')")" = team_approved ] || fail "submit_team: approved"
+q "update app.team set status = 'invited' where id = '$Y'" >/dev/null
+# Started Season: no Squad changes; revoked link: no reads or changes.
+[ "$(ap $G3 690 $Z $P6 "name => 'Late', shirt_number => 1, date_of_birth => '$grown', consent => false")|$(tc $G3 "submit_team('$(cmd 691)', '$Z')")" = 'season_started|season_started' ] \
+  || fail "squad: started Season"
+[ "$(rv $A 692 $S5 $LX3)|$(squad $G1)|$(ap $G1 693 $X $P6 "name => 'Gone', shirt_number => 12, date_of_birth => '$grown', consent => false")|$(es $G1 694 $X $SF1 "2, name => 'Gone'")" \
+  = 'ok|0/0/0/0|not_authorized|not_authorized' ] || fail "squad: revoked link"
+for f in "add_player('$(cmd 695)', '$X', '$P6', 'x', 1, '2000-01-01', false)" "edit_player('$(cmd 696)', '$X', '$P1', 1)" "remove_player('$(cmd 697)', '$X', '$P1', 1)" \
+    "add_staff('$(cmd 698)', '$X', '$SF3', 'x', 'coach')" "edit_staff('$(cmd 699)', '$X', '$SF1', 1)" "remove_staff('$(cmd 700)', '$X', '$SF1', 1)" \
+    "submit_team('$(cmd 701)', '$X')" "registration_rules()"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+for f in "conflict('$T5', 'player', '$P1', 1, '{}')"; do
+  out=$(as $A "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "client can execute $f: $out"
 done
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null

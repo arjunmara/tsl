@@ -34,6 +34,13 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   reissue_registration_link: () => 'Make a new Registration link',
   edit_team: (a) => (a.name != null ? `Rename the Team to ‘${String(a.name)}’`
     : a.code != null ? `Change the Team code to ${String(a.code)}` : 'Change the kit colour'),
+  add_player: (a) => `Add Player ‘${String(a.name ?? '')}’`,
+  edit_player: (a) => (a.name != null ? `Rename a Player to ‘${String(a.name)}’` : "Change a Player's details"),
+  remove_player: () => 'Remove a Player from the Squad',
+  add_staff: (a) => `Add ‘${String(a.name ?? '')}’ to the Staff`,
+  edit_staff: () => 'Change a Staff member',
+  remove_staff: () => 'Remove a Staff member',
+  submit_team: () => 'Send the Team for review',
 }
 
 /** "rules", "description and rules": the fields an edit changes, in words. */
@@ -85,4 +92,9 @@ export const fieldLabels: Record<string, string> = {
   ad_paths: 'Ad images',
   code: 'Team code',
   kit_colour: 'Kit colour',
+  shirt_number: 'Shirt number',
+  date_of_birth: 'Date of birth',
+  consent: 'Photo consent',
+  given_by: 'Consent given by',
+  role: 'Role',
 }

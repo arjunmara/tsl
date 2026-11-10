@@ -23,6 +23,8 @@ export type Entry = {
   /** failed and conflict wait for the user's choice in the hand-back sheet. */
   state: 'pending' | 'failed' | 'conflict'
   code?: string
+  /** The server's words for a refusal that carries its own reasons (lineup_violation). */
+  message?: string
   conflict?: Conflict
   attempts: number
   upload?: Upload

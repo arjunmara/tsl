@@ -3,7 +3,7 @@ import { hasSession, signInAnonymously, signOut } from '../../domain/auth'
 import { forgetRefused, queuedFor, send } from '../../domain/commands'
 import { formatDay } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
-import { forgetForm, overlayTeam, redeem, registrationClosed, registrationForm, type RegistrationForm } from '../../domain/registration'
+import { forgetForm, overlayForm, redeem, registrationClosed, registrationForm, type RegistrationForm } from '../../domain/registration'
 import { CODE, sha256Hex, TOKEN } from '../../domain/teamCode'
 import { SecondaryButton } from '../../ui/Button'
 import { Field } from '../../ui/Field'
@@ -15,6 +15,7 @@ import { teamStatusLabel } from '../home/Teams'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { token } from '../setup/brand'
 import { ColourField } from '../setup/Setup'
+import { ClosedSquad, Squad } from './Squad'
 
 type State = { step: 'loading' | 'captcha' | 'bad' | 'dead' } | { step: 'problem'; text: string } | { step: 'form'; form: RegistrationForm; hash: string }
 
@@ -56,7 +57,7 @@ export function Register() {
       const f = await registrationForm(hash)
       if ('form' in f) {
         const queued = await queuedFor(f.form.team.id)
-        return show({ step: 'form', hash, form: { ...f.form, team: overlayTeam(f.form.team, queued) } })
+        return show({ step: 'form', hash, form: overlayForm(f.form, queued) })
       }
       show(f.code === 'link_dead' ? { step: 'dead' }
         : { step: 'problem', text: f.code === 'offline' ? messages.offline : messages.registration_unknown })
@@ -113,9 +114,9 @@ function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }
   async function reload() {
     const f = await registrationForm(hash)
     if (!('form' in f)) return
-    const team = overlayTeam(f.form.team, await queuedFor(f.form.team.id))
-    setForm({ ...f.form, team })
-    setKit(team.kitColour)
+    const next = overlayForm(f.form, await queuedFor(f.form.team.id))
+    setForm(next)
+    setKit(next.team.kitColour)
   }
 
   async function save(change: { name?: string; code?: string; kit_colour?: string }) {
@@ -152,13 +153,17 @@ function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }
         )}
       </section>
       {closed ? (
+        <>
         <section className="card">
           <h2 className="body-strong">{t.name}</h2>
           <StatusPill state={t.status === 'approved' ? 'done' : 'pending'} label={teamStatusLabel[t.status]} />
           <p className="body">Team code {t.code}</p>
           <p className="body register-kit">{t.kitColour ? <>Kit colour <KitDot colour={t.kitColour} /></> : 'No kit colour yet'}</p>
         </section>
+        <ClosedSquad form={form} />
+        </>
       ) : (
+        <>
         <section className="card">
           <h2 className="body-strong">Team</h2>
           <Field label="Team name" value={t.name} required requiredMessage={messages.team_name_required} autoComplete="off"
@@ -174,6 +179,8 @@ function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }
           </div>
           <Problem text={problem} />
         </section>
+        <Squad form={form} reload={reload} />
+        </>
       )}
     </main>
   )

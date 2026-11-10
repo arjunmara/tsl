@@ -225,3 +225,26 @@ Try it on test first.
 4. Load it with the project's Session pooler string:
    `psql "<connection string>" -v ON_ERROR_STOP=1 -f app-<stamp>.sql`. The dump includes the
    grants, so nothing else needs replaying.
+
+## Apply 0013_players_staff.sql (Story 2.3)
+
+Apply after 0012 and before the app deploy with Players and Staff on the `/register` page (test first, then live); that page
+fails to load until this is applied. It adds `app.player` (per Tournament: name, date of birth, version), `app.squad_entry`
+(Team, Player, shirt number 1–99, unique per Team), `app.staff` (Team, name, role, version) and `app.photo_consent` (Player,
+Season, consent given, given_by, recorded_at), readable by the Tournament's Organisers and, for its own Team, the Registration
+link grant; the Season actions `edit_squad` and `submit_team` (setup and registration); the helpers `app.conflict` (the
+conflict envelope, no client grant) and `app.registration_rules()` (the grant's photo-consent statement and Line-up rules); and
+the commands `add_player` (insert-only; a consenting minor, under 18 on today's Kathmandu date, needs `given_by`:
+`guardian_required`), `edit_player`, `remove_player` (a Player in no other Squad is deleted with their details), `add_staff`,
+`edit_staff`, `remove_staff` (edits and removes versioned with the conflict envelope) and `submit_team` (status Submitted). Line-up
+rule refusals are `lineup_violation` with the reasons in words as `message`; `app.lineup_violations` gains a minimum (at least
+the starters) for a complete Squad. `app.authorize` lets a grant holder run these on its own Team.
+
+**Personal fields.** `app.log_change` no longer has a built-in list: every log trigger names its table's personal fields as the
+second argument (`log_change('tournament_id', '{date_of_birth}')`, `'{}'` for none), whose values are logged as the field's
+name; a trigger without it raises. This file re-creates every existing log trigger with its declaration. A new tenant table
+must declare its fields in the same file; `check.sh` fails naming any tenant table (any table with `tournament_id`, and
+`tournament`) without a valid declaration. Check with `select count(*) from app.season_action where action in ('edit_squad',
+'submit_team');` (4). Then on the test preview, open a Registration link, add a minor with a guardian's name and an adult, add
+a Staff member, send the Team for review, and check the Organiser's Team row shows Submitted and that Activity log rows for
+the Player show `date_of_birth` and `given_by` instead of the values.

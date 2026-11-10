@@ -145,7 +145,7 @@ export function HandBack({ open, entries, onClose }: { open: boolean; entries: O
           <>
             <div id={bodyId} className="ui-sheet-change">
               {intro}
-              <p className="body">{messageFor(e.code ?? null)}</p>
+              <p className="body">{e.code === 'lineup_violation' && e.message ? e.message : messageFor(e.code ?? null)}</p>
             </div>
             {problem}
             <div className="ui-sheet-actions">

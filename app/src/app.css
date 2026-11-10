@@ -589,3 +589,34 @@
 .register-kit .ui-field {
   flex: 1;
 }
+
+/* Players and Staff on the Registration link form (Story 2.3): a summary line per person that opens its card. */
+.squad-card {
+  border-top: 1px solid var(--line);
+  padding-top: var(--spacing-2);
+}
+.squad-card summary {
+  min-height: var(--spacing-touch-min);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.squad-card[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.squad-add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  border-top: 1px solid var(--line);
+  padding-top: var(--spacing-3);
+}
+.squad-add h3 {
+  margin: 0;
+}
+.squad-list {
+  margin: 0;
+  padding-left: var(--spacing-4);
+  overflow-wrap: anywhere;
+}

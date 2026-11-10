@@ -87,6 +87,7 @@ export async function resend(seq: number) {
     e.state = 'pending'
     e.attempts = 0
     delete e.code
+    delete e.message
     delete e.conflict
   })
   kick()
@@ -107,6 +108,7 @@ export async function sendMine(seq: number) {
     e.state = 'pending'
     e.attempts = 0
     delete e.code
+    delete e.message
     delete e.conflict
     await db.entries.put(e)
   })

@@ -50,6 +50,8 @@ jobs:
         run: npm run check:teams
       - name: Registration link check (Story 2.2)
         run: npm run check:register
+      - name: Players and Staff check (Story 2.3)
+        run: npm run check:squad
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
       # and write, Activity log, idempotency), the co-organiser and Team leak and race tests (Stories 1.14, 2.1) and the pg_proc
       # command skeleton check.
