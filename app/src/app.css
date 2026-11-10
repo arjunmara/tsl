@@ -72,6 +72,25 @@
   height: 1.25rem;
   margin: 0;
 }
+/* Tie-breaks (Story 1.11): each criterion with its buttons, wrapping on a phone. */
+.tiebreaks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tiebreak,
+.tiebreak-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+.tiebreak {
+  justify-content: space-between;
+}
 /* Format presets (Story 1.10): two columns of radios. */
 .presets {
   display: grid;

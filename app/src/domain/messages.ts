@@ -44,6 +44,10 @@ export const messages = {
   preset_invalid: 'Pick a format preset first.',
   substitutions_max_needed: 'Set the maximum substitutions.',
   settings_invalid: "That setting is out of range. Change it, then try again.",
+  lineup_rules_invalid: "That Line-up rule is out of range. Change it, then try again.",
+  structure_invalid: "That Structure setting is out of range. Change it, then try again.",
+  qualifiers_invalid: 'Qualifiers per group must be at least 1 and fewer than the Teams per group.',
+  tiebreaks_invalid: "That tie-break order couldn't be saved. Reload the page, then try again.",
   tournament_unknown: "Couldn't load this tournament. Try loading it again.",
   tournament_missing: "This tournament isn't available.",
   tournaments_unknown: "Couldn't load your tournaments. Try loading them again.",
@@ -62,11 +66,19 @@ export const messages = {
   deadline_required: 'Add the registration deadline.',
   date_out_of_range: `Pick a date from ${formatDate(BS_RANGE.min)} to ${formatDate(BS_RANGE.max)}.`,
   preset_required: 'Pick a format preset.',
+  structure_required: 'Pick a Structure.',
   logo_unreadable: "Couldn't read that image. Choose a JPEG, PNG or WebP picture.",
 } as const
 
 /** The words for a number field outside its range. */
 export const numberRange = (min: number, max: number) => `Use a whole number from ${min} to ${max}.`
+
+/** Qualifiers per group must be fewer than the Teams in each group. */
+export const qualifiersRange = (teams: number) =>
+  `Use a whole number from 1 to ${teams - 1}: fewer Teams qualify than play in each group of ${teams}.`
+/** Teams per group must be more than the qualifiers per group. */
+export const teamsAboveQualifiers = (qualifiers: number) =>
+  `Use a whole number from ${qualifiers + 1} to 16: each group needs more Teams than the ${qualifiers} who qualify.`
 
 export type MessageCode = keyof typeof messages
 

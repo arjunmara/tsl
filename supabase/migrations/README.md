@@ -117,6 +117,19 @@ arguments change single settings; versioned with the conflict envelope; allowed 
 the file resets the preset rows to its values. Check with `select key, confirmed from app.format_preset order by sort;`
 (5 rows). Then on the test preview, pick a preset on step 4, change a value, switch preset, and reopen it on another device.
 
+## Apply 0007_lineup_structure.sql (Story 1.11)
+
+Apply before the app deploy with wizard steps 5 and 6 (test first, then live); the wizard reads the new columns, so it
+shows "Couldn't load this tournament" until this is applied. It adds `starters` and `max_bench` defaults to
+`app.format_preset` (futsal and custom 5 and 9; 5-, 7- and 11-a-side for founder confirmation), the Line-up rules
+(`starters`, `max_bench`, `staff_roles`) and Structure (`structure`, `group_count`, `teams_per_group`,
+`qualifiers_per_group`, points 3/1/0, `tiebreaks` in the default order) columns on `app.season` with range checks, the
+`set_lineup_rules` and `set_structure` commands (versioned with the conflict envelope; allowed while setup can be edited,
+so a tie-break change after the start fails with `season_started`), and the helper `app.lineup_violations(season_id,
+squad)` that registration and line-up commands will call (no client grant). Check with
+`select key, starters, max_bench from app.format_preset order by sort;` (5 rows, futsal 5 and 9). Then on the test
+preview, fill steps 5 and 6, reorder and remove tie-breaks, and reopen them on another device.
+
 Edit commands added later answer a stale `expected_version` with
 `{ok: false, code: 'version_conflict', conflict: {current_version, current, changed_by, changed_at}}`
 (see `app/README.md`, Conflict envelope).

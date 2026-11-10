@@ -25,17 +25,22 @@ function session() {
   return { access_token: jwt, token_type: 'bearer', expires_in: 3600, expires_at: exp, refresh_token: 'rt', user }
 }
 
-// app.format_preset as 0006 fills it.
+// app.format_preset as 0006 and 0007 fill it.
 const presetCols = ['key', 'label', 'sort', 'confirmed', 'futsal_rules', 'periods', 'period_minutes', 'clock', 'half_time_minutes', 'extra_time',
-  'extra_time_periods', 'extra_time_minutes', 'shootout', 'substitutions', 'max_substitutions', 'foul_warning', 'timeouts_per_period', 'power_play_minutes']
+  'extra_time_periods', 'extra_time_minutes', 'shootout', 'substitutions', 'max_substitutions', 'foul_warning', 'timeouts_per_period', 'power_play_minutes',
+  'starters', 'max_bench']
 const PRESETS = [
-  ['futsal', 'Futsal', 1, true, true, 2, 20, 'stopped', 15, true, 2, 5, true, 'rolling', null, 5, 1, 2],
-  ['5-a-side', '5-a-side', 2, false, false, 2, 20, 'running', 5, false, 2, 5, true, 'rolling', null, null, null, null],
-  ['7-a-side', '7-a-side', 3, false, false, 2, 30, 'running', 10, false, 2, 10, true, 'rolling', null, null, null, null],
-  ['11-a-side', '11-a-side', 4, false, false, 2, 45, 'running', 15, true, 2, 15, true, 'limited', 5, null, null, null],
-  ['custom', 'Custom', 5, true, true, 2, 20, 'stopped', 15, true, 2, 5, true, 'rolling', null, 5, 1, 2],
+  ['futsal', 'Futsal', 1, true, true, 2, 20, 'stopped', 15, true, 2, 5, true, 'rolling', null, 5, 1, 2, 5, 9],
+  ['5-a-side', '5-a-side', 2, false, false, 2, 20, 'running', 5, false, 2, 5, true, 'rolling', null, null, null, null, 5, 5],
+  ['7-a-side', '7-a-side', 3, false, false, 2, 30, 'running', 10, false, 2, 10, true, 'rolling', null, null, null, null, 7, 5],
+  ['11-a-side', '11-a-side', 4, false, false, 2, 45, 'running', 15, true, 2, 15, true, 'limited', 5, null, null, null, 11, 7],
+  ['custom', 'Custom', 5, true, true, 2, 20, 'stopped', 15, true, 2, 5, true, 'rolling', null, 5, 1, 2, 5, 9],
 ].map((v) => Object.fromEntries(presetCols.map((k, i) => [k, v[i]])))
-const SETTING_KEYS = presetCols.slice(5)
+const SETTING_KEYS = presetCols.slice(5, -2)
+// app.season's Line-up rules and Structure with 0007's defaults.
+const TIEBREAKS = ['h2h_points', 'h2h_goal_difference', 'h2h_shootout', 'goal_difference', 'goals_scored']
+const LINEUP = { starters: null, max_bench: null, staff_roles: ['manager', 'coach'] }
+const STRUCTURE = { structure: null, group_count: null, teams_per_group: null, qualifiers_per_group: null, points_win: 3, points_draw: 1, points_loss: 0, tiebreaks: TIEBREAKS }
 
 const browser = await chromium.launch({ channel: 'chrome' })
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
@@ -87,7 +92,8 @@ async function fresh({ viewport = { width: 390, height: 844 }, rows = [] } = {})
       r = { ...ok, version: 1 }
       mock.rows.set(a.tournament_id, { id: a.tournament_id, name: a.name, brand_primary: '#0a1a3f', brand_secondary: '#f58220', logo_path: null, version: 1,
         season: [{ id: a.season_id, number: 1, status: 'setup', setup_step: 0, version: 1, description: '', rules: '', photo_consent: '',
-          starts_on: null, ends_on: null, registration_deadline: null, format_preset: null, ...Object.fromEntries(SETTING_KEYS.map((k) => [k, null])) }] })
+          starts_on: null, ends_on: null, registration_deadline: null, format_preset: null, ...Object.fromEntries(SETTING_KEYS.map((k) => [k, null])),
+          ...LINEUP, ...STRUCTURE }] })
     } else if (name === 'set_tournament_branding') {
       const t = mock.rows.get(a.tournament_id)
       const refusal = mock.refuse.shift()
@@ -129,6 +135,20 @@ async function fresh({ viewport = { width: 390, height: 844 }, rows = [] } = {})
       } else if ((a.format_preset && !p) || !next.format_preset) r = { ok: false, code: 'preset_invalid', message: 'Refused.' }
       else if (next.substitutions === 'limited' && next.max_substitutions == null) r = { ok: false, code: 'substitutions_max_needed', message: 'Refused.' }
       else {
+        Object.assign(s, next)
+        s.version++
+        r = { ...ok, version: s.version }
+      }
+    } else if (name === 'set_lineup_rules' || name === 'set_structure') {
+      const s = [...mock.rows.values()].flatMap((t) => t.season).find((x) => x.id === a.season_id)
+      const keys = Object.keys(name === 'set_lineup_rules' ? LINEUP : STRUCTURE)
+      const next = Object.fromEntries(keys.map((k) => [k, a[k] ?? s[k]]))
+      if (s.version !== a.expected_version) {
+        r = { ok: false, code: 'version_conflict', message: 'Someone else changed this first.', conflict: { current_version: s.version,
+          current: Object.fromEntries(keys.map((k) => [k, s[k]])), changed_by: 'sita', changed_at: '2026-11-10T04:15:00Z' } }
+      } else if (next.qualifiers_per_group != null && next.teams_per_group != null && next.qualifiers_per_group >= next.teams_per_group) {
+        r = { ok: false, code: 'qualifiers_invalid', message: 'Refused.' }
+      } else {
         Object.assign(s, next)
         s.version++
         r = { ...ok, version: s.version }
@@ -739,7 +759,7 @@ try {
     assert.deepEqual(await nums('Minutes per period', 'Accumulated-foul warning', 'Power play (minutes)'), ['20', '5', '2'])
     await button(page, 'Next').click()
     await page.waitForURL(onStep(5))
-    await page.getByText('This step arrives in the next update.', { exact: true }).waitFor()
+    await page.getByRole('heading', { name: 'Step 5 of 7 · Line-up rules' }).waitFor()
     await until(page, () => season().setup_step === 4 && season().format_preset === 'custom', 'step 4 not finished')
     assert.deepEqual(SETTING_KEYS.map((k) => season()[k]), SETTING_KEYS.map((k) => PRESETS[4][k]))
 
@@ -789,6 +809,148 @@ try {
     await sheet.getByText('Change the Match settings', { exact: true }).waitFor()
     const cols = await sheet.locator('section').evaluateAll((ss) => ss.map((s) => [...s.querySelectorAll('dt, dd')].map((d) => d.textContent)))
     assert.deepEqual(cols, [['Shootout', 'Off'], ['Shootout', 'On']])
+    await context.close()
+  }
+
+  // --- Steps 5 and 6 (Story 1.11): the preset's line-up defaults show and Next saves them; a starter count of 0 says why
+  // and isn't sent; a Staff role saves when ticked. Step 6: Next without a Structure says why and focuses it; groups
+  // then knockout asks for the groups, qualifiers 0 or as many as the Teams per group say why and aren't sent; league
+  // hides the groups, knockout only hides points and tie-breaks; tie-breaks start in the default order, Move down /
+  // Remove / Add back each send the whole order, keep focus on the item and say what happened; Next finishes step 6;
+  // reopened, the server's values show. A queued step 5 edit shows again offline. A tie-break conflict hands back in words.
+  {
+    const { context, mock, page } = await fresh()
+    const id = await createVia(page, 'Gulmi Cup')
+    const season = () => mock.rows.get(id).season[0]
+    Object.assign(season(), { setup_step: 4, photo_consent: 'Photos may be posted.', starts_on: '2026-10-31', ends_on: '2026-11-14',
+      registration_deadline: '2026-10-20', ...Object.fromEntries(SETTING_KEYS.map((k) => [k, PRESETS[0][k]])), format_preset: 'futsal' })
+    await page.goto(base + `/t/${id}/setup/5`)
+    await page.getByRole('heading', { name: 'Step 5 of 7 · Line-up rules' }).waitFor()
+    const field = (name) => page.getByLabel(name, { exact: true })
+    const sent = (cmd) => calls(mock, cmd).map(({ command_id: _c, cmd: _n, season_id: _s, ...a }) => a)
+    assert.deepEqual([await field('Starters').inputValue(), await field('Maximum bench').inputValue()], ['5', '9'])
+    const roles = page.getByRole('group', { name: 'Allowed Staff roles' }).getByRole('checkbox')
+    assert.deepEqual(await roles.evaluateAll((cs) => cs.map((c) => `${c.labels[0].textContent}:${c.checked}`)),
+      ['Manager:true', 'Coach:true', 'Assistant coach:false', 'Physio:false', 'Doctor:false', 'Kit manager:false'])
+    await field('Starters').fill('0')
+    await field('Starters').press('Tab')
+    await page.getByText('Use a whole number from 1 to 11.', { exact: true }).waitFor()
+    await field('Physio').check()
+    await until(page, () => sent('set_lineup_rules').length === 1, 'role not sent')
+    assert.deepEqual(sent('set_lineup_rules')[0], { expected_version: 1, staff_roles: ['manager', 'coach', 'physio'] })
+    await button(page, 'Next').click()
+    await page.waitForTimeout(200)
+    assert.ok(await field('Starters').evaluate((el) => el === document.activeElement), 'Next did not focus starters')
+    assert.equal(calls(mock, 'set_setup_step').filter((c) => c.step === 5).length, 0, 'step 5 finished with 0 starters')
+    await field('Starters').fill('5')
+    await button(page, 'Next').click()
+    await page.getByRole('heading', { name: 'Step 6 of 7 · Structure' }).waitFor()
+    await until(page, () => season().setup_step === 5 && season().starters === 5, 'step 5 not finished')
+    assert.deepEqual(sent('set_lineup_rules')[1], { expected_version: 2, starters: 5, max_bench: 9 })
+
+    await button(page, 'Next').click()
+    await page.getByText('Pick a Structure.', { exact: true }).waitFor()
+    assert.ok(await page.getByRole('radio', { name: 'Groups then knockout' }).evaluate((el) => el === document.activeElement), 'Next did not focus the Structure')
+    await page.getByRole('radio', { name: 'Groups then knockout' }).check()
+    await until(page, () => sent('set_structure').length === 1, 'structure not sent')
+    assert.deepEqual(sent('set_structure')[0], { expected_version: 3, structure: 'groups_knockout' })
+    assert.equal(await field('Points for a win').inputValue(), '3')
+    const items = () => page.locator('ol.tiebreaks > li > .body').allTextContents()
+    assert.deepEqual(await items(), ['1. Head-to-head points', '2. Head-to-head goal difference', '3. Shootout between the tied Teams',
+      '4. Overall goal difference', '5. Goals scored'])
+    await field('Number of groups').fill('2')
+    await field('Teams per group').fill('4')
+    await field('Qualifiers per group').fill('4')
+    await field('Qualifiers per group').press('Tab')
+    const tooMany = 'Use a whole number from 1 to 3: fewer Teams qualify than play in each group of 4.'
+    await page.getByText(tooMany, { exact: true }).waitFor()
+    await field('Qualifiers per group').fill('0')
+    await field('Qualifiers per group').press('Tab')
+    await page.getByText(tooMany, { exact: true }).waitFor()
+    await page.waitForTimeout(200)
+    assert.equal(sent('set_structure').some((c) => c.qualifiers_per_group != null), false, 'bad qualifiers sent')
+    await field('Qualifiers per group').fill('2')
+    await field('Qualifiers per group').press('Tab')
+    await until(page, () => season().qualifiers_per_group === 2, 'qualifiers not saved')
+    assert.deepEqual([season().group_count, season().teams_per_group], [2, 4])
+    await field('Teams per group').fill('2')
+    await field('Teams per group').press('Tab')
+    await page.getByText('Use a whole number from 3 to 16: each group needs more Teams than the 2 who qualify.', { exact: true }).waitFor()
+    await page.waitForTimeout(200)
+    assert.equal(season().teams_per_group, 4, 'teams per group at the qualifiers sent')
+    await field('Teams per group').fill('4')
+    await field('Teams per group').press('Tab')
+
+    await button(page, 'Move down Head-to-head points').click()
+    await until(page, () => sent('set_structure').at(-1).tiebreaks, 'order not sent')
+    assert.deepEqual(sent('set_structure').at(-1).tiebreaks, ['h2h_goal_difference', 'h2h_points', 'h2h_shootout', 'goal_difference', 'goals_scored'])
+    assert.ok(await button(page, 'Move down Head-to-head points').evaluate((el) => el === document.activeElement), 'focus left the moved item')
+    await page.getByText('Head-to-head points moved to number 2 of 5.', { exact: true }).waitFor()
+    await button(page, 'Remove Goals scored').click()
+    await until(page, () => season().tiebreaks.length === 4, 'remove not sent')
+    assert.ok(await button(page, 'Add back Goals scored').evaluate((el) => el === document.activeElement), 'focus not on Add back')
+    await button(page, 'Add back Goals scored').click()
+    await until(page, () => season().tiebreaks.at(-1) === 'goals_scored', 'add back not sent')
+    assert.ok(await button(page, 'Remove Goals scored').evaluate((el) => el === document.activeElement), 'focus not on the added item')
+    assert.equal(await button(page, 'Move up Head-to-head goal difference').isDisabled(), true, 'first item can move up')
+
+    await page.getByRole('radio', { name: 'League' }).check()
+    await until(page, () => season().structure === 'league', 'league not sent')
+    assert.equal(await field('Number of groups').count(), 0, 'league shows the groups')
+    await field('Points for a win').waitFor()
+    await page.getByRole('radio', { name: 'Knockout only' }).check()
+    await until(page, () => season().structure === 'knockout', 'knockout not sent')
+    assert.equal(await field('Points for a win').count() + await page.locator('ol.tiebreaks').count(), 0, 'knockout shows points or tie-breaks')
+    await page.getByRole('radio', { name: 'Groups then knockout' }).check()
+    assert.equal(await field('Qualifiers per group').inputValue(), '2')
+    await button(page, 'Next').click()
+    await page.waitForURL(onStep(7))
+    await page.getByText('This step arrives in the next update.', { exact: true }).waitFor()
+    await until(page, () => season().setup_step === 6, 'step 6 not finished')
+
+    await page.goto(base + `/t/${id}/setup/6`)
+    await field('Qualifiers per group').waitFor()
+    assert.ok(await page.getByRole('radio', { name: 'Groups then knockout' }).isChecked())
+    assert.deepEqual((await items())[0], '1. Head-to-head goal difference')
+
+    // A tie-break edit conflicts: the hand-back names it and shows both orders in words.
+    Object.assign(season(), { version: season().version + 1, tiebreaks: ['goals_scored'] })
+    await button(page, 'Move up Head-to-head points').click()
+    await status(page).getByRole('alert').getByText("Couldn't save", { exact: true }).waitFor()
+    await button(page, 'Review this change').click()
+    const sheet = page.getByRole('dialog')
+    await sheet.getByText('Change the tie-break order', { exact: true }).waitFor()
+    const cols = await sheet.locator('section').evaluateAll((ss) => ss.map((s) => [...s.querySelectorAll('dt, dd')].map((d) => d.textContent)))
+    assert.deepEqual(cols, [['Tie-breaks', 'Head-to-head points, Head-to-head goal difference, Shootout between the tied Teams, Overall goal difference, Goals scored'],
+      ['Tie-breaks', 'Goals scored']])
+    await sheet.getByRole('button', { name: 'Keep their version' }).click()
+    await context.close()
+  }
+
+  // --- Step 5 offline: a queued role and starters show again after Back and Next, then replay in order.
+  {
+    const { context, mock, page } = await fresh()
+    const id = await createVia(page, 'Gulmi Cup')
+    const season = () => mock.rows.get(id).season[0]
+    Object.assign(season(), { setup_step: 4, ...Object.fromEntries(SETTING_KEYS.map((k) => [k, PRESETS[2][k]])), format_preset: '7-a-side' })
+    await page.goto(base + `/t/${id}/setup/5`)
+    await page.getByLabel('Starters', { exact: true }).waitFor()
+    assert.equal(await page.getByLabel('Starters', { exact: true }).inputValue(), '7', '7-a-side default not shown')
+    await context.setOffline(true)
+    mock.down = true
+    await page.getByLabel('Doctor', { exact: true }).check()
+    await page.getByLabel('Starters', { exact: true }).fill('6')
+    await button(page, 'Back').click()
+    await page.getByRole('heading', { name: 'Step 4 of 7 · Format' }).waitFor()
+    await button(page, 'Next').click()
+    await page.getByRole('heading', { name: 'Step 5 of 7 · Line-up rules' }).waitFor()
+    assert.equal(await page.getByLabel('Starters', { exact: true }).inputValue(), '6', 'queued starters not shown')
+    assert.ok(await page.getByLabel('Doctor', { exact: true }).isChecked(), 'queued role not shown')
+    mock.down = false
+    await context.setOffline(false)
+    await until(page, () => season().starters === 6 && season().staff_roles.includes('doctor'), 'queued line-up rules not sent')
+    const order = [...new Map(calls(mock, 'set_lineup_rules').map((c) => [c.command_id, c])).values()].map((c) => c.expected_version)
+    assert.deepEqual(order, [...order].sort((a, b) => a - b), 'not replayed in order')
     await context.close()
   }
 

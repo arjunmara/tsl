@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { discard, resend, sendMine, type OutboxEntry } from '../../domain/commands'
 import { formatDate, inZone } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
+import { STAFF_ROLES, STRUCTURES, TIEBREAKS } from '../../domain/tournaments'
 import { Sheet } from '../../ui/Sheet'
 import { fieldLabels, labelFor } from './labels'
 
@@ -11,12 +12,19 @@ const when = (ts: string) => {
   return `${z.time}, ${formatDate(z.date)}`
 }
 const DATES = new Set(['starts_on', 'ends_on', 'registration_deadline'])
-// Match settings choices in the words the Format step uses.
-const WORDS: Record<string, string> = { stopped: 'Stopped clock', running: 'Running clock', rolling: 'Rolling', limited: 'Limited' }
-/** A field's value in words: dates in BS and AD, like every date the app shows; on/off for a switch; nothing set as "Not set". */
-const show = (k: string, v: unknown) =>
+// Choices in the words the wizard steps use.
+const WORDS: Record<string, string> = {
+  stopped: 'Stopped clock', running: 'Running clock', rolling: 'Rolling', limited: 'Limited',
+  ...Object.fromEntries([...STAFF_ROLES, ...STRUCTURES, ...TIEBREAKS]),
+}
+/**
+ * A field's value in words: dates in BS and AD, like every date the app shows; on/off for a switch; a list in order;
+ * nothing set as "Not set".
+ */
+const show = (k: string, v: unknown): string =>
   v == null || v === '' ? 'Not set' : typeof v === 'boolean' ? (v ? 'On' : 'Off')
-    : typeof v !== 'string' ? JSON.stringify(v) : DATES.has(k) ? formatDate(v) || v : WORDS[v] ?? v
+    : Array.isArray(v) ? (v.length ? v.map((x) => show(k, x)).join(', ') : 'None')
+      : typeof v !== 'string' ? JSON.stringify(v) : DATES.has(k) ? formatDate(v) || v : WORDS[v] ?? v
 
 /**
  * The hand-back sheet: the user's choice for each refused change, oldest first, one at a time.

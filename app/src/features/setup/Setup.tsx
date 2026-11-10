@@ -3,7 +3,8 @@ import { Navigate, useLocation, useNavigate, useParams } from 'react-router'
 import { forgetRefused, queuedFor, send, type OutboxEntry, type Upload } from '../../domain/commands'
 import { messageFor, messages } from '../../domain/messages'
 import {
-  assetBucket, formatPresets, logoUrl, noteNewSeason, SETTINGS, tournamentSetup, type FormatPreset, type MatchSettings, type SeasonAnswers,
+  assetBucket, formatPresets, logoUrl, NEW_LINEUP, NEW_STRUCTURE, noteNewSeason, SETTINGS, tournamentSetup, type FormatPreset, type LineupRules,
+  type MatchSettings, type SeasonAnswers, type Structure,
 } from '../../domain/tournaments'
 import { SecondaryButton } from '../../ui/Button'
 import { Field } from '../../ui/Field'
@@ -12,6 +13,7 @@ import { Problem } from '../auth/Screen'
 import { brandDefaults, readable, resizeLogo, textColours } from './brand'
 import { StepFour } from './Format'
 import { Frame } from './Frame'
+import { StepFive, StepSix } from './LineupStructure'
 import { StepThree, StepTwo } from './RulesDates'
 
 type Values = { name: string; primary: string; secondary: string; logoPath: string | null; logoBlob: Blob | null }
@@ -75,7 +77,7 @@ export function NewTournament() {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** /t/:tournamentId/setup/:step: steps 1–4, or a placeholder for steps 5–7 until their stories land. */
+/** /t/:tournamentId/setup/:step: steps 1–6, or a placeholder for step 7 until its story lands. */
 export function SetupStep() {
   const { tournamentId = '', step: raw } = useParams()
   const step = Number(raw)
@@ -94,9 +96,12 @@ function Unavailable() {
   )
 }
 
-type Base = { seasonId: string; values: Values; answers: SeasonAnswers; settings: MatchSettings; setupStep: number }
+type Base = {
+  seasonId: string; values: Values; answers: SeasonAnswers; settings: MatchSettings; lineup: LineupRules; structure: Structure; setupStep: number
+}
 type Loaded = {
-  step: number; seasonId: string; initial: Values; answers: SeasonAnswers; settings: MatchSettings; presets: FormatPreset[]; setupStep: number
+  step: number; seasonId: string; initial: Values; answers: SeasonAnswers; settings: MatchSettings; lineup: LineupRules; structure: Structure
+  presets: FormatPreset[]; setupStep: number
 }
 
 const noAnswers: SeasonAnswers = { description: '', rules: '', photo_consent: '', starts_on: '', ends_on: '', registration_deadline: '' }
@@ -111,6 +116,16 @@ function overlaySettings(base: MatchSettings, queued: OutboxEntry[], presets: Fo
     const p = presets.find((x) => x.key === e.args.format_preset)
     if (p) v = { ...p.settings }
     for (const k of SETTINGS) if (k !== 'format_preset' && e.args[k] != null) v = { ...v, [k]: e.args[k] }
+  }
+  return v
+}
+
+/** Applies this user's pending edits of one command over base, in order: each argument base has replaces its value. */
+function overlayCommand<T extends object>(base: T, queued: OutboxEntry[], command: string): T {
+  let v = base
+  for (const e of queued) {
+    if (e.name !== command) continue
+    for (const k of Object.keys(base)) if (e.args[k] != null) v = { ...v, [k]: e.args[k] }
   }
   return v
 }
@@ -144,19 +159,21 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
     let live = true
     const queuedStep = (q: OutboxEntry[]) =>
       Math.max(0, ...q.filter((e) => e.name === 'set_setup_step').map((e) => Number(e.args.step) || 0))
-    // Step 4 needs the presets (from the device when offline); other steps only refresh the device's copy.
+    // Steps 4 and 5 need the presets (from the device when offline); other steps only refresh the device's copy.
     const presetsRead = formatPresets()
     let presets: FormatPreset[] = []
     const show = (b: Base, queued: OutboxEntry[]) => live && setLoaded({
       step, seasonId: b.seasonId, initial: overlay(b.values, queued), answers: overlayAnswers(b.answers, queued),
-      settings: overlaySettings(b.settings, queued, presets), presets, setupStep: Math.max(b.setupStep, queuedStep(queued)),
+      settings: overlaySettings(b.settings, queued, presets), lineup: overlayCommand(b.lineup, queued, 'set_lineup_rules'),
+      structure: overlayCommand(b.structure, queued, 'set_structure'), presets, setupStep: Math.max(b.setupStep, queuedStep(queued)),
     })
     void (async () => {
-      if (step === 4) {
+      if (step === 4 || step === 5) {
         const p = await presetsRead
         if (!live) return
-        if (!p) return setProblem({ step, text: navigator.onLine ? messages.tournament_unknown : messages.offline })
-        presets = p
+        // Step 5 only takes its default numbers from them, so it opens without.
+        if (!p && step === 4) return setProblem({ step, text: navigator.onLine ? messages.tournament_unknown : messages.offline })
+        presets = p ?? []
       }
       const d = brandDefaults()
       const defaults: Values = { name: '', primary: d.primary, secondary: d.secondary, logoPath: null, logoBlob: null }
@@ -167,7 +184,7 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
         // Its Season starts at version 1, even if the page closed before the create's first answer.
         const seasonId = String(create.args.season_id)
         await noteNewSeason(seasonId)
-        return show({ seasonId, values: defaults, answers: noAnswers, settings: noSettings, setupStep: 0 }, pending)
+        return show({ seasonId, values: defaults, answers: noAnswers, settings: noSettings, lineup: NEW_LINEUP, structure: NEW_STRUCTURE, setupStep: 0 }, pending)
       }
       const r = await tournamentSetup(tournamentId)
       if (!live) return
@@ -179,7 +196,8 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
       const t = r.tournament
       if (!t || !t.season) return setLoaded('missing')
       const base: Base = {
-        seasonId: t.season.id, answers: t.season.answers, settings: t.season.settings, setupStep: t.season.setupStep,
+        seasonId: t.season.id, answers: t.season.answers, settings: t.season.settings, lineup: t.season.lineup, structure: t.season.structure,
+        setupStep: t.season.setupStep,
         values: { name: t.name, primary: t.brandPrimary ?? d.primary, secondary: t.brandSecondary ?? d.secondary, logoPath: t.logoPath, logoBlob: null },
       }
       // Entries pending before the read and gone after it may have been applied after the read answered: count
@@ -203,6 +221,11 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
   if (props && step === 2) return <StepTwo {...props} />
   if (props && step === 3) return <StepThree {...props} />
   if (ready && step === 4) return <StepFour tournamentId={tournamentId} seasonId={ready.seasonId} initial={ready.settings} presets={ready.presets} />
+  if (ready && step === 5) {
+    return <StepFive tournamentId={tournamentId} seasonId={ready.seasonId} initial={ready.lineup}
+      defaults={ready.presets.find((p) => p.key === ready.settings.format_preset)?.lineup} />
+  }
+  if (ready && step === 6) return <StepSix tournamentId={tournamentId} seasonId={ready.seasonId} initial={ready.structure} />
   return (
     <Frame step={step} onBack={back}>
       {ready ? (

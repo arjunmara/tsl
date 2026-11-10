@@ -16,6 +16,9 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   // Preset keys are their labels in lower case (futsal → Futsal, 7-a-side).
   set_match_settings: (a) => (a.format_preset != null
     ? `Change the format to ${String(a.format_preset).replace(/^./, (c) => c.toUpperCase())}` : 'Change the Match settings'),
+  set_lineup_rules: () => 'Change the Line-up rules',
+  // The tie-break list sends its order on its own.
+  set_structure: (a) => (a.tiebreaks != null ? 'Change the tie-break order' : 'Change the Structure'),
 }
 
 /** "rules", "description and rules": the fields an edit changes, in words. */
@@ -52,4 +55,15 @@ export const fieldLabels: Record<string, string> = {
   foul_warning: 'Accumulated-foul warning',
   timeouts_per_period: 'Timeouts per team per period',
   power_play_minutes: 'Power play (minutes)',
+  starters: 'Starters',
+  max_bench: 'Maximum bench',
+  staff_roles: 'Allowed Staff roles',
+  structure: 'Structure',
+  group_count: 'Number of groups',
+  teams_per_group: 'Teams per group',
+  qualifiers_per_group: 'Qualifiers per group',
+  points_win: 'Points for a win',
+  points_draw: 'Points for a draw',
+  points_loss: 'Points for a loss',
+  tiebreaks: 'Tie-breaks',
 }

@@ -79,7 +79,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -377,6 +377,99 @@ out=$(as anon "select app.set_match_settings('$(cmd 97)', '$S1', 1)" 2>&1 || tru
 [[ $out == *"permission denied for function"* ]] || fail "anon: can execute set_match_settings: $out"
 ! as $A "update app.format_preset set periods = 3" >/dev/null 2>&1 || fail "presets: client could update"
 ! as anon "select count(*) from app.format_preset" >/dev/null 2>&1 || fail "presets: anon could read"
+
+# --- Wizard steps 5 and 6 (Story 1.11): Line-up rules, Structure and tie-breaks with versions; the shared line-up check.
+lr() { as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end
+                from app.set_lineup_rules('$(cmd "$2")', '$3', $4, $5) r"; }
+st() { as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end
+                from app.set_structure('$(cmd "$2")', '$3', $4, $5) r"; }
+struct() { q "select concat_ws(' ', structure, group_count, teams_per_group, qualifiers_per_group, points_win, points_draw, points_loss, tiebreaks::text) from app.season where id='$1'"; }
+[ "$(q "select string_agg(key||':'||starters||'/'||max_bench, ',' order by sort) from app.format_preset")" \
+  = 'futsal:5/9,5-a-side:5/5,7-a-side:7/5,11-a-side:11/7,custom:5/9' ] || fail "presets: line-up defaults"
+[ "$(q "select concat_ws(' ', starters, max_bench, staff_roles::text) from app.season where id='$S1'")" = '{manager,coach}' ] || fail "lineup: defaults"
+[ "$(struct $S1)" = '3 1 0 {h2h_points,h2h_goal_difference,h2h_shootout,goal_difference,goals_scored}' ] || fail "structure: defaults: $(struct $S1)"
+v=$(sver)
+r=$(as $A "select app.set_lineup_rules('$(cmd 100)', '$S1', $v, starters => 5, max_bench => 9)")
+[ "$(q "select (r->>'ok')||(r->>'version') from (select '$r'::jsonb r) x")" = "true$((v + 1))" ] || fail "lineup: not ok with version: $r"
+v=$((v + 1))
+[ "$(q "select count(*) from app.activity_log where table_name='season' and op='update' and command_id='$(cmd 100)' and actor='$A'")" = 1 ] \
+  || fail "lineup: not logged"
+[ "$(lr $A 100 $S1 $((v - 1)) "starters => 7")|$(sver)" = "ok|$v" ] || fail "lineup: repeat wrote again"
+[ "$(lr $A 101 $S1 $v "staff_roles => '{manager,coach,physio}'")" = ok ] || fail "lineup: roles"
+v=$((v + 1))
+[ "$(q "select concat_ws(' ', starters, max_bench, staff_roles::text) from app.season where id='$S1'")" = '5 9 {manager,coach,physio}' ] || fail "lineup: not applied"
+for bad in "starters => 0" "starters => 12" "max_bench => -1" "max_bench => 21" "staff_roles => '{manager,captain}'" \
+           "staff_roles => '{coach,coach}'" "staff_roles => array[null]::text[]"; do
+  [ "$(lr $A 102 $S1 $v "$bad")" = lineup_rules_invalid ] || fail "lineup: accepted $bad"
+  q "delete from app.command_result where command_id='$(cmd 102)'" >/dev/null
+done
+[ "$(lr $A 103 $S1 $v "max_bench => 0, staff_roles => '{}'")" = ok ] || fail "lineup: bench 0 and no roles"
+v=$((v + 1))
+r=$(as $A "select app.set_lineup_rules('$(cmd 104)', '$S1', $((v - 1)), starters => 6)")
+[ "$(q "select r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'starters', r->'conflict'->'current'->>'max_bench',
+         r->'conflict'->'current'->>'staff_roles', r->'conflict'->'current' ? 'rules' from (select '$r'::jsonb r) x")" = "version_conflict|$v|5|0|[]|f" ] \
+  || fail "lineup: conflict envelope: $r"
+[ "$(lr $B 105 $S1 $v "starters => 6")" = not_authorized ] || fail "lineup: non-member not refused"
+[ "$(lr $A 106 $S9 1 "starters => 6")" = season_started ] || fail "lineup: started season"
+[ "$(lr $A 107 $S1 $v "max_bench => 9, staff_roles => '{manager}'")" = ok ] || fail "lineup: reset"
+v=$((v + 1))
+
+# lineup_violations: reasons in words, empty when the rules are met, rules not set skipped, unknown Season raises.
+lv() { q "select coalesce(array_to_string(app.lineup_violations('$1', '$2'), ' | '), 'null')"; }
+[ "$(lv $S1 '{"starters": [1,2,3,4], "bench": [1,2,3,4,5,6,7,8,9,10], "players": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15], "staff": ["physio", "manager", "physio"]}')" \
+  = "Line-up needs 5 starters. You've picked 4. | Bench can have at most 9 Players. You've picked 10. | Squad can have at most 14 Players. You have 15. | Physio isn't an allowed Staff role." ] \
+  || fail "lineup_violations: reasons: $(lv $S1 '{"starters": [1,2,3,4], "bench": [1,2,3,4,5,6,7,8,9,10], "players": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15], "staff": ["physio", "manager", "physio"]}')"
+[ "$(lv $S1 '{"starters": [1,2,3,4,5], "bench": [6,7,8,9,10,11,12,13,14], "players": [1,2,3,4,5,6,7,8,9,10,11,12,13,14], "staff": ["manager"]}')" = '' ] \
+  || fail "lineup_violations: a valid squad has reasons"
+[ "$(lv $S1 '{}')|$(lv $S1 '{"staff": ["assistant_coach"]}')" = "|Assistant coach isn't an allowed Staff role." ] || fail "lineup_violations: empty squad or role words"
+[ "$(lv $S2 '{"starters": [1], "bench": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22]}')" = '' ] || fail "lineup_violations: unset rules not skipped"
+q "update app.season set starters = 1, max_bench = 1 where id='$S2'" >/dev/null
+[ "$(lv $S2 '{"starters": [], "bench": [1,2]}')" = "Line-up needs 1 starter. You've picked 0. | Bench can have at most 1 Player. You've picked 2." ] \
+  || fail "lineup_violations: singular: $(lv $S2 '{"starters": [], "bench": [1,2]}')"
+! q "select app.lineup_violations('$T4', '{}')" >/dev/null 2>&1 || fail "lineup_violations: unknown season did not raise"
+for who in anon $A; do
+  out=$(as $who "select app.lineup_violations('$S1', '{}')" 2>&1 || true)
+  [[ $out == *"permission denied for function lineup_violations"* ]] || fail "lineup_violations: $who can execute: $out"
+done
+
+r=$(as $A "select app.set_structure('$(cmd 110)', '$S1', $v, structure => 'groups_knockout', group_count => 2, teams_per_group => 4, qualifiers_per_group => 2)")
+[ "$(q "select (r->>'ok')||(r->>'version') from (select '$r'::jsonb r) x")" = "true$((v + 1))" ] || fail "structure: not ok with version: $r"
+v=$((v + 1))
+[ "$(struct $S1)" = 'groups_knockout 2 4 2 3 1 0 {h2h_points,h2h_goal_difference,h2h_shootout,goal_difference,goals_scored}' ] || fail "structure: not applied: $(struct $S1)"
+[ "$(q "select count(*) from app.activity_log where table_name='season' and op='update' and command_id='$(cmd 110)' and actor='$A'")" = 1 ] \
+  || fail "structure: not logged"
+[ "$(st $A 110 $S1 $((v - 1)) "structure => 'league'")|$(sver)" = "ok|$v" ] || fail "structure: repeat wrote again"
+[ "$(st $A 111 $S1 $v "qualifiers_per_group => 0")" = qualifiers_invalid ] || fail "structure: 0 qualifiers"
+[ "$(st $A 112 $S1 $v "qualifiers_per_group => 4")" = qualifiers_invalid ] || fail "structure: qualifiers = teams per group"
+[ "$(st $A 113 $S1 $v "teams_per_group => 2")" = qualifiers_invalid ] || fail "structure: teams per group at the qualifiers"
+q "update app.season set teams_per_group = null where id='$S2'" >/dev/null
+[ "$(as $B "select app.set_structure('$(cmd 123)', '$S2', (select version from app.season where id='$S2'), qualifiers_per_group => 16)->>'code'")" = qualifiers_invalid ] \
+  || fail "structure: 16 qualifiers with no group size"
+for bad in "structure => 'swiss'" "group_count => 1" "group_count => 17" "teams_per_group => 17" "points_win => 10" "points_draw => -1" \
+           "points_loss => 10"; do
+  [ "$(st $A 114 $S1 $v "$bad")" = structure_invalid ] || fail "structure: accepted $bad"
+  q "delete from app.command_result where command_id='$(cmd 114)'" >/dev/null
+done
+for bad in "tiebreaks => '{goals_scored,goals_scored}'" "tiebreaks => '{coin_toss}'" "tiebreaks => array[null]::text[]"; do
+  [ "$(st $A 115 $S1 $v "$bad")" = tiebreaks_invalid ] || fail "structure: accepted $bad"
+  q "delete from app.command_result where command_id='$(cmd 115)'" >/dev/null
+done
+[ "$(sver)" = "$v" ] || fail "structure: refusals wrote"
+[ "$(st $A 116 $S1 $v "tiebreaks => '{h2h_goal_difference,h2h_points,goals_scored}', points_win => 2")" = ok ] || fail "structure: reorder and remove"
+v=$((v + 1))
+[ "$(struct $S1)" = 'groups_knockout 2 4 2 2 1 0 {h2h_goal_difference,h2h_points,goals_scored}' ] || fail "structure: reorder not applied: $(struct $S1)"
+[ "$(st $A 117 $S1 $v "structure => 'league', tiebreaks => '{}'")" = ok ] || fail "structure: league with no tie-breaks"
+v=$((v + 1))
+r=$(as $A "select app.set_structure('$(cmd 118)', '$S1', $((v - 1)), points_draw => 2)")
+[ "$(q "select r->>'code', r->'conflict'->'current'->>'structure', r->'conflict'->'current'->>'tiebreaks', r->'conflict'->'current'->>'qualifiers_per_group'
+         from (select '$r'::jsonb r) x")" = 'version_conflict|league|[]|2' ] || fail "structure: conflict envelope: $r"
+[ "$(st $B 119 $S1 $v "points_win => 2")" = not_authorized ] || fail "structure: non-member not refused"
+[ "$(st $A 120 $S9 1 "tiebreaks => '{goals_scored}'")|$(q "select tiebreaks::text from app.season where id='$S9'")" \
+  = 'season_started|{h2h_points,h2h_goal_difference,h2h_shootout,goal_difference,goals_scored}' ] || fail "structure: tie-break change after start"
+for f in "set_lineup_rules('$(cmd 121)', '$S1', 1)" "set_structure('$(cmd 122)', '$S1', 1)"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
 
 # Storage: the bucket is public; members write only into their Tournament's folder.
 [ "$(q "select case when public then 't' else 'f' end||' '||allowed_mime_types::text||' '||file_size_limit from storage.buckets where id='tournament-assets'")" = 't {image/webp,image/png,image/jpeg} 1048576' ] \
