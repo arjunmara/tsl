@@ -349,7 +349,7 @@ try {
     await page.goto(base + '/new')
     await page.getByLabel('Tournament name').fill('Gulmi Cup')
     await page.getByLabel('Tournament name').press('Tab')
-    await page.getByText('Verify your email first, then try again.').waitFor()
+    await page.getByRole('main').getByText('Verify your email first, then try again.').waitFor()
     assert.equal(await alertText(page), 'Verify your email first, then try again.')
     assert.equal(path(page), '/new')
     await button(page, 'Next').click()

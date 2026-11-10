@@ -6,7 +6,7 @@ import { SETTINGS, type FormatPreset, type MatchSettings } from '../../domain/to
 import { ConfirmSheet } from '../../ui/ConfirmSheet'
 import { Field } from '../../ui/Field'
 import { useForm } from '../auth/form'
-import { Frame } from './Frame'
+import { Frame, useLeave } from './Frame'
 
 type Props = { tournamentId: string; seasonId: string; initial: MatchSettings; presets: FormatPreset[] }
 type NumKey = 'periods' | 'period_minutes' | 'half_time_minutes' | 'extra_time_periods' | 'extra_time_minutes' | 'max_substitutions'
@@ -42,6 +42,7 @@ const summary = (label: string, s: MatchSettings) => [
  */
 export function StepFour({ tournamentId, seasonId, initial, presets }: Props) {
   const navigate = useNavigate()
+  const leave = useLeave(tournamentId, 4)
   const { ref, showErrors, values } = useForm()
   const [s, setS] = useState(initial)
   // What is shown (read by handlers in the same tick) and what was last sent.
@@ -107,7 +108,7 @@ export function StepFour({ tournamentId, seasonId, initial, presets }: Props) {
 
   function back() {
     if (shown.current.format_preset) save(typed())
-    navigate(`/t/${tournamentId}/setup/3`, { replace: true })
+    leave()
   }
 
   const num = (k: NumKey, label: string, hint?: string) => (

@@ -5,7 +5,7 @@ import { messages, numberRange, qualifiersRange, teamsAboveQualifiers } from '..
 import { STAFF_ROLES, STRUCTURES, TIEBREAKS, type LineupRules, type Structure } from '../../domain/tournaments'
 import { Field } from '../../ui/Field'
 import { useForm } from '../auth/form'
-import { Frame } from './Frame'
+import { Frame, useLeave } from './Frame'
 
 type Ids = { tournamentId: string; seasonId: string }
 type Check = (v: string) => string | null
@@ -50,6 +50,7 @@ function typed(form: HTMLFormElement | null, checks: Record<string, Check>) {
  */
 export function StepFive({ initial, defaults, ...ids }: Ids & { initial: LineupRules; defaults?: { starters: number | null; max_bench: number | null } }) {
   const navigate = useNavigate()
+  const leave = useLeave(ids.tournamentId, 5)
   const { ref, showErrors, values } = useForm()
   const { v, shown, save } = useSeasonEdit('set_lineup_rules', ids, {
     ...initial, starters: initial.starters ?? defaults?.starters ?? null, max_bench: initial.max_bench ?? defaults?.max_bench ?? null,
@@ -65,7 +66,7 @@ export function StepFive({ initial, defaults, ...ids }: Ids & { initial: LineupR
   }
   function back() {
     save(typed(ref.current, checks))
-    navigate(`/t/${ids.tournamentId}/setup/4`, { replace: true })
+    leave()
   }
   const num = (k: keyof typeof checks, label: string, [min, max]: [number, number]) => (
     <Field label={label} name={k} inputMode="numeric" autoComplete="off" value={v[k] == null ? '' : String(v[k])} required
@@ -104,6 +105,7 @@ const words = Object.fromEntries(TIEBREAKS)
  */
 export function StepSix({ initial, ...ids }: Ids & { initial: Structure }) {
   const navigate = useNavigate()
+  const leave = useLeave(ids.tournamentId, 6)
   const { ref, showErrors, values } = useForm()
   const { v, shown, save } = useSeasonEdit('set_structure', ids, initial, initial)
   const [structureError, setStructureError] = useState(false)
@@ -159,7 +161,7 @@ export function StepSix({ initial, ...ids }: Ids & { initial: Structure }) {
   }
   function back() {
     save(typed(ref.current, checks))
-    navigate(`/t/${ids.tournamentId}/setup/5`, { replace: true })
+    leave()
   }
   const num = (k: keyof Structure & string, label: string, range: string) => (
     <Field label={label} name={k} inputMode="numeric" autoComplete="off" value={v[k] == null ? '' : String(v[k])} required

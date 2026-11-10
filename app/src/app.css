@@ -373,3 +373,106 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Tournament home and Settings (Story 1.12): App bar, Tab bar, lists two columns on a tablet, ~960px on a laptop. */
+.home {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--spacing-4) var(--spacing-gutter) var(--spacing-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+.home h1,
+.home h2,
+.home p {
+  margin: 0;
+}
+.home-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.home-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+.home-title h1 {
+  overflow-wrap: anywhere;
+}
+.home-bar .save-bar {
+  flex-basis: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.icon-button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--spacing-touch-min);
+  padding: 0;
+}
+.home-logo {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  object-fit: cover;
+  border-radius: var(--rounded-full);
+  background: var(--bg);
+}
+.home-initial {
+  display: grid;
+  place-items: center;
+  font-family: var(--body-strong-font-family);
+  font-weight: 800;
+}
+.season-switch summary {
+  min-height: var(--spacing-touch-min);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+}
+.season-switch summary::-webkit-details-marker {
+  display: none;
+}
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--spacing-touch-min);
+  padding: var(--spacing-2);
+  background: none;
+  border: 0;
+  color: var(--ink-muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+.tab[aria-selected="true"] {
+  color: var(--ink);
+  font-weight: 800;
+  box-shadow: inset 0 -2px 0 var(--ink), inset 0 -5px 0 var(--action);
+}
+.home-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+@media (min-width: 600px) {
+  .home-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}

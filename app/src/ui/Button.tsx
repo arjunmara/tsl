@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { ConfirmSheet } from './ConfirmSheet'
 import './components.css'
 
@@ -68,3 +68,14 @@ export function DestructiveButton({ label, sheetTitle, before, after, actionLabe
     </>
   )
 }
+
+/** An icon-only button: its action is in the accessible name. children: the SVG's paths (24×24, drawn in currentColor). */
+export function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" className="ui-button ui-secondary icon-button" aria-label={label} onClick={onClick}>
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+        strokeLinejoin="round" aria-hidden="true">{children}</svg>
+    </button>
+  )
+}
+export const backIcon = <path d="M15 5l-7 7 7 7" />

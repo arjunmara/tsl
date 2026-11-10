@@ -15,7 +15,7 @@ import { AccountMenu } from './AccountMenu'
 const savedSteps = (k: number) =>
   `${k === 0 ? '' : k === 1 ? 'Step 1 is saved. ' : `Steps 1–${k} are saved. `}Next: ${STEPS[k]}.`
 
-const statusLabel: Record<SeasonStatus, string> = { setup: 'Setup', registration: 'Registration', started: 'Started', finished: 'Finished' }
+export const statusLabel: Record<SeasonStatus, string> = { setup: 'Setup', registration: 'Registration', started: 'Started', finished: 'Finished' }
 
 export function MyTournaments() {
   const navigate = useNavigate()
@@ -98,6 +98,7 @@ export function MyTournaments() {
                 </div>
                 <p className="meta">{savedSteps(t.season.setupStep)}</p>
                 <PrimaryButton label="Continue setup" onClick={() => navigate(`/t/${t.id}/setup/${t.season!.setupStep + 1}`)} />
+                <SecondaryButton label={`Open ${t.name}`} onClick={() => navigate(`/t/${t.id}`)} />
               </li>
             ) : (
               <li key={t.id} className="card">
@@ -107,6 +108,7 @@ export function MyTournaments() {
                     Season {t.season.number} · <StatusPill state={t.season.status === 'finished' ? 'done' : 'pending'} label={statusLabel[t.season.status]} />
                   </p>
                 )}
+                {t.season && <PrimaryButton label={`Open ${t.name}`} onClick={() => navigate(`/t/${t.id}`)} />}
               </li>
             ))}
           </ul>

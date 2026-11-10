@@ -484,7 +484,8 @@ try {
     await card.getByText('Step 1 is saved. Next: Description & rules.', { exact: true }).waitFor()
     assert.equal(await card.locator('.wizard-progress').getAttribute('aria-hidden'), 'true')
     assert.equal(await card.locator('img').getAttribute('src'), `${SUPA}/storage/v1/object/public/tournament-assets/${T}/logo-x.webp`)
-    assert.equal(await page.locator('.card', { hasText: 'Done Cup' }).getByRole('button').count(), 0, 'finished setup has a Resume card')
+    assert.deepEqual(await page.locator('.card', { hasText: 'Done Cup' }).getByRole('button').allTextContents(), ['Open Done Cup'],
+      'finished setup: only Open, no Continue setup')
     await card.getByRole('button', { name: 'Continue setup' }).click()
     await page.waitForURL((u) => u.pathname === `/t/${T}/setup/2`)
     await page.getByRole('heading', { name: 'Step 2 of 7 · Description & rules' }).waitFor()

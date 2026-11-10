@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router'
 import { forgetRefused, queuedFor, send, type OutboxEntry, type Upload } from '../../domain/commands'
 import { messageFor, messages } from '../../domain/messages'
@@ -12,18 +12,18 @@ import { useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
 import { brandDefaults, readable, resizeLogo, textColours } from './brand'
 import { StepFour } from './Format'
-import { Frame } from './Frame'
+import { Frame, SettingsMode, useLeave } from './Frame'
 import { StepFive, StepSix } from './LineupStructure'
 import { StepThree, StepTwo } from './RulesDates'
 
-type Values = { name: string; primary: string; secondary: string; logoPath: string | null; logoBlob: Blob | null }
+export type Values = { name: string; primary: string; secondary: string; logoPath: string | null; logoBlob: Blob | null }
 type Branding = { name?: string; brand_primary?: string; brand_secondary?: string; logo_path?: string }
 
 // Code points, as the server's char_length counts them.
 const checkName = (v: string) => ([...v].length <= 80 ? null : messages.name_long)
 
 /** Applies this user's pending create and branding entries for the Tournament over the server's values, in order. */
-function overlay(base: Values, queued: OutboxEntry[]): Values {
+export function overlay(base: Values, queued: OutboxEntry[]): Values {
   const v = { ...base }
   for (const e of queued) {
     const a = e.args as Branding
@@ -75,7 +75,25 @@ export function NewTournament() {
   return <StepOne {...ids} initial={initial} isNew />
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Settings sections (/t/:id/settings/:section) and the wizard step each shows; Sponsors (step 7) arrives with its story.
+// Each: [section key, wizard step, its button label (verb + object)].
+export const SECTIONS: [string, number, string][] = [['name', 1, 'Change name and logo'], ['rules', 2, 'Change description and rules'],
+  ['dates', 3, 'Change dates'], ['format', 4, 'Change Format'], ['lineup', 5, 'Change Line-up rules'], ['structure', 6, 'Change Structure']]
+
+/** /t/:tournamentId/settings/:section: the wizard step in the settings frame, open whatever the setup progress. */
+export function SettingsSection() {
+  const { tournamentId = '', section } = useParams()
+  const step = SECTIONS.find(([k]) => k === section)?.[1]
+  if (!UUID.test(tournamentId)) return <Unavailable />
+  if (!step) return <Navigate to={`/t/${tournamentId}/settings`} replace />
+  return (
+    <SettingsMode.Provider value>
+      <LoadStep key={tournamentId} tournamentId={tournamentId} step={step} />
+    </SettingsMode.Provider>
+  )
+}
 
 /** /t/:tournamentId/setup/:step: steps 1–6, or a placeholder for step 7 until its story lands. */
 export function SetupStep() {
@@ -86,7 +104,7 @@ export function SetupStep() {
   return <LoadStep key={tournamentId} tournamentId={tournamentId} step={step} />
 }
 
-function Unavailable() {
+export function Unavailable() {
   const navigate = useNavigate()
   return (
     <main className="screen">
@@ -150,7 +168,7 @@ function overlayAnswers(base: SeasonAnswers, queued: OutboxEntry[]): SeasonAnswe
 const lastRead = new Map<string, Base>()
 
 function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }) {
-  const navigate = useNavigate()
+  const settings = useContext(SettingsMode)
   const [loaded, setLoaded] = useState<Loaded | 'missing' | null>(null)
   const [problem, setProblem] = useState<{ step: number; text: string } | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -211,11 +229,11 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
     }
   }, [tournamentId, step, attempt])
 
-  const back = () => navigate(step === 1 ? '/' : `/t/${tournamentId}/setup/${step - 1}`, { replace: true })
-  if (loaded === 'missing') return step === 1 ? <Unavailable /> : <Navigate to={`/t/${tournamentId}/setup/1`} replace />
+  const back = useLeave(tournamentId, step)
+  if (loaded === 'missing') return step === 1 || settings ? <Unavailable /> : <Navigate to={`/t/${tournamentId}/setup/1`} replace />
   const ready = loaded?.step === step ? loaded : null
   const failed = problem?.step === step && !ready ? problem.text : null
-  if (ready && step > ready.setupStep + 1) return <Navigate to={`/t/${tournamentId}/setup/1`} replace />
+  if (ready && !settings && step > ready.setupStep + 1) return <Navigate to={`/t/${tournamentId}/setup/1`} replace />
   const props = ready && { tournamentId, seasonId: ready.seasonId, initial: ready.answers }
   if (ready && step === 1) return <StepOne tournamentId={tournamentId} seasonId={ready.seasonId} initial={ready.initial} />
   if (props && step === 2) return <StepTwo {...props} />
@@ -252,6 +270,7 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
  */
 function StepOne({ tournamentId, seasonId, initial, isNew = false }: { tournamentId: string; seasonId: string; initial: Values; isNew?: boolean }) {
   const navigate = useNavigate()
+  const leave = useLeave(tournamentId, 1)
   const { ref, showErrors, values } = useForm()
   const [v, setV] = useState(initial)
   const [error, setError] = useState<string | null>(null)
@@ -370,7 +389,7 @@ function StepOne({ tournamentId, seasonId, initial, isNew = false }: { tournamen
 
   const fileId = useId()
   return (
-    <Frame step={1} onBack={() => navigate('/', { replace: true })} onNext={() => void goNext()}>
+    <Frame step={1} onBack={leave} onNext={() => void goNext()}>
       <div className="wizard-body">
         <form ref={ref} noValidate className="wizard-fields" onSubmit={(e) => (e.preventDefault(), void goNext())}>
           <Field label="Tournament name" name="name" autoComplete="off" value={v.name} onSave={saveName} required

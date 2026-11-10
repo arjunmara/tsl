@@ -6,7 +6,7 @@ import { messages } from '../../domain/messages'
 import type { SeasonAnswers } from '../../domain/tournaments'
 import { Field } from '../../ui/Field'
 import { useForm } from '../auth/form'
-import { Frame } from './Frame'
+import { Frame, useLeave } from './Frame'
 
 type Props = { tournamentId: string; seasonId: string; initial: SeasonAnswers }
 type Key = keyof SeasonAnswers
@@ -18,6 +18,7 @@ type Key = keyof SeasonAnswers
  */
 function useSeasonStep({ tournamentId, seasonId, initial }: Props, step: number, command: string, keys: readonly Key[]) {
   const navigate = useNavigate()
+  const leave = useLeave(tournamentId, step)
   const { ref, showErrors, values } = useForm()
   const [saved, setSaved] = useState(initial)
   const last = useRef(initial)
@@ -46,7 +47,7 @@ function useSeasonStep({ tournamentId, seasonId, initial }: Props, step: number,
       const v = el?.value.trim() ?? ''
       return el && el.getAttribute('aria-invalid') !== 'true' && (v || !(DATES as readonly string[]).includes(k)) ? [[k, v]] : []
     })))
-    navigate(`/t/${tournamentId}/setup/${step - 1}`, { replace: true })
+    leave()
   }
   const field = (k: Key) => ({ name: k, value: saved[k], onSave: (v: string) => save({ [k]: v }), showErrors })
   return { ref, saved, next, back, field }

@@ -9,7 +9,9 @@ import { RequireSession, RequireVerified, SessionProvider } from './features/aut
 import { SignIn } from './features/auth/SignIn'
 import { SignUp } from './features/auth/SignUp'
 import { MyTournaments } from './features/tournaments/MyTournaments'
-import { NewTournament, SetupStep } from './features/setup/Setup'
+import { NewTournament, SettingsSection, SetupStep } from './features/setup/Setup'
+import { Home } from './features/home/Home'
+import { Settings } from './features/home/Settings'
 import { SaveStatusBar } from './features/save-status/SaveStatusBar'
 import { PrimaryButton } from './ui/Button'
 
@@ -41,6 +43,11 @@ function ScreenBoundary({ children }: { children: ReactNode }) {
 // /__crash throws, to check error reporting: only in dev or with ?crashtest. The fake email and number
 // in its message must not reach the log.
 const crashTest = import.meta.env.DEV || new URLSearchParams(location.search).has('crashtest')
+/** The page-wide Save status, except where a screen shows it in its own App bar (Tournament home and Settings list). */
+function PageSaveStatus() {
+  return /^\/t\/[^/]+(\/settings)?\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
+}
+
 function Crash(): ReactNode {
   throw new Error('Test crash from /__crash for test@example.com, 9800000001')
 }
@@ -49,7 +56,7 @@ export function App() {
   return (
     <BrowserRouter>
       <SessionProvider>
-        <SaveStatusBar />
+        <PageSaveStatus />
         <ScreenBoundary>
         <Routes>
           <Route path="/sign-up" element={<SignUp />} />
@@ -63,6 +70,9 @@ export function App() {
             <Route element={<RequireVerified />}>
               <Route path="/new" element={<NewTournament />} />
               <Route path="/t/:tournamentId/setup/:step" element={<SetupStep />} />
+              <Route path="/t/:tournamentId" element={<Home />} />
+              <Route path="/t/:tournamentId/settings" element={<Settings />} />
+              <Route path="/t/:tournamentId/settings/:section" element={<SettingsSection />} />
             </Route>
           </Route>
           {crashTest && <Route path="/__crash" element={<Crash />} />}
