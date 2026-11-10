@@ -65,6 +65,47 @@ const latest = (seasons: SeasonRow[]): SeasonSummary | null =>
   seasons.reduce<SeasonSummary | null>((a, s) => (!a || s.number > a.number
     ? { id: s.id, number: s.number, status: s.status, setupStep: s.setup_step ?? 0 } : a), null)
 
+/** A Sponsor as app.sponsor holds it, keyed as the commands name its fields. */
+export type Sponsor = { id: string; caption: string; logo_path: string; ad_paths: string[] }
+
+// The last read per Season, kept on the device (public data only): offline, step 7 shows it.
+const sponsorsKey = (seasonId: string) => `tsl-sponsors:${seasonId}`
+
+/**
+ * The Season's Sponsors in their order; an empty list when it has none. Offline, the last read kept on this device; a
+ * Season never read here gives { code }. Each row's version becomes its edits' base.
+ */
+export async function seasonSponsors(seasonId: string): Promise<{ sponsors: Sponsor[] } | { code: 'offline' | 'unknown' }> {
+  const kept = () => {
+    try {
+      const last = JSON.parse(localStorage.getItem(sponsorsKey(seasonId)) ?? 'null') as Sponsor[] | null
+      if (Array.isArray(last)) return { sponsors: last }
+    } catch {
+      // Blocked or bad storage: nothing kept.
+    }
+    return { code: 'offline' as const }
+  }
+  try {
+    const { data, error, status } = await supabase.schema('app').from('sponsor')
+      .select('id, caption, logo_path, ad_paths, version').eq('season_id', seasonId).order('sort').order('created_at').order('id')
+    if (error) return failed(status).code === 'offline' ? kept() : { code: 'unknown' }
+    const rows = (data ?? []) as (Sponsor & { version: number })[]
+    for (const r of rows) await noteVersion(r.id, r.version)
+    const sponsors = rows.map(({ id, caption, logo_path, ad_paths }) => ({ id, caption, logo_path, ad_paths: ad_paths ?? [] }))
+    try {
+      localStorage.setItem(sponsorsKey(seasonId), JSON.stringify(sponsors))
+    } catch {
+      // Storage full or blocked: only the offline fallback is lost.
+    }
+    return { sponsors }
+  } catch {
+    return kept()
+  }
+}
+
+/** A Sponsor added on this device starts at version 1: the base for edits queued before the add is answered. */
+export const noteNewSponsor = (sponsorId: string) => noteVersion(sponsorId, 1)
+
 /** A Season created with its Tournament starts at version 1: the base for edits queued before the create is answered. */
 export const noteNewSeason = (seasonId: string) => noteVersion(seasonId, 1)
 

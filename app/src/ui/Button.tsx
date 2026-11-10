@@ -40,6 +40,8 @@ export function SecondaryButton({ label, onClick }: Click) {
 
 export type DestructiveButtonProps = {
   label: string
+  /** A fuller accessible name that starts with label, e.g. "Delete sponsor Gulmi Hardware". */
+  accessibleLabel?: string
   sheetTitle: string
   before: string
   after: string
@@ -48,11 +50,11 @@ export type DestructiveButtonProps = {
 }
 
 // No plain onClick: a destructive action always goes through a Confirm sheet.
-export function DestructiveButton({ label, sheetTitle, before, after, actionLabel, onConfirm }: DestructiveButtonProps) {
+export function DestructiveButton({ label, accessibleLabel, sheetTitle, before, after, actionLabel, onConfirm }: DestructiveButtonProps) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button type="button" className="ui-button ui-secondary ui-destructive" onClick={() => setOpen(true)}>
+      <button type="button" className="ui-button ui-secondary ui-destructive" aria-label={accessibleLabel} onClick={() => setOpen(true)}>
         {label}
       </button>
       <ConfirmSheet

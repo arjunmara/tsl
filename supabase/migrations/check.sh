@@ -79,7 +79,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -467,6 +467,106 @@ r=$(as $A "select app.set_structure('$(cmd 118)', '$S1', $((v - 1)), points_draw
 [ "$(st $A 120 $S9 1 "tiebreaks => '{goals_scored}'")|$(q "select tiebreaks::text from app.season where id='$S9'")" \
   = 'season_started|{h2h_points,h2h_goal_difference,h2h_shootout,goal_difference,goals_scored}' ] || fail "structure: tie-break change after start"
 for f in "set_lineup_rules('$(cmd 121)', '$S1', 1)" "set_structure('$(cmd 122)', '$S1', 1)"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+
+# --- Wizard step 7 (Story 1.13): Sponsors with versions, order and the conflict envelope; empty list is no error.
+sp() { as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.$2 r"; }
+P1=31111111-0000-4000-8000-000000000001 P2=31111111-0000-4000-8000-000000000002 P3=31111111-0000-4000-8000-000000000003
+S8=29999999-0000-4000-8000-000000000008
+q "insert into app.season (id, tournament_id, number, status) values ('$S8', '$T1', 3, 'finished')" >/dev/null
+[ "$(as $A "select count(*) from app.sponsor where season_id='$S1'")" = 0 ] || fail "sponsors: empty Season not an empty list"
+add() { sp "$1" "add_sponsor('$(cmd "$2")', '$3', '$4', $5)"; }
+r=$(as $A "select app.add_sponsor('$(cmd 130)', '$P1', '$S1', '  Gulmi Hardware ', '$T1/sponsor-logo-1.webp', '{$T1/ad-1.webp,$T1/ad-2.webp}')")
+[ "$(q "select (r->>'ok')||coalesce(r->>'version', '-') from (select '$r'::jsonb r) x")" = 'true-' ] || fail "sponsor add: $r"
+[ "$(q "select concat_ws('|', tournament_id, caption, logo_path, ad_paths::text, sort, version) from app.sponsor where id='$P1'")" \
+  = "$T1|Gulmi Hardware|$T1/sponsor-logo-1.webp|{$T1/ad-1.webp,$T1/ad-2.webp}|0|1" ] || fail "sponsor add: row"
+[ "$(q "select count(*) from app.activity_log where table_name='sponsor' and op='insert' and command_id='$(cmd 130)' and actor='$A' and tournament_id='$T1'")" = 1 ] \
+  || fail "sponsor add: not logged"
+[ "$(as $A "select app.add_sponsor('$(cmd 130)', '$P1', '$S1', 'Other', '$T1/x.webp')")" = "$r" ] || fail "sponsor add: repeat differs"
+[ "$(q "select count(*) from app.sponsor")" = 1 ] || fail "sponsor add: repeat wrote again"
+[ "$(add $A 131 $P1 $S1 "'Again', '$T1/x.webp'")" = already_exists ] || fail "sponsor add: reused id"
+for bad in "E'Two\\nlines', '$T1/x.webp'" "E'Sep\\u2028x', '$T1/x.webp'" "E'Tab\\there', '$T1/x.webp'" "'', '$T1/x.webp'" "'   ', '$T1/x.webp'" \
+           "'$(printf 'x%.0s' $(seq 121))', '$T1/x.webp'"; do
+  [ "$(add $A 132 $P2 $S1 "$bad")" = caption_invalid ] || fail "sponsor add: caption accepted: $bad"
+  q "delete from app.command_result where command_id='$(cmd 132)'" >/dev/null
+done
+for bad in "'Cap', null" "'Cap', '$T2/x.webp'" "'Cap', 'x.webp'" "'Cap', '$T1/../x.webp'"; do
+  [ "$(add $A 133 $P2 $S1 "$bad")" = logo_invalid ] || fail "sponsor add: logo accepted: $bad"
+  q "delete from app.command_result where command_id='$(cmd 133)'" >/dev/null
+done
+for bad in "'{$T2/a.webp}'" "'{$T1/a.webp,$T1/a.webp}'" "array[null]::text[]" "null" \
+           "'{$T1/1.webp,$T1/2.webp,$T1/3.webp,$T1/4.webp,$T1/5.webp,$T1/6.webp}'"; do
+  [ "$(add $A 134 $P2 $S1 "'Cap', '$T1/x.webp', $bad")" = ads_invalid ] || fail "sponsor add: ads accepted: $bad"
+  q "delete from app.command_result where command_id='$(cmd 134)'" >/dev/null
+done
+[ "$(q "select count(*) from app.sponsor")" = 1 ] || fail "sponsor add: refusals wrote"
+[ "$(add $B 135 $P2 $S1 "'Cap', '$T1/x.webp'")" = not_authorized ] || fail "sponsor add: non-member"
+[ "$(add $A 136 $P2 $S8 "'Cap', '$T1/x.webp'")" = season_finished ] || fail "sponsor add: finished season"
+[ "$(add $A 137 $P2 $S9 "'Started Co', '$T1/x.webp'")" = ok ] || fail "sponsor add: started season refused"
+[ "$(add $A 138 $P3 $S1 "'Second Co', '$T1/y.webp', '{}'")|$(q "select sort from app.sponsor where id='$P3'")" = 'ok|1' ] || fail "sponsor add: second not last"
+out=$(as anon "select app.add_sponsor('$(cmd 139)', '$P2', '$S1', 'x', '$T1/x.webp')" 2>&1 || true)
+[[ $out == *"permission denied for function add_sponsor"* ]] || fail "anon: can execute add_sponsor: $out"
+[ "$(as $B "select count(*) from app.sponsor")" = 0 ] || fail "sponsors: B sees A's Sponsors"
+for who in anon $A; do
+  out=$(as $who "select app.sponsor_invalid('$T1', 'x', 'y', '{}')" 2>&1 || true)
+  [[ $out == *"permission denied for function sponsor_invalid"* ]] || fail "sponsor_invalid: $who can execute: $out"
+done
+
+ed() { sp "$1" "edit_sponsor('$(cmd "$2")', '$3', '$4', $5)"; }
+r=$(as $A "select app.edit_sponsor('$(cmd 140)', '$P1', '$S1', 1, caption => 'Gulmi Hardware & Paints')")
+[ "$(q "select (r->>'ok')||(r->>'version') from (select '$r'::jsonb r) x")" = true2 ] || fail "sponsor edit: $r"
+[ "$(q "select concat_ws('|', caption, logo_path, cardinality(ad_paths), version) from app.sponsor where id='$P1'")" = "Gulmi Hardware & Paints|$T1/sponsor-logo-1.webp|2|2" ] \
+  || fail "sponsor edit: only the caption should change"
+[ "$(ed $A 141 $P1 $S1 "2, logo_path => '$T1/logo-2.webp', ad_paths => '{}'")" = ok ] || fail "sponsor edit: logo and ads"
+[ "$(q "select logo_path||cardinality(ad_paths)||version from app.sponsor where id='$P1'")" = "$T1/logo-2.webp03" ] || fail "sponsor edit: not applied"
+r=$(as $A "select app.edit_sponsor('$(cmd 142)', '$P1', '$S1', 2, caption => 'Stale')")
+[ "$(q "select r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'caption', r->'conflict'->'current'->>'ad_paths', r->'conflict'->>'changed_by'
+         from (select '$r'::jsonb r) x")" = 'version_conflict|3|Gulmi Hardware & Paints|[]|a' ] || fail "sponsor edit: conflict envelope: $r"
+for bad in "caption => E'a\\nb'|caption_invalid" "logo_path => '$T2/x.webp'|logo_invalid" "ad_paths => '{$T2/x.webp}'|ads_invalid"; do
+  [ "$(ed $A 143 $P1 $S1 "3, ${bad%|*}")" = "${bad#*|}" ] || fail "sponsor edit: accepted ${bad%|*}"
+  q "delete from app.command_result where command_id='$(cmd 143)'" >/dev/null
+done
+[ "$(q "select version from app.sponsor where id='$P1'")" = 3 ] || fail "sponsor edit: refusals wrote"
+[ "$(ed $A 144 $P1 $S9 "3, caption => 'x'")" = sponsor_missing ] || fail "sponsor edit: other Season's Sponsor"
+[ "$(ed $B 145 $P1 $S1 "3, caption => 'x'")" = not_authorized ] || fail "sponsor edit: non-member"
+
+ro() { sp "$1" "reorder_sponsors('$(cmd "$2")', '$3', $4)"; }
+order() { q "select string_agg(caption, ',' order by sort, created_at) from app.sponsor where season_id='$S1'"; }
+P4=31111111-0000-4000-8000-000000000004
+[ "$(add $A 150 $P4 $S1 "'Third Co', '$T1/z.webp'")" = ok ] || fail "sponsor add: third"
+[ "$(ro $A 151 $S1 "'{$P4,$P1}'")|$(order)" = 'ok|Third Co,Gulmi Hardware & Paints,Second Co' ] || fail "reorder: listed first, rest after: $(order)"
+[ "$(q "select string_agg(version::text, ',' order by sort) from app.sponsor where season_id='$S1'")" = '1,3,1' ] || fail "reorder: bumped a version"
+[ "$(ro $A 152 $S1 "'{$P3,$P4,$P1,$P2}'")|$(order)" = 'ok|Second Co,Third Co,Gulmi Hardware & Paints' ] || fail "reorder: full, unknown id ignored"
+[ "$(q "select count(*) from app.activity_log where table_name='sponsor' and op='update' and command_id='$(cmd 152)'")" = 3 ] || fail "reorder: not logged"
+for bad in null "'{$P1,$P1}'" "array[null]::uuid[]"; do
+  [ "$(ro $A 153 $S1 "$bad")" = sponsors_invalid ] || fail "reorder: accepted $bad"
+  q "delete from app.command_result where command_id='$(cmd 153)'" >/dev/null
+done
+[ "$(ro $B 154 $S1 "'{$P1}'")" = not_authorized ] || fail "reorder: non-member"
+
+[ "$(add $A 129 31111111-0000-4000-8000-000000000029 $S1 "E'C1\\u0085x', '$T1/x.webp'")" = caption_invalid ] || fail "sponsor add: C1 control accepted"
+[ "$(ed $A 128 $P2 $S9 "1, caption => 'Still editable'")" = ok ] || fail "sponsor edit: started season refused"
+q "insert into app.sponsor (id, tournament_id, season_id, logo_path, caption, sort)
+   select gen_random_uuid(), '$T1', '$S8', '$T1/f.webp', 'F'||n, n from generate_series(1, 2) n" >/dev/null
+[ "$(ed $A 127 $(q "select id from app.sponsor where season_id='$S8' limit 1") $S8 "1, caption => 'x'")" = season_finished ] || fail "sponsor edit: finished season"
+[ "$(ro $A 126 $S8 "'{}'")" = season_finished ] || fail "reorder: finished season"
+q "insert into app.sponsor (id, tournament_id, season_id, logo_path, caption, sort)
+   select gen_random_uuid(), '$T1', '$S9', '$T1/f.webp', 'F'||n, n from generate_series(1, 29) n" >/dev/null
+[ "$(add $A 125 31111111-0000-4000-8000-000000000025 $S9 "'Full Co', '$T1/x.webp'")|$(q "select count(*) from app.sponsor where season_id='$S9'")" = 'sponsors_full|30' ] \
+  || fail "sponsor add: 31st Sponsor accepted"
+de() { sp "$1" "delete_sponsor('$(cmd "$2")', '$3', '$4', $5)"; }
+r=$(as $A "select app.delete_sponsor('$(cmd 160)', '$P1', '$S1', 2)")
+[ "$(q "select r->>'code', r->'conflict'->'current'->>'caption' from (select '$r'::jsonb r) x")|$(q "select count(*) from app.sponsor where id='$P1'")" \
+  = 'version_conflict|Gulmi Hardware & Paints|1' ] || fail "sponsor delete: stale version: $r"
+[ "$(de $B 161 $P1 $S1 3)" = not_authorized ] || fail "sponsor delete: non-member"
+[ "$(de $A 162 $P1 $S1 3)|$(q "select count(*) from app.sponsor where id='$P1'")" = 'ok|0' ] || fail "sponsor delete"
+[ "$(q "select count(*) from app.activity_log where table_name='sponsor' and op='delete' and command_id='$(cmd 162)' and row_id='$P1'")" = 1 ] || fail "sponsor delete: not logged"
+[ "$(de $A 163 $P1 $S1 3)" = ok ] || fail "sponsor delete: already gone not ok"
+[ "$(ed $A 164 $P1 $S1 "3, caption => 'x'")" = sponsor_missing ] || fail "sponsor edit: deleted Sponsor"
+[ "$(de $A 165 $P2 $S8 1)" = season_finished ] || fail "sponsor delete: finished season"
+for f in "edit_sponsor('$(cmd 166)', '$P3', '$S1', 1)" "delete_sponsor('$(cmd 167)', '$P3', '$S1', 1)" "reorder_sponsors('$(cmd 168)', '$S1', '{}')"; do
   out=$(as anon "select app.$f" 2>&1 || true)
   [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
 done

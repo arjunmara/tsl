@@ -73,7 +73,12 @@ export async function resizeLogo(file: Blob, max = 512): Promise<Blob> {
   canvas.height = height
   canvas.getContext('2d')!.drawImage(img, 0, 0)
   img.close()
-  const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/webp', 0.85))
-  if (!blob) throw new Error('Could not encode the logo')
-  return blob
+  // The bucket takes at most 1 MiB: a busy photo at the larger ad size gets a second, lighter encoding.
+  for (const quality of [0.85, 0.6]) {
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/webp', quality))
+    if (!blob) break
+    if (blob.size <= 1048576) return blob
+  }
+  // RangeError: readable, but too detailed to fit (callers say so in words).
+  throw new RangeError('Could not encode the image under 1 MiB')
 }

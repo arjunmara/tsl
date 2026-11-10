@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useLocation, useNavigate, useParams } from 'react-router'
 import { queuedFor } from '../../domain/commands'
 import { messages } from '../../domain/messages'
 import { logoUrl, tournamentSetup, type SeasonSummary } from '../../domain/tournaments'
@@ -70,7 +70,21 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
   const navigate = useNavigate()
   const [head, setHead] = useState<Head | 'missing' | 'offline' | 'unknown' | null>(null)
   const [attempt, setAttempt] = useState(0)
-  const [tab, setTab] = useState<Tab>(() => storedTab(tournamentId))
+  // The wizard's end opens Teams (state.tab), and that becomes the remembered tab.
+  const location = useLocation()
+  const wanted = (location.state as { tab?: string } | null)?.tab
+  const asked = TABS.find(([k]) => k === wanted)?.[0]
+  const [tab, setTab] = useState<Tab>(() => asked ?? storedTab(tournamentId))
+  useEffect(() => {
+    if (!asked) return
+    try {
+      localStorage.setItem(tabKey(tournamentId), asked)
+    } catch {
+      // Only remembering the tab is lost.
+    }
+    // Used once: a reload keeps history.state, and must not override the tab picked since.
+    navigate(location.pathname, { replace: true, state: null })
+  }, [asked, tournamentId, navigate, location.pathname])
   const ids = useId()
   useEffect(() => {
     let live = true

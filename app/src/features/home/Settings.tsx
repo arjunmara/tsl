@@ -39,10 +39,6 @@ function SettingsList({ tournamentId }: { tournamentId: string }) {
             <SecondaryButton label={label} onClick={() => navigate(`/t/${tournamentId}/settings/${k}`, { state: { fromList: true } })} />
           </li>
         ))}
-        <li className="card">
-          <h2 className="body-strong">Sponsors</h2>
-          <p className="meta">Adding Sponsors comes in the next update.</p>
-        </li>
       </ul>
     </main>
   )

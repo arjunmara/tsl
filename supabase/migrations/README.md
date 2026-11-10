@@ -130,6 +130,19 @@ squad)` that registration and line-up commands will call (no client grant). Chec
 `select key, starters, max_bench from app.format_preset order by sort;` (5 rows, futsal 5 and 9). Then on the test
 preview, fill steps 5 and 6, reorder and remove tie-breaks, and reopen them on another device.
 
+## Apply 0008_sponsors.sql (Story 1.13)
+
+Apply before the app deploy with wizard step 7 (test first, then live); step 7 and Settings → Sponsors read `app.sponsor`, so
+they show "Couldn't load the Sponsors" until this is applied. It adds `app.sponsor` (Tournament id, Season id, logo path, up to
+5 ad image paths, a one-line caption of 1–120 characters, `sort`, `version`) with its read policy and Activity log trigger,
+the Season action `edit_sponsors` (allowed in setup, registration and started; not once finished), the helper
+`app.sponsor_invalid` (no client grant) and the commands `add_sponsor` (insert-only), `edit_sponsor` and `delete_sponsor`
+(versioned with the conflict envelope; deleting a Sponsor already gone is ok) and `reorder_sponsors` (listed Sponsors first,
+the rest after; bumps no version). Finishing the wizard is the existing `set_setup_step(7)`. Images go in the
+`tournament-assets` bucket from 0004 under `<tournament id>/`; nothing in this file changes Storage. Check with
+`select count(*) from app.season_action where action = 'edit_sponsors';` (3). Then on the test preview, add a Sponsor
+with a logo and two ads on step 7, reorder and delete one, finish the wizard, and edit Sponsors from Settings on another device.
+
 Edit commands added later answer a stale `expected_version` with
 `{ok: false, code: 'version_conflict', conflict: {current_version, current, changed_by, changed_at}}`
 (see `app/README.md`, Conflict envelope).

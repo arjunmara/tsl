@@ -19,7 +19,8 @@
     "check:outbox": "node scripts/outbox.check.mjs",
     "check:setup": "node scripts/setup.check.mjs",
     "check:dates": "node scripts/dates.check.mjs",
-    "check:home": "node scripts/home.check.mjs"
+    "check:home": "node scripts/home.check.mjs",
+    "check:sponsors": "node scripts/sponsors.check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.119.0",

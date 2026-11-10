@@ -80,6 +80,7 @@ async function fresh({ viewport = { width: 390, height: 844 }, rows = [] } = {})
     const path = new URL(req.url()).pathname
     if (path === '/rest/v1/tournament') return json(route, [...mock.rows.values()].reverse())
     if (path === '/rest/v1/format_preset') return json(route, PRESETS)
+    if (path === '/rest/v1/sponsor') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     const name = path.replace('/rest/v1/rpc/', '')
     const a = JSON.parse(req.postData())
@@ -906,7 +907,7 @@ try {
     assert.equal(await field('Qualifiers per group').inputValue(), '2')
     await button(page, 'Next').click()
     await page.waitForURL(onStep(7))
-    await page.getByText('This step arrives in the next update.', { exact: true }).waitFor()
+    await page.getByText('No Sponsors yet.', { exact: true }).waitFor()
     await until(page, () => season().setup_step === 6, 'step 6 not finished')
 
     await page.goto(base + `/t/${id}/setup/6`)

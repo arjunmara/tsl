@@ -42,6 +42,8 @@ jobs:
         run: npm run check:dates
       - name: Tournament home and Settings check (Story 1.12)
         run: npm run check:home
+      - name: Sponsors check (Story 1.13)
+        run: npm run check:sponsors
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
       # and write, Activity log, idempotency) and the pg_proc command skeleton check.
       - name: Migration, leak tests and command skeleton check (Stories 1.4, 1.6)

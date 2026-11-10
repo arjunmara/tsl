@@ -3,8 +3,8 @@ import { Navigate, useLocation, useNavigate, useParams } from 'react-router'
 import { forgetRefused, queuedFor, send, type OutboxEntry, type Upload } from '../../domain/commands'
 import { messageFor, messages } from '../../domain/messages'
 import {
-  assetBucket, formatPresets, logoUrl, NEW_LINEUP, NEW_STRUCTURE, noteNewSeason, SETTINGS, tournamentSetup, type FormatPreset, type LineupRules,
-  type MatchSettings, type SeasonAnswers, type Structure,
+  assetBucket, formatPresets, logoUrl, NEW_LINEUP, NEW_STRUCTURE, noteNewSeason, seasonSponsors, SETTINGS, tournamentSetup, type FormatPreset,
+  type LineupRules, type MatchSettings, type SeasonAnswers, type Sponsor, type Structure,
 } from '../../domain/tournaments'
 import { SecondaryButton } from '../../ui/Button'
 import { Field } from '../../ui/Field'
@@ -14,6 +14,7 @@ import { brandDefaults, readable, resizeLogo, textColours } from './brand'
 import { StepFour } from './Format'
 import { Frame, SettingsMode, useLeave } from './Frame'
 import { StepFive, StepSix } from './LineupStructure'
+import { overlaySponsors, StepSeven } from './Sponsors'
 import { StepThree, StepTwo } from './RulesDates'
 
 export type Values = { name: string; primary: string; secondary: string; logoPath: string | null; logoBlob: Blob | null }
@@ -77,10 +78,11 @@ export function NewTournament() {
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// Settings sections (/t/:id/settings/:section) and the wizard step each shows; Sponsors (step 7) arrives with its story.
+// Settings sections (/t/:id/settings/:section) and the wizard step each shows.
 // Each: [section key, wizard step, its button label (verb + object)].
 export const SECTIONS: [string, number, string][] = [['name', 1, 'Change name and logo'], ['rules', 2, 'Change description and rules'],
-  ['dates', 3, 'Change dates'], ['format', 4, 'Change Format'], ['lineup', 5, 'Change Line-up rules'], ['structure', 6, 'Change Structure']]
+  ['dates', 3, 'Change dates'], ['format', 4, 'Change Format'], ['lineup', 5, 'Change Line-up rules'], ['structure', 6, 'Change Structure'],
+  ['sponsors', 7, 'Change Sponsors']]
 
 /** /t/:tournamentId/settings/:section: the wizard step in the settings frame, open whatever the setup progress. */
 export function SettingsSection() {
@@ -95,7 +97,7 @@ export function SettingsSection() {
   )
 }
 
-/** /t/:tournamentId/setup/:step: steps 1–6, or a placeholder for step 7 until its story lands. */
+/** /t/:tournamentId/setup/:step: steps 1–7. */
 export function SetupStep() {
   const { tournamentId = '', step: raw } = useParams()
   const step = Number(raw)
@@ -119,7 +121,7 @@ type Base = {
 }
 type Loaded = {
   step: number; seasonId: string; initial: Values; answers: SeasonAnswers; settings: MatchSettings; lineup: LineupRules; structure: Structure
-  presets: FormatPreset[]; setupStep: number
+  presets: FormatPreset[]; setupStep: number; sponsors: Sponsor[]; blobs: Record<string, Blob>
 }
 
 const noAnswers: SeasonAnswers = { description: '', rules: '', photo_consent: '', starts_on: '', ends_on: '', registration_deadline: '' }
@@ -180,8 +182,9 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
     // Steps 4 and 5 need the presets (from the device when offline); other steps only refresh the device's copy.
     const presetsRead = formatPresets()
     let presets: FormatPreset[] = []
-    const show = (b: Base, queued: OutboxEntry[]) => live && setLoaded({
-      step, seasonId: b.seasonId, initial: overlay(b.values, queued), answers: overlayAnswers(b.answers, queued),
+    // Step 7 also lays the pending Sponsor commands over the Season's Sponsors (none for a Season not on the server).
+    const show = (b: Base, queued: OutboxEntry[], sponsors: Sponsor[] = []) => live && setLoaded({
+      ...overlaySponsors(sponsors, queued, b.seasonId), step, seasonId: b.seasonId, initial: overlay(b.values, queued), answers: overlayAnswers(b.answers, queued),
       settings: overlaySettings(b.settings, queued, presets), lineup: overlayCommand(b.lineup, queued, 'set_lineup_rules'),
       structure: overlayCommand(b.structure, queued, 'set_structure'), presets, setupStep: Math.max(b.setupStep, queuedStep(queued)),
     })
@@ -208,11 +211,23 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
       if (!live) return
       if ('code' in r) {
         const last = lastRead.get(tournamentId)
-        if (r.code === 'offline' && last) return show(last, await queuedFor(tournamentId))
+        if (r.code === 'offline' && last) {
+          const sp = step === 7 ? await seasonSponsors(last.seasonId) : { sponsors: [] }
+          if (!live) return
+          if ('code' in sp) return setProblem({ step, text: messages.offline })
+          return show(last, await queuedFor(tournamentId), sp.sponsors)
+        }
         return setProblem({ step, text: r.code === 'offline' ? messages.offline : messages.tournament_unknown })
       }
       const t = r.tournament
       if (!t || !t.season) return setLoaded('missing')
+      let sponsors: Sponsor[] = []
+      if (step === 7) {
+        const sp = await seasonSponsors(t.season.id)
+        if (!live) return
+        if ('code' in sp) return setProblem({ step, text: sp.code === 'offline' ? messages.offline : messages.sponsors_unknown })
+        sponsors = sp.sponsors
+      }
       const base: Base = {
         seasonId: t.season.id, answers: t.season.answers, settings: t.season.settings, lineup: t.season.lineup, structure: t.season.structure,
         setupStep: t.season.setupStep,
@@ -222,7 +237,7 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
       // both lists, so neither a value nor a finished step is lost in that gap.
       const after = await queuedFor(tournamentId)
       lastRead.set(tournamentId, base)
-      show(base, [...new Map([...pending, ...after].map((e) => [e.seq, e])).values()].sort((a, b) => a.seq - b.seq))
+      show(base, [...new Map([...pending, ...after].map((e) => [e.seq, e])).values()].sort((a, b) => a.seq - b.seq), sponsors)
     })()
     return () => {
       live = false
@@ -244,11 +259,10 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
       defaults={ready.presets.find((p) => p.key === ready.settings.format_preset)?.lineup} />
   }
   if (ready && step === 6) return <StepSix tournamentId={tournamentId} seasonId={ready.seasonId} initial={ready.structure} />
+  if (ready && step === 7) return <StepSeven tournamentId={tournamentId} seasonId={ready.seasonId} initial={ready.sponsors} blobs={ready.blobs} />
   return (
     <Frame step={step} onBack={back}>
-      {ready ? (
-        <p className="body">This step arrives in the next update.</p>
-      ) : failed ? (
+      {failed ? (
         <>
           <Problem text={failed} />
           <SecondaryButton label="Try loading again" onClick={() => (setProblem(null), setAttempt((n) => n + 1))} />
@@ -361,8 +375,8 @@ function StepOne({ tournamentId, seasonId, initial, isNew = false }: { tournamen
     let blob: Blob
     try {
       blob = await resizeLogo(file)
-    } catch {
-      if (pick === logoPick.current) setLogoError(messages.logo_unreadable)
+    } catch (e) {
+      if (pick === logoPick.current) setLogoError(e instanceof RangeError ? messages.image_too_large : messages.logo_unreadable)
       return
     }
     if (pick !== logoPick.current) return

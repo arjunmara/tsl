@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useOutbox } from '../../domain/commands'
 import { messages } from '../../domain/messages'
-import { myTournaments, type SeasonStatus, type TournamentSummary } from '../../domain/tournaments'
+import { myTournaments, type SeasonStatus, type SeasonSummary, type TournamentSummary } from '../../domain/tournaments'
 import { PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { StatusPill } from '../../ui/StatusPill'
 import { Problem } from '../auth/Screen'
@@ -28,6 +28,9 @@ export function MyTournaments() {
   // This user's changes still on the device; the list reloads as each one is sent (setup steps included).
   const mine = useOutbox().entries
   const queued = mine.filter((e) => e.name === 'create_tournament')
+  // A finished setup step still waiting to send counts, so "Finish setup" offline hides the Resume card at once.
+  const stepOf = (s: SeasonSummary) => Math.max(s.setupStep,
+    ...mine.filter((e) => e.name === 'set_setup_step' && e.state === 'pending' && e.args.season_id === s.id).map((e) => Number(e.args.step) || 0))
 
   // Loads on open, on "Try loading again", and again when the signal comes back.
   useEffect(() => {
@@ -85,7 +88,7 @@ export function MyTournaments() {
         <>
           <ul className="cards">
             {waiting}
-            {list.map((t) => t.season?.status === 'setup' && t.season.setupStep < 7 ? (
+            {list.map((t) => (t.season ? { ...t, season: { ...t.season, setupStep: stepOf(t.season) } } : t)).map((t) => t.season?.status === 'setup' && t.season.setupStep < 7 ? (
               <li key={t.id} className="card">
                 <div className="resume-head">
                   {t.logoUrl ? <img className="resume-logo" src={t.logoUrl} alt="" />

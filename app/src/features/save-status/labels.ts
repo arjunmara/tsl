@@ -19,6 +19,11 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   set_lineup_rules: () => 'Change the Line-up rules',
   // The tie-break list sends its order on its own.
   set_structure: (a) => (a.tiebreaks != null ? 'Change the tie-break order' : 'Change the Structure'),
+  add_sponsor: (a) => `Add Sponsor ‘${String(a.caption ?? '')}’`,
+  edit_sponsor: (a) => (a.caption != null ? `Change a Sponsor's caption to ‘${String(a.caption)}’`
+    : a.logo_path != null ? "Change a Sponsor's logo" : "Change a Sponsor's ad images"),
+  delete_sponsor: () => 'Delete a Sponsor',
+  reorder_sponsors: () => 'Change the Sponsor order',
 }
 
 /** "rules", "description and rules": the fields an edit changes, in words. */
@@ -66,4 +71,6 @@ export const fieldLabels: Record<string, string> = {
   points_draw: 'Points for a draw',
   points_loss: 'Points for a loss',
   tiebreaks: 'Tie-breaks',
+  caption: 'Caption',
+  ad_paths: 'Ad images',
 }

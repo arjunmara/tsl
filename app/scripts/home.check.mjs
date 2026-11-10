@@ -59,6 +59,7 @@ async function fresh({ viewport = { width: 390, height: 844 }, setupStep = 3, bl
     const path = new URL(req.url()).pathname
     if (path === '/rest/v1/tournament') return json(route, mock.rows)
     if (path === '/rest/v1/format_preset') return json(route, [FUTSAL])
+    if (path === '/rest/v1/sponsor') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     const a = JSON.parse(req.postData())
     const cmd = path.replace('/rest/v1/rpc/', '')
@@ -190,8 +191,7 @@ try {
     await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
     const list = await page.locator('.home-list .ui-button').allTextContents()
     assert.deepEqual(list, ['Change name and logo', 'Change description and rules', 'Change dates', 'Change Format', 'Change Line-up rules',
-      'Change Structure'])
-    await page.locator('.home-list .card', { hasText: 'Sponsors' }).getByText('Adding Sponsors comes in the next update.').waitFor()
+      'Change Structure', 'Change Sponsors'])
     await button(page, 'Change Structure').click()
     await page.getByRole('heading', { name: 'Settings · Structure' }).waitFor()
     assert.equal(await button(page, 'Next').count(), 0, 'Next shown in Settings')
@@ -252,7 +252,7 @@ try {
     assert.equal(new URL(page.url()).pathname, `/t/${T}/settings/name`, 'Enter navigated')
     assert.equal(calls(mock, 'set_setup_step').length, 0, 'Enter sent a step')
     assert.equal(calls(mock, 'set_tournament_branding')[0].name, 'Gulmi Gold Cup')
-    await page.goto(base + `/t/${T}/settings/sponsors`)
+    await page.goto(base + `/t/${T}/settings/unknown`)
     await page.waitForURL((u) => u.pathname === `/t/${T}/settings`)
     await context.close()
   }

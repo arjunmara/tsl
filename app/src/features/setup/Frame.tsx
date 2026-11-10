@@ -19,8 +19,11 @@ export function useLeave(tournamentId: string, step: number) {
 /**
  * The wizard frame: "Step n of 7 · Name", a thin bar of the steps finished before this one, and the fixed Back / Next bar.
  * In a Settings section: "Settings · Name" and only "Back to settings"; Enter never submits (each field saves when left).
+ * backLabel and nextLabel replace "Back" / "Back to settings" and "Next" (step 7's "Finish setup", its editor's "Back to Sponsors").
  */
-export function Frame({ step, onBack, onNext, children }: { step: number; onBack: () => void; onNext?: () => void; children: ReactNode }) {
+export function Frame({ step, onBack, onNext, backLabel, nextLabel = 'Next', children }: {
+  step: number; onBack: () => void; onNext?: () => void; backLabel?: string; nextLabel?: string; children: ReactNode
+}) {
   const settings = useContext(SettingsMode)
   if (settings) {
     return (
@@ -29,7 +32,7 @@ export function Frame({ step, onBack, onNext, children }: { step: number; onBack
         {children}
         <div className="wizard-bar">
           <div className="wizard-bar-inner">
-            <SecondaryButton label="Back to settings" onClick={onBack} />
+            <SecondaryButton label={backLabel ?? 'Back to settings'} onClick={onBack} />
           </div>
         </div>
       </main>
@@ -44,8 +47,8 @@ export function Frame({ step, onBack, onNext, children }: { step: number; onBack
       {children}
       <div className="wizard-bar">
         <div className="wizard-bar-inner">
-          <SecondaryButton label="Back" onClick={onBack} />
-          {onNext && <PrimaryButton label="Next" onClick={onNext} />}
+          <SecondaryButton label={backLabel ?? 'Back'} onClick={onBack} />
+          {onNext && <PrimaryButton label={nextLabel} onClick={onNext} />}
         </div>
       </div>
     </main>
