@@ -100,6 +100,8 @@ export const messages = {
   photo_unreadable: "Couldn't read that photo. Take a new one, or choose a JPEG, PNG, HEIC or WebP picture.",
   photo_download_failed: "Couldn't download the photo. Check the connection and download it again.",
   eligibility_verified: 'The organiser has already verified this document, so it can no longer change.',
+  document_incomplete: 'Add the document type and number first.',
+  scan_view_failed: "Couldn't open the document. Check the signal, then tap View document again.",
   tournament_unknown: "Couldn't load this tournament. Try loading it again.",
   tournament_missing: "This tournament isn't available.",
   tournaments_unknown: "Couldn't load your tournaments. Try loading them again.",

@@ -20,10 +20,12 @@ export const documentLabel = (t: string | null) => DOCUMENT_TYPES.find(([k]) => 
 export const scanBucket = 'eligibility-scans'
 /**
  * A Player's Eligibility proof for the Season as the Team manager sees it: the scan only by its file name, never the
- * scan itself. version: the record's (edit_eligibility).
+ * scan itself. version: the record's (edit_eligibility, verify_eligibility). scanPath / uploadedAt: only in an Organiser's
+ * read (Story 2.7), for the scan viewer.
  */
 export type Eligibility = {
   id: string; documentType: DocumentType | null; documentNumber: string; scanName: string | null; verified: boolean; version: number
+  scanPath?: string | null; uploadedAt?: string | null
 }
 /** The private bucket for Player and Staff photos, fenced by Tournament (Story 2.5). */
 export const photoBucket = 'player-photos'
@@ -40,6 +42,8 @@ export type SquadRules = { consentStatement: string; starters: number | null; ma
 export type RegistrationForm = {
   team: RegistrationTeam; tournamentName: string; seasonNumber: number; seasonStatus: SeasonStatus; deadline: string | null
   rules: SquadRules; players: SquadPlayer[]; staff: StaffMember[]
+  /** Read by an Organiser of the Tournament (teamForm): the scan viewer and "Mark verified" show. */
+  organiser?: boolean
 }
 
 /** Redeems the link's token for this page's anonymous session (the server hashes it). link_dead: revoked, replaced or unknown. */
@@ -129,7 +133,7 @@ export async function teamForm(seasonId: string, teamId: string): Promise<{ form
       app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_path, is_cutout, photo_consent(season_id, consent_given, given_by))')
         .eq('team_id', teamId).order('shirt_number'),
       app.from('staff').select('team_id, id, name, role, version, photo_path, is_cutout').eq('team_id', teamId).order('created_at').order('id'),
-      app.from('eligibility_record').select('id, player_id, document_type, document_number, scan_name, verified_at, version').eq('season_id', seasonId),
+      app.from('eligibility_record').select('id, player_id, document_type, document_number, scan_name, scan_path, scan_uploaded_at, verified_at, version').eq('season_id', seasonId),
     ])
     const all = [t, sq, st, el]
     if (all.some((x) => x.error)) return { code: all.some((x) => x.error && x.status === 0) || !navigator.onLine ? 'offline' : 'unknown' }
@@ -154,6 +158,7 @@ export async function teamForm(seasonId: string, teamId: string): Promise<{ form
       players: withEligibility(entries.flatMap(playerFrom), records),
       staff: (Array.isArray(st.data) ? st.data as StaffRow[] : []).filter((x) => x.team_id === teamId)
         .map(({ id, name, role, version, photo_path, is_cutout }) => ({ id, name, role, version, photo: photoFrom(photo_path, is_cutout) })),
+      organiser: true,
     }
     await signPhotos([...form.players, ...form.staff])
     const eligibility = form.players.flatMap((p) => (p.eligibility ? [p.eligibility] : []))
@@ -214,19 +219,33 @@ const playerFrom = (e: EntryRow): SquadPlayer[] => e.player ? [{
   photo: photoFrom(e.player.photo_path, e.player.is_cutout),
 }] : []
 type EligibilityRow = { id: string; player_id: string; document_type: DocumentType | null; document_number: string | null
-  scan_name: string | null; verified: boolean; version: number }
+  scan_name: string | null; verified: boolean; version: number; scan_path?: string | null; scan_uploaded_at?: string | null }
 function withEligibility(players: SquadPlayer[], data: unknown): SquadPlayer[] {
   const rows = Array.isArray(data) ? (data as EligibilityRow[]) : []
   return players.map((p) => {
     const r = rows.find((x) => x.player_id === p.id)
     return r ? { ...p, eligibility: { id: r.id, documentType: r.document_type, documentNumber: r.document_number ?? '', scanName: r.scan_name,
-      verified: r.verified, version: r.version } } : p
+      verified: r.verified, version: r.version,
+      ...('scan_path' in r ? { scanPath: r.scan_path ?? null, uploadedAt: r.scan_uploaded_at ?? null } : {}) } } : p
   })
 }
 const NO_RULES: SquadRules = { consentStatement: '', starters: null, maxBench: null, staffRoles: [] }
 function rulesFrom(data: unknown): SquadRules {
   const r = ((data ?? []) as { consent_statement: string | null; starters: number | null; max_bench: number | null; staff_roles: string[] | null }[])[0]
   return { consentStatement: r?.consent_statement ?? '', starters: r?.starters ?? null, maxBench: r?.max_bench ?? null, staffRoles: r?.staff_roles ?? [] }
+}
+
+/**
+ * A short-lived URL for one scan (Story 2.7): five minutes, Organisers only (Storage refuses anyone else, and any scan
+ * no unverified record points to). null when it can't be signed (offline, verified meanwhile).
+ */
+export async function signScan(path: string): Promise<string | null> {
+  try {
+    const { data } = await supabase.storage.from(scanBucket).createSignedUrl(path, 300)
+    return data?.signedUrl ?? null
+  } catch {
+    return null
+  }
 }
 
 /** Under 18 on this day (YYYY-MM-DD; the server's Asia/Kathmandu day): consent then needs a parent or guardian's name. */
@@ -267,6 +286,9 @@ export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): Reg
       if (typeof a.document_number === 'string') e.documentNumber = a.document_number
       if (typeof a.scan_name === 'string') e.scanName = a.scan_name
       p.eligibility = e
+    } else if (name === 'verify_eligibility') {
+      const p = players.find((x) => x.id === a.player_id)
+      if (p?.eligibility) p.eligibility = { ...p.eligibility, verified: true }
     } else if (name === 'set_photo') {
       const x = players.find((y) => y.id === a.person_id) ?? staff.find((y) => y.id === a.person_id)
       if (x) x.photo = { path: String(a.photo_path), cutout: a.is_cutout === true, url: null }

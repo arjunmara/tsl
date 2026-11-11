@@ -667,6 +667,60 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+/* The Organiser's scan viewer (Story 2.7): about 144px in the card; tapped, full resolution scrolls (and two fingers zoom)
+   inside the card, never a separate page. Verified: saved green with a Verified pill. */
+.eligibility-verified {
+  margin: 0;
+  color: var(--saved);
+}
+.eligibility h3 .ui-pill {
+  margin-left: var(--spacing-2);
+  background: var(--surface);
+  color: var(--saved);
+  border-color: var(--saved);
+}
+.scan-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.scan-viewer p,
+.scan-figure {
+  margin: 0;
+}
+.scan-figure figcaption {
+  overflow-wrap: anywhere;
+}
+.scan-zoom {
+  max-width: 100%;
+}
+.scan-full {
+  max-height: 70vh;
+  overflow: auto;
+  touch-action: pan-x pan-y;
+  border: 2px solid var(--ink-muted);
+}
+.scan-image {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.scan-image img {
+  display: block;
+  height: 144px;
+  max-width: 100%;
+  object-fit: contain;
+}
+.scan-full .scan-image {
+  cursor: zoom-out;
+}
+.scan-full .scan-image img {
+  height: auto;
+  max-width: none;
+  zoom: var(--scan-scale, 1);
+}
 
 /* A Player's or Staff member's photo inside their card (Story 2.5): the cut-out on a plain surface. */
 .photo,

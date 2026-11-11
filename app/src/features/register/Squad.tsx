@@ -1,11 +1,11 @@
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { forgetRefused, send, type Upload } from '../../domain/commands'
 import { formatDay, inZone } from '../../domain/format'
 import { removeBackground } from '../../domain/cutout'
 import { downloadAsPng, encodeImage, resizeImage, toCanvas } from '../../domain/image'
 import { messageFor, messages } from '../../domain/messages'
 import {
-  DOCUMENT_TYPES, documentLabel, isMinor, noteNew, photoBucket, scanBucket, type Photo, type RegistrationForm, type SquadPlayer, type StaffMember,
+  DOCUMENT_TYPES, documentLabel, isMinor, noteNew, photoBucket, scanBucket, signScan, type Eligibility, type Photo, type RegistrationForm, type SquadPlayer, type StaffMember,
 } from '../../domain/registration'
 import { serverNow } from '../../domain/clock'
 import { STAFF_ROLES } from '../../domain/tournaments'
@@ -247,6 +247,15 @@ function EligibilityProof({ player: p, form, run }: { player: SquadPlayer; form:
     }
   }
 
+  if (e?.verified && form.organiser) {
+    return (
+      <section className="eligibility" aria-label={`Eligibility for ${p.name}`}>
+        <h3 className="body-strong">Eligibility <StatusPill state="done" label="Verified" /></h3>
+        <p className="body eligibility-verified">Verified. Scan deleted; {numberWord(e.documentType)} kept.</p>
+        <p className="body">{[documentLabel(e.documentType), e.documentNumber].filter(Boolean).join(' · ')}</p>
+      </section>
+    )
+  }
   if (e?.verified) {
     return (
       <section className="eligibility">
@@ -283,7 +292,99 @@ function EligibilityProof({ player: p, form, run }: { player: SquadPlayer; form:
         </label>
       </div>
       <Problem text={problem} />
+      {form.organiser && e?.documentType && <ScanViewer player={p} record={e} run={run} />}
     </section>
+  )
+}
+
+/** "EMIS number", "Birth certificate number": what verification keeps. */
+const numberWord = (t: string | null) => (t === 'emis' ? 'EMIS number' : `${documentLabel(t) || 'document'} number`)
+
+/**
+ * The Organiser's scan viewer inside the Player card (Story 2.7): "View document" signs a five-minute URL and shows the scan
+ * at about 144px with its file name; tapping it shows full resolution in the card, scrollable and pinch-zoomable there.
+ * "Mark verified" sends verify_eligibility (versioned); a paper-sheet record without a scan can be verified too.
+ */
+function ScanViewer({ player: p, record: e, run }: { player: SquadPlayer; record: Eligibility; run: Run }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [full, setFull] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const alt = `${documentLabel(e.documentType)} for ${p.name}${e.uploadedAt ? `, uploaded ${formatDay(inZone(e.uploadedAt).date)}` : ''}`
+
+  async function view() {
+    if (!e.scanPath || busy) return
+    setProblem(null)
+    setBusy(true)
+    const signed = await signScan(e.scanPath)
+    setBusy(false)
+    if (!signed) return setProblem(messages.scan_view_failed)
+    setUrl(signed)
+  }
+  async function verify() {
+    if (busy) return
+    setProblem(null)
+    setBusy(true)
+    const refused = await run('verify_eligibility', { player_id: p.id }, e.id)
+    setBusy(false)
+    setProblem(refused)
+  }
+
+  return (
+    <div className="scan-viewer">
+      {e.scanPath && !url && <SecondaryButton label="View document" onClick={() => void view()} />}
+      {url && (
+        <figure className="scan-figure">
+          <ZoomBox full={full}>
+            <button type="button" className="scan-image" aria-expanded={full} onClick={() => setFull((f) => !f)}
+              aria-label={full ? 'Show the document smaller' : 'Show the document at full resolution'}>
+              <img src={url} alt={alt} onError={() => (setUrl(null), setProblem(messages.scan_view_failed))} />
+            </button>
+          </ZoomBox>
+          <figcaption className="meta">{e.scanName}</figcaption>
+        </figure>
+      )}
+      {(url || !e.scanPath) && e.documentNumber && (
+        <>
+          <p className="body">Document number: <span className="body-strong">{e.documentNumber}</span></p>
+          <PrimaryButton label="Mark verified" onClick={() => void verify()} {...blocked(busy && 'Saving…')} />
+        </>
+      )}
+      <Problem text={problem} />
+    </div>
+  )
+}
+
+/** Full resolution scrolls inside the card; two fingers zoom it there (the page itself doesn't zoom). */
+function ZoomBox({ full, children }: { full: boolean; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+  useEffect(() => {
+    const el = box.current
+    if (!el || !full) return setScale(1)
+    let start = 0
+    let base = 1
+    const gap = (t: TouchList) => Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY)
+    const down = (ev: TouchEvent) => {
+      if (ev.touches.length !== 2) return
+      start = gap(ev.touches)
+      setScale((s) => (base = s))
+    }
+    const move = (ev: TouchEvent) => {
+      if (ev.touches.length !== 2 || !start) return
+      ev.preventDefault()
+      setScale(Math.min(4, Math.max(1, base * (gap(ev.touches) / start))))
+    }
+    const up = () => { start = 0 }
+    el.addEventListener('touchstart', down, { passive: true })
+    el.addEventListener('touchmove', move, { passive: false })
+    el.addEventListener('touchend', up)
+    return () => (el.removeEventListener('touchstart', down), el.removeEventListener('touchmove', move), el.removeEventListener('touchend', up))
+  }, [full])
+  return (
+    <div ref={box} className={full ? 'scan-zoom scan-full' : 'scan-zoom'} style={full ? { ['--scan-scale' as string]: scale } : undefined}>
+      {children}
+    </div>
   )
 }
 

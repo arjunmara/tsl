@@ -290,3 +290,53 @@ change); never upsert, no update or delete policy (Story 2.10 deletes through th
 `select count(*) from pg_policies where tablename = 'objects' and policyname like 'player_photos%';` (2). Then on the test
 preview, open a Registration link on a phone, open a Player and tap "Add photo": the card shows the photo with "Removing
 background…", then the cut-out; in Storage → player-photos the file is under `<tournament>/<team>/<player>/`.
+
+## Apply 0016_verify_eligibility.sql (Story 2.7)
+
+Apply after 0015 and before the app deploy with "View document" / "Mark verified" on the Organiser's Player cards (test
+first, then live). It adds the command `verify_eligibility` (Organisers only, Season action `verify_eligibility` in setup and
+registration; needs a document type and number; versioned; keeps type, number, `verified_by`, `verified_at`), and narrows the
+`eligibility-scans` read policy: an Organiser of the folder's Tournament reads a scan only while an **unverified** record of a
+Season that has **not finished** points to it, so a verified, finished or orphan scan can't be opened even before it is
+deleted. It also adds `app.scans_to_delete()` and `app.scans_deleted()` (service role only) and an hourly pg_cron job,
+`delete-eligibility-scans` (at :17), that calls the `delete-scans` Edge Function through pg_net. The function deletes through
+the Storage API every scan of a verified record or a finished Season, and every scan file no record points to (a replaced
+scan, a removed Player's, a refused upload) once it is a day old; then it clears the scan path and file name on the records.
+A file that fails to delete stays selected and is retried on the next run; failures show in the function's logs.
+
+Steps, on **test** first, then the same on **live** (each project has its own secret):
+
+1. Database → Extensions: enable **pg_cron** and **pg_net** (Vault is on by default). 0016 stops with "Enable the pg_cron and
+   pg_net extensions first" if either is missing.
+2. Paste `0016_verify_eligibility.sql` into the SQL Editor and run it.
+3. Make a shared secret on your own computer, for example `openssl rand -hex 32`. Don't send it to anyone or put it in the
+   repo.
+4. Deploy the Edge Function, with JWT checking off (it checks the shared secret instead), using the Supabase CLI from the repo
+   root:
+   ```sh
+   supabase login
+   supabase functions deploy delete-scans --project-ref <project ref> --no-verify-jwt
+   supabase secrets set SCAN_CLEANUP_SECRET=<the secret> --project-ref <project ref>
+   ```
+   Or in the dashboard: Edge Functions → Deploy a new function → Via Editor, name it `delete-scans`, paste
+   `supabase/functions/delete-scans/index.ts`, deploy; in its Details turn **Enforce JWT verification** off; Edge Functions →
+   Secrets → add `SCAN_CLEANUP_SECRET`. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are already there by default.
+5. Store the function's URL and the same secret in Vault (SQL Editor), so the cron job can read them:
+   ```sql
+   select vault.create_secret('https://<project ref>.supabase.co/functions/v1/delete-scans', 'scan_cleanup_url');
+   select vault.create_secret('<the secret>', 'scan_cleanup_secret');
+   ```
+   To change one later: `select vault.update_secret((select id from vault.secrets where name = 'scan_cleanup_secret'), '<new>');`
+6. Check: `select jobname, schedule from cron.job;` (one row, `delete-eligibility-scans`, `17 * * * *`). Run the job once by
+   hand with `select command from cron.job where jobname = 'delete-eligibility-scans';` (paste and run what it returns), then
+   `select status_code, content from net._http_response order by id desc limit 1;`: 200 and `{"ok":true,...}`. A 401 means
+   the two secrets differ. After the next hour, `select status, return_message from cron.job_run_details order by start_time
+   desc limit 3;` shows `succeeded`.
+7. On the test preview, as an Organiser, open a Submitted Team with a scan, open a Player card, tap "View document", tap the
+   scan (full size inside the card, two fingers zoom), then "Mark verified": the card says "Verified. Scan deleted; EMIS number
+   kept." Within the hour the file is gone from Storage → eligibility-scans and the function's log says how many it deleted.
+   Uploading a scan as an Organiser now relies, as the Team manager's does since 0014, on Storage allowing an upload without
+   a select policy on the new file; if it fails with a row-level security error, tell the developer.
+
+Until step 5 is done the job runs but its call fails (no URL), so no scan is deleted: don't collect real documents on live
+before the check in step 6 passes.

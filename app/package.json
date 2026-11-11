@@ -28,7 +28,8 @@
     "check:squad": "node scripts/squad.check.mjs",
     "check:eligibility": "node scripts/eligibility.check.mjs",
     "check:photos": "node scripts/photos.check.mjs",
-    "check:paper": "node scripts/paper.check.mjs"
+    "check:paper": "node scripts/paper.check.mjs",
+    "check:verify": "node scripts/verify.check.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.2.2",

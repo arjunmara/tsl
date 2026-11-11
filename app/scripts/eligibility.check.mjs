@@ -197,6 +197,8 @@ try {
     await c.getByText('Uploaded · only the organiser sees it').waitFor()
     await c.getByText('Replace the document scan', { exact: true }).waitFor()
     await card(page, 'Bisho Basnet').getByText('EMIS number added').waitFor()
+    // Story 2.7: the scan viewer and Mark verified don't exist for the Team manager.
+    assert.equal(await page.getByRole('button', { name: /View document|Mark verified/ }).count(), 0, 'scan viewer shown to the Team manager')
     // Never the scan itself: no picture, no link, and its path nowhere on the page.
     assert.equal(await c.locator('img, a').count(), 0, 'scan shown or linked')
     assert.equal((await page.content()).includes(up.path.split('/').at(-1)), false, 'scan path on the page')

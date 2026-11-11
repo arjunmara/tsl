@@ -36,7 +36,8 @@ insert into public.legacy_probe values (1, 'probe');
 create schema storage;
 create table storage.buckets (id text primary key, name text not null, public boolean default false,
   allowed_mime_types text[], file_size_limit bigint);
-create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets (id), name text, owner uuid);
+create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets (id), name text, owner uuid,
+  created_at timestamptz not null default now());
 alter table storage.objects enable row level security;
 grant usage on schema storage to anon, authenticated;
 grant select, insert, update, delete on storage.objects to anon, authenticated;
@@ -46,6 +47,13 @@ begin
   select string_to_array(name, '/') into _parts;
   return _parts[1:array_length(_parts, 1) - 1];
 end $$;
+-- pg_cron and pg_net stand-ins (Story 2.7): cron.schedule upserts by job name, as pg_cron does; net only needs to exist.
+create schema cron;
+create table cron.job (jobid bigserial primary key, jobname text unique, schedule text, command text);
+create function cron.schedule(job_name text, schedule text, command text) returns bigint language sql as $$
+  insert into cron.job (jobname, schedule, command) values (job_name, schedule, command)
+  on conflict (jobname) do update set schedule = excluded.schedule, command = excluded.command returning jobid $$;
+create schema net;
 SQL
 before=$(docker exec "$name" pg_dump -h 127.0.0.1 -U postgres -n public --restrict-key=check)
 # Default ACLs are invisible to pg_dump -n; snapshot them separately.
@@ -79,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -1159,7 +1167,8 @@ done
 ! obj $G4 eligibility-scans "$T5/$X/$P1/$U2.webp" >/dev/null 2>&1 || fail "scan: anonymous user without a grant uploaded"
 ! obj anon eligibility-scans "$T5/$X/$P1/$U2.webp" >/dev/null 2>&1 || fail "scan: anon uploaded"
 obj $A eligibility-scans "$T5/$X/$P5/$U2.webp" >/dev/null || fail "scan: Organiser cannot upload"
-[ "$(scan $G1)|$(scan $G5)|$(scan $B)|$(scan $G3)|$(scan $G4)|$(scan anon)|$(scan $A)" = '0|0|0|0|0|0|2' ] \
+# Organisers read only a scan an unverified record points to (Story 2.7): none yet.
+[ "$(scan $G1)|$(scan $G5)|$(scan $B)|$(scan $G3)|$(scan $G4)|$(scan anon)|$(scan $A)" = '0|0|0|0|0|0|0' ] \
   || fail "leak: scan objects read $(scan $G1) $(scan $B) $(scan anon) $(scan $A)"
 for who in $G1 $A; do
   [ "$(as $who "with u as (update storage.objects set name = name where bucket_id = 'eligibility-scans' returning 1) select count(*) from u")|$(as $who "with d as (delete from storage.objects where bucket_id = 'eligibility-scans' returning 1) select count(*) from d")" = '0|0' ] \
@@ -1411,6 +1420,96 @@ v=$(pv $Q2)
 r=$(as $G6 "select app.edit_player('$(cmd 1434)', '$Q', '$Q2', $v, name => 'Manager again')")
 [ "$(q "select concat_ws('|', r->>'code', r->'conflict'->>'changed_by') from (select '$r'::jsonb r) x")|$(q "select name from app.player where id='$Q2'")" \
   = "version_conflict|Organiser|Organiser Rita" ] || fail "paper: manager's stale edit not a conflict: $r"
+
+# --- Organiser verifies Eligibility; scans are deleted by the scheduled job (Story 2.7). A organises T5 (S5 in registration,
+# S6 started); B organises T2. Q (submitted, A's paper Team): Q1 has QR (birth certificate 12-34), Q2 no record. G6 holds Q's
+# grant, G5 Y's. X's P1 has R1 (unverified, scan U1), P5 R2 (verified above, scan U2). S7: a finished Season of T5.
+QU=d2111111-0000-4000-8000-000000000021 O1=d2111111-0000-4000-8000-000000000022 O2=d2111111-0000-4000-8000-000000000023
+FU=d2111111-0000-4000-8000-000000000024 S7=21111111-0000-4000-8000-000000000007 RF=b1111111-0000-4000-8000-000000000021
+QR2=b1111111-0000-4000-8000-000000000022
+vf() { tc "$1" "verify_eligibility('$(cmd "$2")', '$3', '$4', $5)"; }
+rv_() { q "select version from app.eligibility_record where id='$1'"; }
+svc() { psql <<<"begin; set local role service_role; $1; commit;"; }
+obj $A eligibility-scans "$T5/$Q/$Q1/$QU.webp" >/dev/null || fail "verify: Organiser cannot upload a scan"
+[ "$(ee $A 1500 $Q $Q1 "1, scan_path => '$T5/$Q/$Q1/$QU.webp', scan_name => 'birth-sita.jpg'")" = ok ] || fail "verify: fixture scan"
+
+# Reads: Organisers read a scan only while an unverified record points to it (QU, U1; not U2, whose record is verified).
+[ "$(scan $A)|$(scan $B)|$(scan $G6)|$(scan $G5)|$(scan anon)" = '2|0|0|0|0' ] || fail "verify: scan reads $(scan $A) $(scan $B) $(scan $G6)"
+[ "$(as $A "select string_agg(name, ',' order by name) from storage.objects where bucket_id = 'eligibility-scans'")" \
+  = "$T5/$X/$P1/$U1.webp,$T5/$Q/$Q1/$QU.webp" ] || fail "verify: Organiser reads the wrong scans"
+
+# Fences: a grant (even Q's own), another Tournament's Organiser and anon can't verify; nothing changes.
+[ "$(vf $G6 1501 $Q $Q1 2)|$(vf $G5 1502 $Q $Q1 2)|$(vf $B 1503 $Q $Q1 2)" = 'not_authorized|not_authorized|not_authorized' ] \
+  || fail "leak: verify_eligibility by a grant or another Tournament"
+for f in "verify_eligibility('$(cmd 1504)', '$Q', '$Q1', 2)" "scans_to_delete()" "scans_deleted('{}')" "can_read_scan('$T5/$Q/$Q1/$QU.webp')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+for f in "scans_to_delete()" "scans_deleted('{}')"; do
+  out=$(as $A "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "Organiser can execute $f: $out"
+done
+[ "$(q "select count(*) from app.eligibility_record where verified_at is not null and id <> '$R2'")" = 0 ] || fail "leak: a refused verify wrote"
+
+# Refusals in words: no record, not in the Squad, no number yet, a started Season, a stale version (conflict without the path).
+[ "$(ae $A 1505 $Q $Q2 $QR2 "'emis'")" = ok ] || fail "verify: fixture record without a number"
+[ "$(vf $A 1506 $Q $P1 1)|$(vf $A 1507 $Q $Q2 1)|$(vf $A 1508 $Z $P1 1)" = 'player_missing|document_incomplete|season_started' ] \
+  || fail "verify: refusals"
+[ "$(as $A "select r->>'message' from app.verify_eligibility('$(cmd 1509)', '$Q', '$Q2', 1) r")" = 'Add the document type and number first.' ] \
+  || fail "verify: incomplete in words"
+q "delete from app.eligibility_record where id='$QR2'" >/dev/null
+[ "$(vf $A 1510 $Q $Q2 1)" = eligibility_missing ] || fail "verify: no record"
+r=$(as $A "select app.verify_eligibility('$(cmd 1511)', '$Q', '$Q1', 1)")
+[ "$(q "select concat_ws('|', r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'document_number', r->'conflict'->>'changed_by', r::text ~ '$QU') from (select '$r'::jsonb r) x")" \
+  = 'version_conflict|2|12-34|Organiser|f' ] || fail "verify: conflict: $r"
+
+# Verify: type and number kept, verifier and time set, version bumped once, the scan path kept for the job; a repeat is ok.
+r=$(as $A "select app.verify_eligibility('$(cmd 1512)', '$Q', '$Q1', 2)")
+[ "$(q "select (r->>'ok')||(r->>'version') from (select '$r'::jsonb r) x")" = true3 ] || fail "verify: $r"
+[ "$(q "select concat_ws('|', document_type, document_number, verified_by, verified_at is not null, scan_path, version) from app.eligibility_record where id='$QR'")" \
+  = "birth_certificate|12-34|$A|t|$T5/$Q/$Q1/$QU.webp|3" ] || fail "verify: row"
+[ "$(as $A "select app.verify_eligibility('$(cmd 1512)', '$Q', '$Q1', 2)")" = "$r" ] || fail "verify: repeat answered differently"
+[ "$(vf $A 1513 $Q $Q1 1)|$(rv_ $QR)" = 'ok|3' ] || fail "verify: verifying again changed the record"
+[ "$(q "select count(*)||':'||bool_and(actor = '$A')||':'||bool_and(after->>'scan_path' = 'scan_path') from app.activity_log where command_id = '$(cmd 1512)'")" = '1:true:true' ] \
+  || fail "verify: log row"
+# Once verified: no Organiser reads the scan, and the Team manager can't change the record.
+[ "$(scan $A)|$(ee $G6 1514 $Q $Q1 "3, document_number => '1'")" = '1|eligibility_verified' ] || fail "verify: verified scan still readable or editable"
+
+# Finished Season: its records' scans go too (S7 inserted finished, as S8 was).
+q "insert into app.season (id, tournament_id, number, status) values ('$S7', '$T5', 7, 'finished');
+   insert into storage.objects (bucket_id, name) values ('eligibility-scans', '$T5/$Q/$Q2/$FU.webp');
+   insert into app.eligibility_record (id, tournament_id, player_id, season_id, document_type, document_number, scan_path, scan_name)
+     values ('$RF', '$T5', '$Q2', '$S7', 'emis', '77', '$T5/$Q/$Q2/$FU.webp', 'old.jpg')" >/dev/null
+# Orphans: O1 just uploaded (its command may still be on its way), O2 two days old; U1 is old but its record is live.
+q "insert into storage.objects (bucket_id, name) values ('eligibility-scans', '$T5/$X/$P1/$O1.webp');
+   insert into storage.objects (bucket_id, name, created_at) values ('eligibility-scans', '$T5/$X/$P1/$O2.webp', now() - interval '2 days');
+   update storage.objects set created_at = now() - interval '3 days' where name = '$T5/$X/$P1/$U1.webp';
+   insert into storage.objects (bucket_id, name, created_at) values ('player-photos', '$T5/$X/$P1/$O2.webp', now() - interval '2 days')" >/dev/null
+pick="select coalesce(string_agg(n, ',' order by n), 'none') from app.scans_to_delete() n"
+[ "$(svc "$pick")" = "$T5/$X/$P1/$O2.webp,$T5/$X/$P5/$U2.webp,$T5/$Q/$Q1/$QU.webp,$T5/$Q/$Q2/$FU.webp" ] || fail "job: selection $(svc "$pick")"
+[ "$(svc "select count(*) from app.scans_to_delete(1)")" = 1 ] || fail "job: limit"
+
+# The Edge Function deletes through the Storage API (here: the rows), then reports what went; U2 "fails" and stays selected.
+q "delete from storage.objects where bucket_id = 'eligibility-scans' and name in ('$T5/$Q/$Q1/$QU.webp', '$T5/$Q/$Q2/$FU.webp', '$T5/$X/$P1/$O2.webp')" >/dev/null
+[ "$(svc "select app.scans_deleted(array['$T5/$Q/$Q1/$QU.webp', '$T5/$Q/$Q2/$FU.webp', '$T5/$X/$P1/$O2.webp'])")" = 2 ] || fail "job: records cleared"
+[ "$(q "select concat_ws('|', coalesce(scan_path, '-'), coalesce(scan_name, '-'), document_type, document_number, verified_by, version) from app.eligibility_record where id='$QR'")" \
+  = "-|-|birth_certificate|12-34|$A|4" ] || fail "job: verified record after deletion"
+[ "$(q "select coalesce(scan_path, '-')||document_number from app.eligibility_record where id='$RF'")|$(q "select scan_path from app.eligibility_record where id='$R1'")" \
+  = "-77|$T5/$X/$P1/$U1.webp" ] || fail "job: finished record not cleared, or a live record cleared"
+[ "$(svc "$pick")" = "$T5/$X/$P5/$U2.webp" ] || fail "job: a failed deletion is not retried: $(svc "$pick")"
+# Next run: U2 deleted, but reporting failed; the run after clears a verified record whose file is already gone.
+q "delete from storage.objects where bucket_id = 'eligibility-scans' and name = '$T5/$X/$P5/$U2.webp'" >/dev/null
+[ "$(svc "$pick")|$(svc "select app.scans_deleted('{}')")|$(q "select coalesce(scan_path, '-') from app.eligibility_record where id='$R2'")" = 'none|1|-' ] \
+  || fail "job: verified record with its file gone not cleared"
+[ "$(q "select count(*) from storage.objects where bucket_id = 'player-photos' and name = '$T5/$X/$P1/$O2.webp'")" = 1 ] || fail "job: touched another bucket"
+[ "$(q "select count(*) filter (where reason = 'Scan deleted')||':'||count(*) filter (where strpos(coalesce(before::text, '') || coalesce(after::text, ''), '$QU') > 0)
+       from app.activity_log where table_name = 'eligibility_record'")" = '3:0' ] || fail "job: log rows without the reason, or with the path"
+
+# The schedule: one hourly job by name (applied twice), calling the Edge Function with its URL and secret from Vault.
+[ "$(q "select string_agg(jobname||' '||schedule, ',') from cron.job")" = 'delete-eligibility-scans 17 * * * *' ] || fail "cron: job"
+[ "$(q "select (command ~ 'net\.http_post') and (command ~ 'vault\.decrypted_secrets') and command ~ 'scan_cleanup_secret' from cron.job")" = t ] \
+  || fail "cron: command"
+! (echo "begin; drop schema cron cascade;"; cat "$dir/0016_verify_eligibility.sql") | psql >/dev/null 2>&1 || fail "0016 applied without pg_cron"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null
