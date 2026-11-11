@@ -31,7 +31,8 @@
     "check:paper": "node scripts/paper.check.mjs",
     "check:verify": "node scripts/verify.check.mjs",
     "check:review": "node scripts/review.check.mjs",
-    "check:deadline": "node scripts/deadline.check.mjs"
+    "check:deadline": "node scripts/deadline.check.mjs",
+    "check:erase": "node scripts/erase.check.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.2.2",

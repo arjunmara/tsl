@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -1635,6 +1635,98 @@ q "update app.team set reopened_until = '$today'::date - 1 where id='$Y'" >/dev/
 deadline "$(q "select '$today'::date - 1")"
 [ "$(et $G5 1724 $Y $(ver $Y) "$(kit 8)")" = registration_closed ] || fail "reopen: past reopen date still open"
 q "update app.season set registration_deadline = '2099-11-20', starts_on = null, ends_on = null where id='$S5'" >/dev/null
+
+# --- Delete a Player's photo and personal details on request (Story 2.10). A organises T5 (S5 in registration); B organises
+# T2. G1 holds X's grant, G5 Y's. X's P1 (minor, consent from Mina Basnet) has photo V1 and record R1 (scan U1); in P1's
+# folders also an old orphan photo O2 and a fresh orphan scan O1. P5's photo V3 and SF1's V2 stay. Q (withdrawn) has Q1.
+er() { tc "$1" "erase_player_personal_data('$(cmd "$2")', '$3', '$4', $5)"; }
+dob=$(q "select date_of_birth from app.player where id='$P1'")
+num=$(q "select document_number from app.eligibility_record where id='$R1'")
+[ -n "$dob" ] && [ -n "$num" ] && [ "$(q "select given_by from app.photo_consent where player_id='$P1' and season_id='$S5'")" = 'Mina Basnet' ] \
+  && [ "$(q "select photo_path from app.player where id='$P1'")" = "$T5/$X/$P1/$V1.webp" ] || fail "erase: fixture"
+v=$(pv $P1)
+# A stored conflict answer that carries P1's date of birth (dropped by the erase).
+[ "$(ep $A 1800 $X $P1 "$((v - 1)), name => 'Old'")" = version_conflict ] || fail "erase: fixture conflict"
+
+# Fences: X's own grant, another Team's grant, another Tournament's Organiser can't erase; anon and Organisers can't call
+# the job's functions. Nothing changes.
+[ "$(er $G1 1801 $X $P1 $v)|$(er $G5 1802 $X $P1 $v)|$(er $B 1803 $X $P1 $v)|$(pv $P1)" = "not_authorized|not_authorized|not_authorized|$v" ] \
+  || fail "leak: erase by a grant or another Tournament"
+for f in "erase_player_personal_data('$(cmd 1804)', '$X', '$P1', $v)" "file_queued('player-photos', 'x')" "photos_to_delete()" "files_deleted('player-photos', '{}')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+for f in "photos_to_delete()" "files_deleted('player-photos', '{}')"; do
+  out=$(as $A "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "Organiser can execute $f: $out"
+done
+[ "$(er $A 1805 $Y $P1 $v)|$(er $A 1806 $X $P1 $((v - 1)))" = 'player_missing|version_conflict' ] || fail "erase: refusals"
+r=$(as $A "select app.erase_player_personal_data('$(cmd 1806)', '$X', '$P1', $((v - 1)))")
+[ "$(q "select (r->'conflict'->'current') ? 'date_of_birth' from (select '$r'::jsonb r) x")" = f ] || fail "erase: conflict carries personal values: $r"
+[ "$(q "select count(*) from app.file_to_delete")" = 0 ] || fail "erase: a refused erase queued files"
+
+r=$(as $A "select app.erase_player_personal_data('$(cmd 1807)', '$X', '$P1', $v)")
+[ "$(q "select (r->>'ok')||(r->>'version') from (select '$r'::jsonb r) x")" = "true$((v + 1))" ] || fail "erase: $r"
+# Cleared: date of birth, photo, guardian (consent not given), document number and scan; kept: name, Squad entry, type.
+[ "$(q "select concat_ws('|', name, coalesce(date_of_birth::text, '-'), coalesce(photo_path, '-'), coalesce(is_cutout::text, '-'), version) from app.player where id='$P1'")" \
+  = "$(q "select name from app.player where id='$P1'")|-|-|-|$((v + 1))" ] || fail "erase: player row"
+[ "$(q "select count(*) from app.squad_entry where player_id='$P1' and team_id='$X'")|$(q "select string_agg(consent_given||':'||coalesce(given_by, '-'), ',') from app.photo_consent where player_id='$P1'")" \
+  = '1|false:-' ] || fail "erase: Squad entry or consent"
+[ "$(q "select concat_ws('|', document_type is not null, coalesce(document_number, '-'), coalesce(scan_path, '-'), coalesce(scan_name, '-'), coalesce(scan_uploaded_at::text, '-')) from app.eligibility_record where id='$R1'")" \
+  = 't|-|-|-|-' ] || fail "erase: Eligibility record"
+# Queued for the Storage API: every file in P1's folders (current and orphan photos and scans); nobody else's.
+[ "$(q "select string_agg(bucket_id||':'||name, ',' order by bucket_id, name) from app.file_to_delete")" \
+  = "$(q "select string_agg(bucket_id||':'||name, ',' order by bucket_id, name) from storage.objects where name like '%/$P1/%'")" ] || fail "erase: queue"
+[ "$(q "select count(*) from app.file_to_delete where name like '%/$P1/%'")" = 4 ] || fail "erase: queue size $(q "select count(*) from app.file_to_delete")"
+# Activity log: one row per changed table, with the reason; field names only, never the values.
+[ "$(q "select string_agg(table_name||':'||reason, ',' order by table_name) from app.activity_log where command_id='$(cmd 1807)'")" \
+  = 'eligibility_record:Personal details deleted on request,photo_consent:Personal details deleted on request,player:Personal details deleted on request' ] \
+  || fail "erase: log rows"
+[ "$(q "select concat_ws('|', before->>'date_of_birth', before->>'photo_path', after->>'date_of_birth') from app.activity_log where command_id='$(cmd 1807)' and table_name='player'")" \
+  = 'date_of_birth|photo_path' ] || fail "erase: log names"
+for val in "$dob" "Mina Basnet" "$num" "$V1" "$U1"; do
+  [ "$(q "select count(*) from app.activity_log where strpos(coalesce(before::text, '') || coalesce(after::text, ''), \$v\$$val\$v\$) > 0")" = 0 ] \
+    || fail "erase: value in the Activity log: $val"
+done
+# Stored command answers keep no copy of the erased values.
+[ "$(q "select count(*) from app.command_result where strpos(result::text, '$dob') > 0 or strpos(result::text, \$v\$Mina Basnet\$v\$) > 0 or strpos(result::text, \$v\$$num\$v\$) > 0")" = 0 ] \
+  || fail "erase: values left in command_result"
+[ "$(q "select result->>'code' from app.command_result where command_id='$(cmd 1800)'")" = version_conflict ] || fail "erase: stored conflict lost"
+
+# Reads: nobody signs P1's queued photo, the consent gate gives none; other Teams, Tournaments and anon read nothing of P1.
+[ "$(as $A "select count(*) from storage.objects where name like '%/$P1/%'")|$(as $G1 "select count(*) from storage.objects where name like '%/$P1/%'")|$(as $A "select count(*) from storage.objects where name like '%/$P5/%'")" \
+  = '0|0|1' ] || fail "erase: queued files still readable, or others' photos hidden"
+[ "$(gate $A)" = "$P1:null,$P5:null" ] || fail "erase: player_photo_public gives a photo"
+[ "$(as $G1 "select concat_ws('|', coalesce(date_of_birth::text, '-'), coalesce(photo_path, '-')) from app.player where id='$P1'")|$(as $G1 "select coalesce(document_number, '-') from app.registration_eligibility() where player_id='$P1'")" \
+  = '-|-|-' ] || fail "erase: the Team's own form"
+for who in $G5 $B; do
+  [ "$(as $who "select count(*) from app.player where id='$P1'")|$(as $who "select count(*) from app.eligibility_record")|$(as $who "select count(*) from app.photo_consent where player_id='$P1'")|$(gate $who)" \
+    = '0|0|0|none' ] || fail "leak: $who reads P1 after erase"
+done
+! as anon "select count(*) from app.player" >/dev/null 2>&1 || [ "$(as anon "select count(*) from app.player")" = 0 ] || fail "leak: anon reads players"
+
+# Repeat: same answer; a new erase with nothing left is ok and changes nothing.
+[ "$(as $A "select app.erase_player_personal_data('$(cmd 1807)', '$X', '$P1', $v)")" = "$r" ] || fail "erase: repeat answered differently"
+[ "$(er $A 1808 $X $P1 $v)|$(pv $P1)" = "ok|$((v + 1))" ] || fail "erase: nothing left changed the Player"
+# A withdrawn Team's Player (Q1, verified) is erased too: number gone, type and verification kept.
+[ "$(er $A 1809 $Q $Q1 $(pv $Q1))|$(q "select concat_ws('|', document_type, coalesce(document_number, '-'), verified_at is not null) from app.eligibility_record where id='$QR'")" \
+  = 'ok|birth_certificate|-|t' ] || fail "erase: withdrawn Team"
+
+# The job: photos nobody points to (queued now, or a day old), queued scans at once; then the queue empties.
+ppick="select coalesce(string_agg(n, ',' order by n), 'none') from app.photos_to_delete() n"
+[ "$(svc "$ppick")" = "$(q "select string_agg(name, ',' order by name) from storage.objects where bucket_id='player-photos' and (name like '%/$P1/%' or name like '%/$Q1/%')")" ] \
+  || fail "job: photo selection $(svc "$ppick")"
+[ "$(svc "$pick")" = "$(q "select string_agg(name, ',' order by name) from storage.objects where bucket_id='eligibility-scans' and name like '%/$P1/%'")" ] \
+  || fail "job: queued scans not selected at once $(svc "$pick")"
+q "delete from storage.objects where bucket_id = 'player-photos' and (name like '%/$P1/%' or name like '%/$Q1/%')" >/dev/null
+nq=$(q "select count(*) from app.file_to_delete where bucket_id = 'player-photos'")
+[ "$(svc "select app.files_deleted('player-photos', array['$T5/$X/$P1/$V1.webp'])")|$(svc "$ppick")" = "$nq|none" ] \
+  || fail "job: photos reported"
+q "delete from storage.objects where bucket_id = 'eligibility-scans' and name = '$T5/$X/$P1/$U1.webp'" >/dev/null
+[ "$(svc "select app.files_deleted('eligibility-scans', array['$T5/$X/$P1/$U1.webp'])")|$(svc "$pick")" = "1|$T5/$X/$P1/$O1.webp" ] \
+  || fail "job: a failed scan deletion is not retried"
+[ "$(q "select count(*) from storage.objects where bucket_id='player-photos' and name in ('$T5/$X/$SF1/$V2.webp', '$T5/$X/$P5/$V3.webp')")|$(q "select count(*) from app.file_to_delete where bucket_id = 'player-photos'")" = '2|0' ] \
+  || fail "job: deleted a photo still in use, or the queue kept deleted photos"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

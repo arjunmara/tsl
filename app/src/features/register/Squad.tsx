@@ -23,6 +23,9 @@ const SHIRT = /^\d{1,2}$/
 const checkName = (v: string) => (v.length > 80 ? messages.name_long : null)
 const checkDob = (v: string) => (v < '1940-01-01' || v > today() ? messages.dob_invalid : null)
 const consentLine = (p: SquadPlayer) => (p.consent ? `photo consent: ${p.givenBy ?? ''}` : 'no photo consent')
+/** Anything a family can ask the Organiser to delete (Story 2.10). */
+const hasPersonal = ({ dateOfBirth, photo, givenBy, eligibility: e }: SquadPlayer) =>
+  !!(dateOfBirth || photo || givenBy || e?.documentNumber || e?.scanName)
 /** "EMIS number added" once type, number and scan are all given; else what is still needed. */
 const documentLine = ({ eligibility: e }: SquadPlayer) =>
   (e?.documentType && e.documentNumber && e.scanName ? `${documentLabel(e.documentType)} added` : 'document still needed')
@@ -191,6 +194,13 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
       <DestructiveButton label="Remove from the Squad" accessibleLabel={`Remove ${p.name} from the Squad`} sheetTitle={`Remove ${p.name}?`}
         before={`${p.name} in the Squad`} after="Removed, with their details" actionLabel={`Remove ${p.name}`}
         onConfirm={() => void run('remove_player', { player_id: p.id }, p.id).then(setProblem)} />
+      {form.organiser && hasPersonal(p) && (
+        <DestructiveButton label="Delete personal details" accessibleLabel={`Delete personal details of ${p.name}`}
+          sheetTitle={`Delete ${p.name}'s personal details?`}
+          before={`${p.name}'s photo, date of birth, guardian's name and document`}
+          after="Deleted; name, Team and matches kept. Backups keep it for up to 30 days." actionLabel="Delete personal details"
+          onConfirm={() => void run('erase_player_personal_data', { player_id: p.id }, p.id).then(setProblem)} />
+      )}
     </details>
   )
 }

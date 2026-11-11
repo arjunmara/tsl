@@ -37,6 +37,7 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   add_player: (a) => `Add Player ‘${String(a.name ?? '')}’`,
   edit_player: (a) => (a.name != null ? `Rename a Player to ‘${String(a.name)}’` : "Change a Player's details"),
   remove_player: () => 'Remove a Player from the Squad',
+  erase_player_personal_data: () => "Delete a Player's personal details",
   add_staff: (a) => `Add ‘${String(a.name ?? '')}’ to the Staff`,
   edit_staff: () => 'Change a Staff member',
   remove_staff: () => 'Remove a Staff member',

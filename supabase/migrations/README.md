@@ -366,3 +366,32 @@ changes after the deadline carry that reason in the Activity log. Steps: paste `
 Editor and run it. Check: `select app.grace_window();` returns `01:00:00`. Then, on the test preview, open a Registration
 link and save a change while watching the browser's network tab: the request carries `x-entered-at` and is not blocked by
 CORS (if it is, tell the developer).
+
+## Apply 0019_erase_personal_data.sql (Story 2.10)
+
+Apply after 0018 and before the app deploy with "Delete personal details" on the Organiser's Player cards (test first, then
+live). It adds the Organiser-only command `erase_player_personal_data`: it clears a Player's date of birth and photo, the
+guardian's (or giver's) name in every Season, so Photo consent becomes "not given", and the Eligibility document number and
+scan (document type and verification kept), and keeps the name, Team, shirt number and match record. It works in any Season
+status and for a withdrawn Team; Team managers can't call it. The Activity log names the cleared fields only, never their
+values, and copies of the values in stored command answers are dropped. Every file in the Player's folders in
+`player-photos` and `eligibility-scans` goes into the new queue `app.file_to_delete`; a queued photo can't be opened from
+then on. The hourly `delete-eligibility-scans` job now also deletes, through the Storage API, queued files at once and every
+Player or Staff photo nothing points to any more (a replaced photo, a removed Player's) once it is a day old.
+
+Nightly backups keep a copy for 30 days (the R2 lifecycle rule), so erased data leaves the backups within 30 days. Backups
+are paused at the moment; when you turn them on, keep that 30-day rule.
+
+Steps, on **test** first, then **live**:
+
+1. Paste `0019_erase_personal_data.sql` into the SQL Editor and run it.
+2. Redeploy the Edge Function (it now also deletes photos), the same way as for 0016:
+   `supabase functions deploy delete-scans --project-ref <project ref> --no-verify-jwt`, or in the dashboard paste the new
+   `supabase/functions/delete-scans/index.ts` into the `delete-scans` function and deploy (keep **Enforce JWT
+   verification** off). The secrets and the cron job stay as they are.
+3. Check: run the job once by hand (step 6 of 0016), then
+   `select status_code, content from net._http_response order by id desc limit 1;`: 200 with an `eligibility-scans` and a
+   `player-photos` count.
+4. On the test preview, as an Organiser, open a Team, open a Player card with a photo, tap "Delete personal details" and
+   confirm. The card shows no photo, date of birth, guardian or document number; within the hour the photo is gone from
+   Storage → player-photos.

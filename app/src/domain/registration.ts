@@ -308,6 +308,11 @@ export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): Reg
       if (typeof a.document_number === 'string') e.documentNumber = a.document_number
       if (typeof a.scan_name === 'string') e.scanName = a.scan_name
       p.eligibility = e
+    } else if (name === 'erase_player_personal_data') {
+      const p = players.find((x) => x.id === a.player_id)
+      if (!p) continue
+      Object.assign(p, { dateOfBirth: '', photo: null, consent: false, givenBy: null })
+      if (p.eligibility) p.eligibility = { ...p.eligibility, documentNumber: '', scanName: null, scanPath: null, uploadedAt: null }
     } else if (name === 'verify_eligibility') {
       const p = players.find((x) => x.id === a.player_id)
       if (p?.eligibility) p.eligibility = { ...p.eligibility, verified: true }

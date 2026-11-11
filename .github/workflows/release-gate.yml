@@ -64,6 +64,8 @@ jobs:
         run: npm run check:review
       - name: Links close at the deadline; reopen one for a reason (Story 2.9)
         run: npm run check:deadline
+      - name: Delete a Player's photo and personal details on request (Story 2.10)
+        run: npm run check:erase
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
       # and write, Activity log, idempotency), the co-organiser and Team leak and race tests (Stories 1.14, 2.1) and the pg_proc
       # command skeleton check.
