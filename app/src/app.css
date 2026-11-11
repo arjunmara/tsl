@@ -568,6 +568,42 @@
   overflow-wrap: anywhere;
 }
 
+/* An open Team inside the Teams tab (Story 2.6): alone on a phone, beside the Team list on a laptop. */
+.team-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  min-width: 0;
+}
+.team-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+.team-bar h2 {
+  overflow-wrap: anywhere;
+}
+.teams-side {
+  display: none;
+}
+.team-open[aria-current="true"] .body-strong {
+  text-decoration: underline;
+}
+@media (min-width: 1024.02px) {
+  .home:has(.teams-split) {
+    max-width: 80rem;
+  }
+  .teams-split {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: var(--spacing-5);
+    align-items: start;
+  }
+  .teams-side {
+    display: block;
+  }
+}
+
 /* Registration link form (Story 2.2): a sealed page, no App bar or tabs. The Deadline banner is information, not an error. */
 .register-bar .meta {
   margin: 0;

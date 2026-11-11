@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
-import { forgetRefused, send } from '../../domain/commands'
+import { useNavigate } from 'react-router'
+import { forgetRefused, queuedFor, send } from '../../domain/commands'
+import { overlayForm, teamForm, type RegistrationForm } from '../../domain/registration'
 import { messageFor, messages } from '../../domain/messages'
 import { newLink } from '../../domain/teamCode'
 import { linkToken, registrationUrl, rememberLink, type Team } from '../../domain/teams'
@@ -8,31 +9,18 @@ import { backIcon, DestructiveButton, IconButton, PrimaryButton, SecondaryButton
 import { KitDot } from '../../ui/KitDot'
 import { StatusPill } from '../../ui/StatusPill'
 import { Problem } from '../auth/Screen'
-import { Unavailable, UUID } from '../setup/Setup'
-import { readHead, type Head } from './Home'
+import { ClosedTeam, TeamEditor } from '../register/Register'
+import { UUID } from '../setup/Setup'
+import type { Head } from './Home'
 import { shareLink, teamStatusLabel, useTeams } from './Teams'
 
-/** /t/:tournamentId/teams/:teamId: one Team, its Registration link (share, reissue, revoke). */
-export function TeamPage() {
-  const { tournamentId = '', teamId = '' } = useParams()
-  const navigate = useNavigate()
-  const [head, setHead] = useState<Head | 'missing' | 'offline' | 'unknown' | null>(null)
-  useEffect(() => {
-    let live = true
-    void readHead(tournamentId).then((h) => live && setHead(h))
-    return () => {
-      live = false
-    }
-  }, [tournamentId])
-  if (!UUID.test(tournamentId) || !UUID.test(teamId) || head === 'missing') return <Unavailable />
-  if (head && typeof head === 'object') return <OneTeam key={teamId} tournamentId={tournamentId} teamId={teamId} h={head} />
-  return (
-    <main className="home">
-      <IconButton label="Back to Teams" onClick={() => navigate(`/t/${tournamentId}`, { state: { tab: 'teams' } })}>{backIcon}</IconButton>
-      {head ? <Problem text={head === 'offline' ? messages.offline : messages.tournament_unknown} />
-        : <p className="body" aria-busy="true">Loading the Team…</p>}
-    </main>
-  )
+/**
+ * /t/:tournamentId/teams/:teamId, inside the Tournament home's Teams tab: one Team, its Registration link (share,
+ * reissue, revoke) and the Team manager's form sections, which an Organiser fills from a paper sheet (Story 2.6).
+ */
+export function TeamPage({ tournamentId, teamId, h }: { tournamentId: string; teamId: string; h: Head }) {
+  if (!UUID.test(teamId)) return <Problem text={messages.team_missing} />
+  return <OneTeam key={teamId} tournamentId={tournamentId} teamId={teamId} h={h} />
 }
 
 function OneTeam({ tournamentId, teamId, h }: { tournamentId: string; teamId: string; h: Head }) {
@@ -45,7 +33,6 @@ function OneTeam({ tournamentId, teamId, h }: { tournamentId: string; teamId: st
   const canReissue = h.season.status === 'setup' || h.season.status === 'registration'
   const back = () => navigate(`/t/${tournamentId}`, { state: { tab: 'teams' } })
 
-  if (Array.isArray(teams) && !team) return <Unavailable />
 
   async function run(name: string, args: Record<string, unknown>, onRefused?: () => void) {
     setProblem(null)
@@ -85,12 +72,12 @@ function OneTeam({ tournamentId, teamId, h }: { tournamentId: string; teamId: st
 
   const token = team ? linkToken(team.linkId) : null
   return (
-    <main className="home">
-      <header className="home-bar">
+    <div className="team-pane">
+      <header className="team-bar">
         <IconButton label="Back to Teams" onClick={back}>{backIcon}</IconButton>
-        <h1 className="title home-title">{team?.name ?? 'Team'}</h1>
+        <h2 className="title">{team?.name ?? 'Team'}</h2>
       </header>
-      <div className="home-panel team-page">
+      <div className="team-page">
         <p role="status" className="body">{notice}</p>
         <Problem text={problem} />
         {!Array.isArray(teams) ? (
@@ -100,7 +87,7 @@ function OneTeam({ tournamentId, teamId, h }: { tournamentId: string; teamId: st
               <SecondaryButton label="Try loading again" onClick={retry} />
             </>
           ) : <p className="body" aria-busy="true">Loading the Team…</p>
-        ) : team && (
+        ) : !team ? <Problem text={messages.team_missing} /> : (
           <>
             <p className="team-name">
               <KitDot colour={team.kitColour} />
@@ -129,9 +116,45 @@ function OneTeam({ tournamentId, teamId, h }: { tournamentId: string; teamId: st
               )}
               {!canReissue && <p className="meta">New links can't be made once the Season has started.</p>}
             </section>
+            <TeamSheet seasonId={h.season.id} teamId={team.id} />
           </>
         )}
       </div>
-    </main>
+    </div>
   )
+}
+
+/** The Team's form as its manager sees it, read through the Organiser's membership; as text once the Season has started. */
+function TeamSheet({ seasonId, teamId }: { seasonId: string; teamId: string }) {
+  const [form, setForm] = useState<RegistrationForm | 'missing' | 'offline' | 'unknown' | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    let live = true
+    void load(seasonId, teamId).then((f) => live && setForm(f))
+    return () => {
+      live = false
+    }
+  }, [seasonId, teamId, attempt])
+  if (form === null) return <p className="body" aria-busy="true">Loading the Players and Staff…</p>
+  if (typeof form === 'string') {
+    return (
+      <>
+        <Problem text={form === 'offline' ? messages.offline : form === 'missing' ? messages.team_missing : messages.team_form_unknown} />
+        <SecondaryButton label="Try loading the Team again" onClick={() => (setForm(null), setAttempt((n) => n + 1))} />
+      </>
+    )
+  }
+  return form.seasonStatus === 'setup' || form.seasonStatus === 'registration'
+    ? <Editor key={attempt} initial={form} load={async () => { const f = await load(seasonId, teamId); return typeof f === 'string' ? null : f }} />
+    : <ClosedTeam form={form} />
+}
+
+async function load(seasonId: string, teamId: string) {
+  const r = await teamForm(seasonId, teamId)
+  return 'form' in r ? overlayForm(r.form, await queuedFor(teamId)) : r.code
+}
+
+function Editor({ initial, load }: { initial: RegistrationForm; load: () => Promise<RegistrationForm | null> }) {
+  const [form, setForm] = useState(initial)
+  return <TeamEditor form={form} setForm={setForm} load={load} />
 }

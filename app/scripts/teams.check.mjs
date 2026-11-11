@@ -82,8 +82,10 @@ async function fresh({ season = {}, teams = [], share = 'none' } = {}) {
       assert.equal(new URL(req.url()).searchParams.get('season_id'), `eq.${S}`)
       if (mock.teamsDelay) await new Promise((r) => setTimeout(r, mock.teamsDelay))
       if (mock.teamsFail) return (mock.teamsFail--, route.fulfill({ status: 500, headers: cors, contentType: 'application/json', body: '{"message":"boom"}' }))
-      return json(route, mock.teams)
+      // The open Team's form read (Story 2.6) embeds its Season and Tournament.
+      return json(route, mock.teams.map((t) => ({ ...t, version: 1, tournament: { name: 'Gulmi Cup' }, season: mock.season })))
     }
+    if (['/rest/v1/squad_entry', '/rest/v1/staff', '/rest/v1/eligibility_record'].includes(path)) return json(route, [])
     if (path === '/rest/v1/sponsor') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     const a = JSON.parse(req.postData())
@@ -282,7 +284,7 @@ try {
     await teamsTab(page)
     await button(page, 'Share link for Friends Sporting Wing').click()
     await page.waitForURL((u) => u.pathname === `/t/${T}/teams/${FSW}`)
-    await page.getByRole('heading', { name: 'Friends Sporting Wing', level: 1 }).waitFor()
+    await page.getByRole('heading', { name: 'Friends Sporting Wing', level: 2 }).waitFor()
     await page.getByText(/^This phone doesn't have this Team's link\./).waitFor()
     await button(page, 'Make a new link').click()
     const sheet = page.getByRole('dialog', { name: 'Make a new link for Friends Sporting Wing?' })

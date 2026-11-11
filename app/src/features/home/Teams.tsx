@@ -68,7 +68,7 @@ export async function shareLink(team: Team, token: string, h: Head): Promise<str
 }
 
 /** The Teams tab: setup first if it's missing, else the add form and the Team rows. */
-export function Teams({ tournamentId, head: h, onSeasonChange }: { tournamentId: string; head: Head; onSeasonChange: () => void }) {
+export function Teams({ tournamentId, head: h, openId, onSeasonChange }: { tournamentId: string; head: Head; openId?: string; onSeasonChange: () => void }) {
   const navigate = useNavigate()
   const { teams, reload, retry } = useTeams(tournamentId, h.season.id)
   const { ref, showErrors, values } = useForm()
@@ -161,7 +161,7 @@ export function Teams({ tournamentId, head: h, onSeasonChange }: { tournamentId:
         <ul className="cards">
           {teams.map((t) => (
             <li key={t.id} className="card team-row">
-              <button type="button" className="team-open" aria-label={`Open ${t.name}`} onClick={() => openTeam(t)}>
+              <button type="button" className="team-open" aria-label={`Open ${t.name}`} aria-current={t.id === openId || undefined} onClick={() => openTeam(t)}>
                 <KitDot colour={t.kitColour} />
                 <span className="team-name">
                   <span className="body-strong">{t.name}</span>

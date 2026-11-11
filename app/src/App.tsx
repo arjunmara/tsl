@@ -13,7 +13,6 @@ import { NewTournament, SettingsSection, SetupStep } from './features/setup/Setu
 import { Home } from './features/home/Home'
 import { Settings } from './features/home/Settings'
 import { CoOrganisers } from './features/home/CoOrganisers'
-import { TeamPage } from './features/home/TeamPage'
 import { Invite } from './features/auth/Invite'
 import { Register } from './features/register/Register'
 import { SaveStatusBar } from './features/save-status/SaveStatusBar'
@@ -48,11 +47,11 @@ function ScreenBoundary({ children }: { children: ReactNode }) {
 // in its message must not reach the log.
 const crashTest = import.meta.env.DEV || new URLSearchParams(location.search).has('crashtest')
 /**
- * The page-wide Save status, except where a screen shows it itself: the Tournament home and Settings list (in the App bar)
+ * The page-wide Save status, except where a screen shows it itself: the Tournament home, an open Team and the Settings list (in the App bar)
  * and the Registration link form (only while it's open).
  */
 function PageSaveStatus() {
-  return /^\/(t\/[^/]+(\/settings)?|register)\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
+  return /^\/(t\/[^/]+(\/settings|\/teams\/[^/]+)?|register)\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
 }
 
 function Crash(): ReactNode {
@@ -81,7 +80,7 @@ export function App() {
               <Route path="/new" element={<NewTournament />} />
               <Route path="/t/:tournamentId/setup/:step" element={<SetupStep />} />
               <Route path="/t/:tournamentId" element={<Home />} />
-              <Route path="/t/:tournamentId/teams/:teamId" element={<TeamPage />} />
+              <Route path="/t/:tournamentId/teams/:teamId" element={<Home />} />
               <Route path="/t/:tournamentId/settings" element={<Settings />} />
               <Route path="/t/:tournamentId/settings/co-organisers" element={<CoOrganisers />} />
               <Route path="/t/:tournamentId/settings/:section" element={<SettingsSection />} />

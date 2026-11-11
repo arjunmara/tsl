@@ -72,6 +72,7 @@ export const messages = {
   team_missing: 'That Team no longer exists in this Season. Reload the page.',
   setup_incomplete: 'Add the photo-consent statement and the Season dates before adding Teams.',
   teams_unknown: "Couldn't load the Teams. Try loading them again.",
+  team_form_unknown: "Couldn't load this Team's Players and Staff. Try loading the Team again.",
   link_dead: 'This link no longer works. Ask the organiser for a new one.',
   link_incomplete: "This link isn't complete. Open it again from the message the organiser sent you.",
   registration_unknown: "Couldn't open this Team's form. Try the link again.",

@@ -1353,6 +1353,65 @@ done
   || fail "photos: revoked link"
 ! obj $G1 player-photos "$T5/$X/$P1/$V4.webp" >/dev/null 2>&1 || fail "photo: revoked grant uploaded"
 
+# --- Organiser enters a Team from a paper sheet (Story 2.6). A organises T5 (S5 in registration: Squad 2 to 3, Staff
+# manager and coach); B organises T2. Q is added by A and its link never shared; the same commands run as the Organiser,
+# with the same Line-up and Photo consent checks. G5 holds Y's grant. Later G6 redeems Q's link: a manager's edit and an
+# Organiser's edit of the same Player conflict either way round.
+Q=71111111-0000-4000-8000-000000000006 LQ=81111111-0000-4000-8000-000000000009 TQ=${TK1/A/q} G6=f1111111-0000-4000-8000-000000000006
+Q1=91111111-0000-4000-8000-000000000011 Q2=91111111-0000-4000-8000-000000000012 Q3=91111111-0000-4000-8000-000000000013
+Q4=91111111-0000-4000-8000-000000000014 QS=a1111111-0000-4000-8000-000000000011 QR=b1111111-0000-4000-8000-000000000011
+QV=d2111111-0000-4000-8000-000000000011
+q "insert into auth.users (id, is_anonymous) values ('$G6', true)" >/dev/null
+[ "$(add_t $A 1400 $Q $S5 "'Paper Sheet FC'" PSF $LQ $(hash $TQ))" = ok ] || fail "paper: add Team"
+[ "$(tc $A "edit_team('$(cmd 1401)', '$Q', 1, kit_colour => '#1d4ed8')")" = ok ] || fail "paper: Organiser edits Team details"
+[ "$(ap $A 1402 $Q $Q1 "name => 'Sita Rana', shirt_number => 4, date_of_birth => '$kid', consent => true")" = guardian_required ] \
+  || fail "paper: minor's consent without a guardian accepted from the Organiser"
+[ "$(ap $A 1403 $Q $Q1 "name => 'Sita Rana', shirt_number => 4, date_of_birth => '$kid', consent => true, given_by => 'Gita Rana'")|$(ap $A 1404 $Q $Q2 "name => 'Rita Rana', shirt_number => 5, date_of_birth => '$grown', consent => false")|$(ap $A 1405 $Q $Q3 "name => 'Mina Rana', shirt_number => 6, date_of_birth => '$grown', consent => false")" \
+  = 'ok|ok|ok' ] || fail "paper: Organiser adds Players"
+[ "$(msg $A "add_player('$(cmd 1406)', '$Q', '$Q4', 'Too Many', 7, '$grown', false)")" = "Squad can have at most 3 Players. You have 4." ] \
+  || fail "paper: Line-up rules not applied to the Organiser"
+[ "$(ep $A 1407 $Q $Q2 "1, shirt_number => 4")|$(ep $A 1408 $Q $Q2 "1, name => 'Rita K. Rana'")|$(tc $A "remove_player('$(cmd 1409)', '$Q', '$Q3', 1)")" \
+  = 'shirt_taken|ok|ok' ] || fail "paper: Organiser edits and removes Players"
+[ "$(ast $A 1410 $Q $QS "'Hari Rana', 'manager'")|$(ast $A 1411 $Q $Q4 "'Physio', 'physio'")" = 'ok|lineup_violation' ] || fail "paper: Organiser adds Staff"
+obj $A player-photos "$T5/$Q/$Q1/$QV.webp" >/dev/null || fail "paper: Organiser cannot upload a photo"
+[ "$(ae $A 1412 $Q $Q1 $QR "'birth_certificate', '12-34'")|$(sp_ $A 1413 $Q $Q1 "$(pv $Q1), '$T5/$Q/$Q1/$QV.webp', true")" = 'ok|ok' ] \
+  || fail "paper: Organiser adds Eligibility and a photo"
+[ "$(tc $A "submit_team('$(cmd 1414)', '$Q')")|$(q "select status from app.team where id='$Q'")" = 'ok|submitted' ] || fail "paper: Organiser sends the Team"
+[ "$(q "select count(*) filter (where actor is distinct from '$A')||'/'||(count(*) > 0) from app.activity_log where command_id between '$(cmd 1400)' and '$(cmd 1414)'")" = 0/true ] \
+  || fail "paper: log rows not the Organiser's"
+[ "$(q "select count(*) from app.activity_log where strpos(coalesce(before::text, '') || coalesce(after::text, ''), 'Gita Rana') + strpos(coalesce(before::text, '') || coalesce(after::text, ''), '12-34') > 0")" = 0 ] \
+  || fail "paper: personal fields logged by value"
+# The Organiser reads every section the form shows (Team, Squad, consent, Staff, Eligibility, photos).
+[ "$(as $A "select concat_ws('|', (select status||kit_colour from app.team where id='$Q'), (select count(*) from app.squad_entry where team_id='$Q'),
+       (select string_agg(c.given_by, ',') from app.photo_consent c join app.squad_entry e on e.player_id = c.player_id where e.team_id='$Q'),
+       (select count(*) from app.staff where team_id='$Q'), (select document_number from app.eligibility_record where id='$QR'),
+       (select count(*) from storage.objects where name like '$T5/$Q/%'))")" = 'submitted#1d4ed8|2|Gita Rana|1|12-34|1' ] || fail "paper: Organiser reads"
+
+# Leaks: another Tournament's Organiser and another Team's grant neither change nor read Q.
+for who in $B $G5; do
+  [ "$(ep $who 1420 $Q $Q1 "$(pv $Q1), name => 'Stolen'")|$(ast $who 1421 $Q $Q4 "'X', 'coach'")|$(tc $who "submit_team('$(cmd 1422)', '$Q')")|$(tc $who "edit_team('$(cmd 1423)', '$Q', $(ver $Q), name => 'Stolen')")|$(ae $who 1424 $Q $Q2 $Q4 "'emis', '1'")" \
+    = 'not_authorized|not_authorized|not_authorized|not_authorized|not_authorized' ] || fail "leak: $who changed the paper Team"
+  for r in 1420 1421 1422 1423 1424; do redo $r; done
+  [ "$(as $who "select (select count(*) from app.team where id='$Q')+(select count(*) from app.squad_entry where team_id='$Q')+(select count(*) from app.player where id in ('$Q1','$Q2'))
+       +(select count(*) from app.photo_consent where player_id in ('$Q1','$Q2'))+(select count(*) from app.staff where team_id='$Q')+(select count(*) from app.eligibility_record where player_id in ('$Q1','$Q2'))
+       +(select count(*) from storage.objects where name like '$T5/$Q/%')")" = 0 ] || fail "leak: $who reads the paper Team"
+  ! obj $who player-photos "$T5/$Q/$Q2/$QV.webp" >/dev/null 2>&1 || fail "leak: $who uploaded into the paper Team"
+done
+[ "$(q "select name from app.player where id='$Q1'")" = 'Sita Rana' ] || fail "leak: Q1 renamed"
+
+# Manager and Organiser edit the same Player from the same version: the second gets the conflict, naming the other as a role.
+[ "$(rd $G6 1430 $TQ)" = ok ] || fail "paper: redeem Q's link"
+v=$(pv $Q2)
+[ "$(ep $G6 1431 $Q $Q2 "$v, name => 'Manager Rita'")" = ok ] || fail "paper: manager edit"
+r=$(as $A "select app.edit_player('$(cmd 1432)', '$Q', '$Q2', $v, name => 'Organiser Rita')")
+[ "$(q "select concat_ws('|', r->>'code', r->'conflict'->>'changed_by', r->'conflict'->'current'->>'name') from (select '$r'::jsonb r) x")|$(q "select name from app.player where id='$Q2'")" \
+  = "version_conflict|Team manager|Manager Rita|Manager Rita" ] || fail "paper: Organiser's stale edit not a conflict: $r"
+v=$(pv $Q2)
+[ "$(ep $A 1433 $Q $Q2 "$v, name => 'Organiser Rita'")" = ok ] || fail "paper: Organiser edit at the current version"
+r=$(as $G6 "select app.edit_player('$(cmd 1434)', '$Q', '$Q2', $v, name => 'Manager again')")
+[ "$(q "select concat_ws('|', r->>'code', r->'conflict'->>'changed_by') from (select '$r'::jsonb r) x")|$(q "select name from app.player where id='$Q2'")" \
+  = "version_conflict|Organiser|Organiser Rita" ] || fail "paper: manager's stale edit not a conflict: $r"
+
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null
 for r in anon authenticated; do

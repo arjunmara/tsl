@@ -116,6 +116,54 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
   }
 }
 
+/**
+ * The same form read by an Organiser of the Team's Tournament (Story 2.6), straight from the tables their membership
+ * reads. Not kept on the device: offline it's { code: 'offline' }. missing: no such Team in this Season for this user.
+ */
+export async function teamForm(seasonId: string, teamId: string): Promise<{ form: RegistrationForm } | { code: 'missing' | 'offline' | 'unknown' }> {
+  try {
+    const app = supabase.schema('app')
+    const [t, sq, st, el] = await Promise.all([
+      app.from('team').select('id, tournament_id, name, code, kit_colour, status, version, tournament(name), '
+        + 'season(number, status, registration_deadline, photo_consent, starters, max_bench, staff_roles)').eq('season_id', seasonId).eq('id', teamId),
+      app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_path, is_cutout, photo_consent(season_id, consent_given, given_by))')
+        .eq('team_id', teamId).order('shirt_number'),
+      app.from('staff').select('team_id, id, name, role, version, photo_path, is_cutout').eq('team_id', teamId).order('created_at').order('id'),
+      app.from('eligibility_record').select('id, player_id, document_type, document_number, scan_name, verified_at, version').eq('season_id', seasonId),
+    ])
+    const all = [t, sq, st, el]
+    if (all.some((x) => x.error)) return { code: all.some((x) => x.error && x.status === 0) || !navigator.onLine ? 'offline' : 'unknown' }
+    type TeamRow = {
+      id: string; tournament_id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; version: number
+      tournament: { name: string } | null
+      season: { number: number; status: SeasonStatus; registration_deadline: string | null; photo_consent: string | null; starters: number | null
+        max_bench: number | null; staff_roles: string[] | null } | null
+    }
+    const row = (Array.isArray(t.data) ? t.data as unknown as TeamRow[] : []).find((x) => x.id === teamId)
+    if (!row?.season) return { code: 'missing' }
+    const s = row.season
+    // Consent is per Season: only this Season's row counts.
+    const entries = (Array.isArray(sq.data) ? sq.data as unknown as EntryRow[] : []).filter((e) => e.team_id === teamId)
+      .map((e) => (e.player ? { ...e, player: { ...e.player, photo_consent: (e.player.photo_consent ?? [])
+        .filter((c) => (c as { season_id?: string }).season_id === seasonId) } } : e))
+    const records = (Array.isArray(el.data) ? el.data as { verified_at: string | null }[] : []).map((r) => ({ ...r, verified: !!r.verified_at }))
+    const form: RegistrationForm = {
+      team: { id: row.id, tournamentId: row.tournament_id, name: row.name, code: row.code, kitColour: row.kit_colour, status: row.status, version: row.version },
+      tournamentName: row.tournament?.name ?? '', seasonNumber: s.number, seasonStatus: s.status, deadline: s.registration_deadline,
+      rules: rulesFrom([{ consent_statement: s.photo_consent, starters: s.starters, max_bench: s.max_bench, staff_roles: s.staff_roles }]),
+      players: withEligibility(entries.flatMap(playerFrom), records),
+      staff: (Array.isArray(st.data) ? st.data as StaffRow[] : []).filter((x) => x.team_id === teamId)
+        .map(({ id, name, role, version, photo_path, is_cutout }) => ({ id, name, role, version, photo: photoFrom(photo_path, is_cutout) })),
+    }
+    await signPhotos([...form.players, ...form.staff])
+    const eligibility = form.players.flatMap((p) => (p.eligibility ? [p.eligibility] : []))
+    await Promise.all([form.team, ...form.players, ...form.staff, ...eligibility].map((x) => noteVersion(x.id, x.version)))
+    return { form }
+  } catch {
+    return { code: navigator.onLine ? 'unknown' : 'offline' }
+  }
+}
+
 /** Forgets the kept form (the link no longer works). */
 export function forgetForm() {
   try {

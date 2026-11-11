@@ -8,6 +8,7 @@ import { Problem } from '../auth/Screen'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { overlay, Unavailable, UUID } from '../setup/Setup'
 import { statusLabel } from '../tournaments/MyTournaments'
+import { TeamPage } from './TeamPage'
 import { Teams } from './Teams'
 
 export type Head = { name: string; logoPath: string | null; logoBlob: Blob | null; season: SeasonSummary & { answers: SeasonAnswers } }
@@ -78,13 +79,16 @@ export function Home() {
 
 function LoadHome({ tournamentId }: { tournamentId: string }) {
   const navigate = useNavigate()
+  // An open Team (/t/:id/teams/:teamId) shows inside the Teams tab.
+  const { teamId } = useParams()
   const [head, setHead] = useState<Head | 'missing' | 'offline' | 'unknown' | null>(null)
   const [attempt, setAttempt] = useState(0)
   // The wizard's end opens Teams (state.tab), and that becomes the remembered tab.
   const location = useLocation()
   const wanted = (location.state as { tab?: string } | null)?.tab
   const asked = TABS.find(([k]) => k === wanted)?.[0]
-  const [tab, setTab] = useState<Tab>(() => asked ?? storedTab(tournamentId))
+  const [chosen, setTab] = useState<Tab>(() => asked ?? storedTab(tournamentId))
+  const tab = teamId ? 'teams' : chosen
   useEffect(() => {
     if (!asked) return
     try {
@@ -112,6 +116,7 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
 
   function choose(k: Tab, focus = false) {
     setTab(k)
+    if (teamId && k !== 'teams') navigate(`/t/${tournamentId}`)
     try {
       localStorage.setItem(tabKey(tournamentId), k)
     } catch {
@@ -178,7 +183,15 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
                 <PrimaryButton label="Continue setup" onClick={() => navigate(`/t/${tournamentId}/setup/${h.season.setupStep + 1}`)} />
               </>
             ) : <p className="body">{matchesText[h.season.status]}</p>)}
-            {tab === 'teams' && <Teams tournamentId={tournamentId} head={h} onSeasonChange={() => setAttempt((n) => n + 1)} />}
+            {tab === 'teams' && (teamId ? (
+              // Side by side on a laptop; on a phone only the open Team.
+              <div className="teams-split">
+                <div className="teams-side">
+                  <Teams tournamentId={tournamentId} head={h} openId={teamId} onSeasonChange={() => setAttempt((n) => n + 1)} />
+                </div>
+                <TeamPage tournamentId={tournamentId} teamId={teamId} h={h} />
+              </div>
+            ) : <Teams tournamentId={tournamentId} head={h} onSeasonChange={() => setAttempt((n) => n + 1)} />)}
             {tab === 'graphics' && (
               <>
                 <p className="body">Each Graphic says what it needs before it can be made.</p>
