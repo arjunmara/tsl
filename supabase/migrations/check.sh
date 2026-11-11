@@ -79,7 +79,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -157,7 +157,8 @@ for who in $B anon; do
         begin
           execute c;
           raise exception 'write allowed: % on %', current_user, c;
-        exception when insufficient_privilege then null;
+        -- object_not_in_prerequisite_state: a view that can't be written at all (player_photo_public).
+        exception when insufficient_privilege or object_not_in_prerequisite_state then null;
         end;
       end loop;
     end loop; end \$\$" || fail "cross-tenant check as $who"
@@ -191,7 +192,7 @@ undeclared=$(psql <<<"$decl_sql")
 [ -z "$undeclared" ] || fail "tenant tables without a personal-field declaration: $undeclared"
 [ "$(q "select string_agg(c.relname || '=' || (string_to_array(encode(t.tgargs, 'escape'), '\\000'))[2], ' ' order by c.relname) from pg_trigger t join pg_class c on c.oid = t.tgrelid
          where t.tgfoid = 'app.log_change'::regproc and (string_to_array(encode(t.tgargs, 'escape'), '\\000'))[2] <> '{}'")" \
-  = 'eligibility_record={document_number,scan_path,scan_name} organiser_invite={email,token} photo_consent={given_by} player={date_of_birth}' ] || fail "personal-field declarations changed"
+  = 'eligibility_record={document_number,scan_path,scan_name} organiser_invite={email,token} photo_consent={given_by} player={date_of_birth,photo_path} staff={photo_path}' ] || fail "personal-field declarations changed"
 q "create table app.probe_a (id uuid primary key, tournament_id uuid, x text);
    create trigger log_change after insert on app.probe_a for each row execute function app.log_change('tournament_id');
    create table app.probe_b (id uuid primary key, tournament_id uuid, x text);
@@ -862,7 +863,7 @@ others=$(q "select string_agg(format('%s(%s)', p.proname, (select string_agg(for
     when a.t in ('text[]'::regtype, 'uuid[]'::regtype, 'jsonb'::regtype) then '''{}''' else '''x''' end), ', ' order by a.o)
     from unnest(p.proargnames, p.proargtypes::oid[]::regtype[]) with ordinality a(n, t, o))), E'\n' order by p.proname)
   from pg_proc p where p.pronamespace = 'app'::regnamespace and p.prorettype = 'jsonb'::regtype
-    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command,add_player,edit_player,remove_player,add_staff,edit_staff,remove_staff,submit_team,add_eligibility,edit_eligibility}'::name[])")
+    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command,add_player,edit_player,remove_player,add_staff,edit_staff,remove_staff,submit_team,add_eligibility,edit_eligibility,set_photo}'::name[])")
 [ "$(wc -l <<<"$others")" -ge 20 ] || fail "grant: too few commands listed: $others"
 refused_all() {
   while IFS= read -r f; do
@@ -1262,6 +1263,95 @@ done
 [ "$(rv $A 850 $S5 $LX4)|$(re $G1)|$(ee $G1 851 $X $P1 "5, document_number => 'x'")|$(ae $G1 852 $X $P1 $R3 "'emis'")" = 'ok|none|not_authorized|not_authorized' ] \
   || fail "eligibility: revoked link"
 ! obj $G1 eligibility-scans "$T5/$X/$P1/$U3.webp" >/dev/null 2>&1 || fail "scan: revoked grant uploaded"
+
+# --- Player and Staff photos (Story 2.5). A organises T5 (S5 in registration, S6 started); B organises T2. X's link was
+# revoked above: A reissues it (LX5) and G1 redeems it again. X's Squad: P1 (minor, consent from a guardian) and P5 (no
+# consent); X's Staff: SF1. G5 holds Y's grant (Y has no Players), G3 Z's (S6 started), G4 none.
+# Photos: <tournament>/<team>/<person>/<uuid>.webp in the private player-photos bucket.
+LX5=81111111-0000-4000-8000-000000000008 TX5=${TK1/A/5}
+V1=d2111111-0000-4000-8000-000000000001 V2=d2111111-0000-4000-8000-000000000002 V3=d2111111-0000-4000-8000-000000000003
+V4=d2111111-0000-4000-8000-000000000004
+[ "$(ri $A 900 $S5 $X $LX5 $(hash $TX5))|$(rd $G1 901 $TX5)" = 'ok|ok' ] || fail "photos: fixture grant"
+q "update app.photo_consent set consent_given = true, given_by = 'Mina Basnet' where player_id = '$P1' and season_id = '$S5';
+   update app.photo_consent set consent_given = false, given_by = null where player_id = '$P5' and season_id = '$S5'" >/dev/null
+[ "$(q "select case when public then 't' else 'f' end||' '||allowed_mime_types::text||' '||file_size_limit from storage.buckets where id='player-photos'")" \
+  = 'f {image/webp,image/png} 2097152' ] || fail "photos: bucket missing, public, or without type and size limits"
+
+# Storage: the grant adds and reads its own Team's photos (Squad and Staff) only; Organisers too; nobody else.
+pho() { as "$1" "select count(*) from storage.objects where bucket_id = 'player-photos'"; }
+obj $G1 player-photos "$T5/$X/$P1/$V1.webp" >/dev/null || fail "photo: grant cannot upload a Player's photo"
+obj $G1 player-photos "$T5/$X/$SF1/$V2.webp" >/dev/null || fail "photo: grant cannot upload a Staff photo"
+for p in "$T5/$Y/$P1/$V3.webp" "$T5/$X/$P6/$V3.webp" "$T2/$X/$P1/$V3.webp" "$T5/$X/$V3.webp" "$T5/$X/$P1/x/$V3.webp" "$T5/$X/nope/$V3.webp"; do
+  ! obj $G1 player-photos "$p" >/dev/null 2>&1 || fail "photo: grant uploaded to $p"
+done
+! obj $G5 player-photos "$T5/$X/$P1/$V3.webp" >/dev/null 2>&1 || fail "photo: Y's grant uploaded into X's folder"
+! obj $B player-photos "$T5/$X/$P1/$V3.webp" >/dev/null 2>&1 || fail "photo: another Tournament's Organiser uploaded"
+! obj $G3 player-photos "$T5/$Z/$P1/$V3.webp" >/dev/null 2>&1 || fail "photo: grant uploaded once the Season started"
+! obj $G4 player-photos "$T5/$X/$P1/$V3.webp" >/dev/null 2>&1 || fail "photo: anonymous user without a grant uploaded"
+! obj anon player-photos "$T5/$X/$P1/$V3.webp" >/dev/null 2>&1 || fail "photo: anon uploaded"
+obj $A player-photos "$T5/$X/$P5/$V3.webp" >/dev/null || fail "photo: Organiser cannot upload"
+[ "$(pho $G1)|$(pho $G5)|$(pho $B)|$(pho $G3)|$(pho $G4)|$(pho anon)|$(pho $A)" = '3|0|0|0|0|0|3' ] \
+  || fail "leak: photo objects read $(pho $G1) $(pho $G5) $(pho $B) $(pho anon) $(pho $A)"
+for who in $G1 $A; do
+  [ "$(as $who "with u as (update storage.objects set name = name where bucket_id = 'player-photos' returning 1) select count(*) from u")|$(as $who "with d as (delete from storage.objects where bucket_id = 'player-photos' returning 1) select count(*) from d")" = '0|0' ] \
+    || fail "photo: $who changed or deleted a photo object"
+done
+
+# set_photo: a Player's or Staff member's photo, versioned on that person; the path logged by name only.
+sp_() { tc "$1" "set_photo('$(cmd "$2")', '$3', '$4', $5)"; }
+r=$(as $G1 "select app.set_photo('$(cmd 910)', '$X', '$P1', $(pv $P1), '$T5/$X/$P1/$V1.webp', true)")
+[ "$(q "select (r->>'ok')||(r->>'version') from (select '$r'::jsonb r) x")" = "true$(pv $P1)" ] || fail "set_photo: $r"
+[ "$(q "select concat_ws('|', photo_path, is_cutout) from app.player where id='$P1'")" = "$T5/$X/$P1/$V1.webp|t" ] || fail "set_photo: row"
+[ "$(as $G1 "select app.set_photo('$(cmd 910)', '$X', '$P1', 1, '$T5/$X/$P1/$V4.webp', false)")" = "$r" ] || fail "set_photo: repeat ran again"
+sv1=$(q "select version from app.staff where id='$SF1'")
+[ "$(sp_ $G1 911 $X $SF1 "$sv1, '$T5/$X/$SF1/$V2.webp', false")|$(q "select concat_ws('|', photo_path, is_cutout, version) from app.staff where id='$SF1'")" \
+  = "ok|$T5/$X/$SF1/$V2.webp|f|$((sv1 + 1))" ] || fail "set_photo: Staff kept with its background"
+[ "$(q "select string_agg(table_name||':'||coalesce(after->>'photo_path', '-')||':'||(actor = '$G1'), ',' order by id) from app.activity_log where command_id in ('$(cmd 910)', '$(cmd 911)')")" \
+  = 'player:photo_path:true,staff:photo_path:true' ] || fail "set_photo: log rows, or the path logged by value"
+v1=$(pv $P1)
+for bad in "$P1|'$T5/$X/$P5/$V3.webp', true|photo_invalid" "$P1|'$T5/$X/$P1/$V3.png', true|photo_invalid" \
+    "$P1|'$T5/$Y/$P1/$V3.webp', true|photo_invalid" "$P1|'$T5/$X/$P1/$V3.webp', null|photo_invalid" "$P1|null, true|photo_invalid" \
+    "$P6|'$T5/$X/$P6/$V3.webp', true|person_missing"; do
+  IFS='|' read -r who a want <<<"$bad"
+  [ "$(sp_ $G1 912 $X $who "$v1, $a")" = "$want" ] || fail "set_photo: $bad"
+  redo 912
+done
+r=$(as $G1 "select app.set_photo('$(cmd 913)', '$X', '$P1', $((v1 - 1)), '$T5/$X/$P1/$V3.webp', false)")
+[ "$(q "select concat_ws('|', r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'is_cutout', r::text ~ '$V1') from (select '$r'::jsonb r) x")" \
+  = "version_conflict|$v1|true|f" ] || fail "set_photo: conflict: $r"
+
+# Fences: Y's grant, another Tournament's Organiser, a started Season and anon can't set X's photos.
+[ "$(sp_ $G5 914 $X $P1 "$v1, '$T5/$X/$P1/$V3.webp', true")|$(sp_ $G5 915 $Y $P1 "$v1, '$T5/$Y/$P1/$V3.webp', true")|$(sp_ $B 916 $X $P1 "$v1, '$T5/$X/$P1/$V3.webp', true")|$(sp_ $G3 917 $Z $P1 "$v1, '$T5/$Z/$P1/$V3.webp', true")" \
+  = 'not_authorized|person_missing|not_authorized|season_started' ] || fail "leak: set_photo across Teams"
+for f in "set_photo('$(cmd 918)', '$X', '$P1', 1, '$T5/$X/$P1/$V3.webp', true)" "can_use_photo('$T5/$X/$P1/$V3.webp', true)"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+! as anon "select count(*) from app.player_photo_public" >/dev/null 2>&1 || fail "leak: anon reads player_photo_public"
+
+# The consent gate: a path only with consent (from a guardian for this minor) and a cut-out; else null.
+[ "$(sp_ $A 920 $X $P5 "$(pv $P5), '$T5/$X/$P5/$V3.webp', true")" = ok ] || fail "set_photo: Organiser"
+gate() { as "$1" "select coalesce(string_agg(player_id||':'||coalesce(photo_path, 'null'), ',' order by player_id), 'none') from app.player_photo_public where team_id = '$X'"; }
+[ "$(gate $A)" = "$P1:$T5/$X/$P1/$V1.webp,$P5:null" ] || fail "player_photo_public: consent and cut-out: $(gate $A)"
+[ "$(sp_ $G1 921 $X $P1 "$v1, '$T5/$X/$P1/$V4.webp', false")|$(gate $A)" = "ok|$P1:null,$P5:null" ] || fail "player_photo_public: kept photo given as a cut-out"
+[ "$(sp_ $G1 922 $X $P1 "$((v1 + 1)), '$T5/$X/$P1/$V1.webp', true")|$(gate $G1)" = "ok|$P1:$T5/$X/$P1/$V1.webp,$P5:null" ] || fail "player_photo_public: grant read"
+q "update app.photo_consent set consent_given = false, given_by = null where player_id = '$P1' and season_id = '$S5'" >/dev/null
+[ "$(gate $A)" = "$P1:null,$P5:null" ] || fail "player_photo_public: photo without consent"
+q "delete from app.photo_consent where player_id = '$P1' and season_id = '$S5'" >/dev/null
+[ "$(gate $A)" = "$P1:null,$P5:null" ] || fail "player_photo_public: photo with no consent row"
+q "insert into app.photo_consent (tournament_id, player_id, season_id, consent_given, given_by) values ('$T5', '$P1', '$S5', true, 'Mina Basnet')" >/dev/null
+[ "$(gate $A)|$(gate $G5)|$(gate $B)|$(gate $G3)|$(gate $G4)" = "$P1:$T5/$X/$P1/$V1.webp,$P5:null|none|none|none|none" ] || fail "leak: player_photo_public read across Teams"
+
+# No photo path reaches the Activity log.
+for v in "$V1" "$V2" "$V3" "$V4"; do
+  [ "$(q "select count(*) from app.activity_log where strpos(coalesce(before::text, '') || coalesce(after::text, ''), '$v') > 0")" = 0 ] \
+    || fail "photo path in the Activity log: $v"
+done
+
+# Revoked link: no reads, no commands, no uploads.
+[ "$(rv $A 930 $S5 $LX5)|$(pho $G1)|$(gate $G1)|$(sp_ $G1 931 $X $P1 "$(pv $P1), '$T5/$X/$P1/$V3.webp', true")" = 'ok|0|none|not_authorized' ] \
+  || fail "photos: revoked link"
+! obj $G1 player-photos "$T5/$X/$P1/$V4.webp" >/dev/null 2>&1 || fail "photo: revoked grant uploaded"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

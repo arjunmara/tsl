@@ -44,6 +44,7 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   add_eligibility: () => "Add a Player's document",
   edit_eligibility: (a) => (a.scan_path != null ? "Upload a Player's document scan"
     : a.document_type != null ? "Change a Player's document type" : "Change a Player's document number"),
+  set_photo: (a) => (a.is_cutout === false ? 'Save a photo with its background' : 'Save a cut-out photo'),
 }
 
 /** "rules", "description and rules": the fields an edit changes, in words. */
@@ -103,4 +104,5 @@ export const fieldLabels: Record<string, string> = {
   document_type: 'Document',
   document_number: 'Document number',
   scan_name: 'Document scan',
+  is_cutout: 'Background removed',
 }

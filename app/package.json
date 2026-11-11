@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "prebuild": "cp node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.* public/mediapipe/",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
@@ -25,9 +26,11 @@
     "check:teams": "node scripts/teams.check.mjs",
     "check:register": "node scripts/register.check.mjs",
     "check:squad": "node scripts/squad.check.mjs",
-    "check:eligibility": "node scripts/eligibility.check.mjs"
+    "check:eligibility": "node scripts/eligibility.check.mjs",
+    "check:photos": "node scripts/photos.check.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "1.2.2",
     "@supabase/supabase-js": "2.119.0",
     "dexie": "4.4.7",
     "react": "19.3.1",

@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { discard, resend, sendMine, type OutboxEntry } from '../../domain/commands'
 import { formatDate, inZone } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
-import { DOCUMENT_TYPES, scanBucket } from '../../domain/registration'
+import { DOCUMENT_TYPES, photoBucket, scanBucket } from '../../domain/registration'
 import { STAFF_ROLES, STRUCTURES, TIEBREAKS } from '../../domain/tournaments'
 import { Sheet } from '../../ui/Sheet'
 import { fieldLabels, labelFor } from './labels'
@@ -148,6 +148,7 @@ export function HandBack({ open, entries, onClose }: { open: boolean; entries: O
               {intro}
               {/* A refused entry still holding its scan was refused at the upload (the upload is dropped once done). */}
               <p className="body">{e.upload?.bucket === scanBucket ? messages.scan_upload_failed
+                : e.upload?.bucket === photoBucket ? messages.photo_upload_failed
                 : e.code === 'lineup_violation' && e.message ? e.message : messageFor(e.code ?? null)}</p>
             </div>
             {problem}

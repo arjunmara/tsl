@@ -631,3 +631,23 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* A Player's or Staff member's photo inside their card (Story 2.5): the cut-out on a plain surface. */
+.photo,
+.photo-failed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.photo h3,
+.photo p {
+  margin: 0;
+}
+.photo-image {
+  width: 144px;
+  height: 144px;
+  object-fit: contain;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--rounded-md);
+}

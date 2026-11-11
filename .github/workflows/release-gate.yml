@@ -54,6 +54,8 @@ jobs:
         run: npm run check:squad
       - name: Eligibility proof check (Story 2.4)
         run: npm run check:eligibility
+      - name: Photos, background removal and no-AGPL check (Story 2.5)
+        run: npm run check:photos
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
       # and write, Activity log, idempotency), the co-organiser and Team leak and race tests (Stories 1.14, 2.1) and the pg_proc
       # command skeleton check.

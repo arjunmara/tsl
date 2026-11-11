@@ -30,7 +30,14 @@ export default defineConfig(({ mode }) => {
         registerType: 'prompt',
         // Google Fonts cached on first load so offline phones keep Barlow and Bebas Neue.
         workbox: {
+          // MediaPipe's wasm and model (Story 2.5) load only on the photo screen, then stay cached for offline use.
+          globIgnores: ['**/node_modules/**/*', 'mediapipe/**'],
           runtimeCaching: [
+            {
+              urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/mediapipe/'),
+              handler: 'CacheFirst',
+              options: { cacheName: 'mediapipe', cacheableResponse: { statuses: [200] } },
+            },
             {
               urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com',
               handler: 'CacheFirst',

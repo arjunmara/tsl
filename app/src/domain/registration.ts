@@ -25,12 +25,16 @@ export const scanBucket = 'eligibility-scans'
 export type Eligibility = {
   id: string; documentType: DocumentType | null; documentNumber: string; scanName: string | null; verified: boolean; version: number
 }
+/** The private bucket for Player and Staff photos, fenced by Tournament (Story 2.5). */
+export const photoBucket = 'player-photos'
+/** A stored photo: cutout false = kept with its background. url: signed for an hour (null offline or still queued). */
+export type Photo = { path: string; cutout: boolean; url: string | null }
 /** A Player in this Team's Squad with their Photo consent and Eligibility proof for its Season. version: the Player card's (edit_player). */
 export type SquadPlayer = {
   id: string; name: string; shirtNumber: number; dateOfBirth: string; consent: boolean; givenBy: string | null; version: number
-  eligibility: Eligibility | null
+  eligibility: Eligibility | null; photo: Photo | null
 }
-export type StaffMember = { id: string; name: string; role: string; version: number }
+export type StaffMember = { id: string; name: string; role: string; version: number; photo: Photo | null }
 /** The Season's photo-consent statement and Line-up rules (null: not set). */
 export type SquadRules = { consentStatement: string; starters: number | null; maxBench: number | null; staffRoles: string[] }
 export type RegistrationForm = {
@@ -55,7 +59,8 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
       const k = JSON.parse(localStorage.getItem(formKey) ?? 'null') as Kept | null
       // A copy kept before Story 2.3 has no Squad, and before 2.4 no Eligibility: shown with none.
       if (k?.hash === hash && k.form?.team) return { form: { ...k.form, rules: k.form.rules ?? NO_RULES,
-        players: (k.form.players ?? []).map((p) => ({ ...p, eligibility: p.eligibility ?? null })), staff: k.form.staff ?? [] } }
+        players: (k.form.players ?? []).map((p) => ({ ...p, eligibility: p.eligibility ?? null, photo: p.photo ?? null })),
+        staff: (k.form.staff ?? []).map((x) => ({ ...x, photo: x.photo ?? null })) } }
     } catch {
       // Blocked or bad storage: nothing kept.
     }
@@ -67,9 +72,9 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
       app.from('team').select('id, tournament_id, name, code, kit_colour, status, version').limit(2),
       app.rpc('registration_form'),
       app.rpc('registration_rules'),
-      app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_consent(consent_given, given_by))')
+      app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_path, is_cutout, photo_consent(consent_given, given_by))')
         .order('shirt_number'),
-      app.from('staff').select('team_id, id, name, role, version').order('created_at').order('id'),
+      app.from('staff').select('team_id, id, name, role, version, photo_path, is_cutout').order('created_at').order('id'),
       app.rpc('registration_eligibility'),
     ])
     const all = [t, f, ru, sq, st, el]
@@ -88,15 +93,19 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
       // RLS already limits the grant to its Team; the filter keeps any other Team's rows out of this form regardless.
       rules: rulesFrom(ru.data), players: withEligibility(((sq.data ?? []) as unknown as EntryRow[]).filter((e) => e.team_id === row.id)
         .flatMap(playerFrom), el.data),
-      staff: ((st.data ?? []) as (StaffMember & { team_id: string })[]).filter((x) => x.team_id === row.id)
-        .map(({ id, name, role, version }) => ({ id, name, role, version })),
+      staff: ((st.data ?? []) as StaffRow[]).filter((x) => x.team_id === row.id)
+        .map(({ id, name, role, version, photo_path, is_cutout }) => ({ id, name, role, version, photo: photoFrom(photo_path, is_cutout) })),
     }
+    await signPhotos([...form.players, ...form.staff])
     const records = form.players.flatMap((p) => (p.eligibility ? [p.eligibility] : []))
     await Promise.all([row, ...form.players, ...form.staff, ...records].map((x) => noteVersion(x.id, x.version)))
     try {
       // Once closed the form never shows a date of birth, document number or scan file name, so this phone stops keeping them.
-      const keep = registrationClosed(form) ? { ...form, players: form.players.map((p) => ({ ...p, dateOfBirth: '',
-        eligibility: p.eligibility && { ...p.eligibility, documentNumber: '', scanName: null } })) } : form
+      // Signed photo URLs expire within the hour, so none is kept.
+      const unsigned = { ...form, players: form.players.map((p) => ({ ...p, photo: p.photo && { ...p.photo, url: null } })),
+        staff: form.staff.map((x) => ({ ...x, photo: x.photo && { ...x.photo, url: null } })) }
+      const keep = registrationClosed(form) ? { ...unsigned, players: unsigned.players.map((p) => ({ ...p, dateOfBirth: '',
+        eligibility: p.eligibility && { ...p.eligibility, documentNumber: '', scanName: null } })) } : unsigned
       localStorage.setItem(formKey, JSON.stringify({ hash, form: keep } satisfies Kept))
     } catch {
       // Storage full or blocked: only the offline fallback is lost.
@@ -135,11 +144,26 @@ export function overlayTeam(team: RegistrationTeam, queued: OutboxEntry[]): Regi
 export const registrationClosed = (f: RegistrationForm) =>
   !(f.seasonStatus === 'setup' || f.seasonStatus === 'registration') || (!!f.deadline && inZone(serverNow()).date > f.deadline)
 
+type StaffRow = { team_id: string; id: string; name: string; role: string; version: number; photo_path: string | null; is_cutout: boolean | null }
+const photoFrom = (path: string | null, cutout: boolean | null): Photo | null => (path ? { path, cutout: !!cutout, url: null } : null)
+/** Signs each stored photo's URL in one call (an hour); on failure the photos show without a picture. */
+async function signPhotos(people: { photo: Photo | null }[]) {
+  const photos = people.flatMap((p) => (p.photo ? [p.photo] : []))
+  if (!photos.length) return
+  try {
+    const { data } = await supabase.storage.from(photoBucket).createSignedUrls(photos.map((p) => p.path), 3600)
+    for (const p of photos) p.url = data?.find((d) => d.path === p.path)?.signedUrl ?? null
+  } catch {
+    // Unreachable: no pictures this time.
+  }
+}
 type EntryRow = { team_id: string; shirt_number: number; player: { id: string; name: string; date_of_birth: string | null; version: number
+  photo_path: string | null; is_cutout: boolean | null
   photo_consent: { consent_given: boolean; given_by: string | null }[] } | null }
 const playerFrom = (e: EntryRow): SquadPlayer[] => e.player ? [{
   id: e.player.id, name: e.player.name, shirtNumber: e.shirt_number, dateOfBirth: e.player.date_of_birth ?? '', version: e.player.version,
   consent: e.player.photo_consent[0]?.consent_given ?? false, givenBy: e.player.photo_consent[0]?.given_by ?? null, eligibility: null,
+  photo: photoFrom(e.player.photo_path, e.player.is_cutout),
 }] : []
 type EligibilityRow = { id: string; player_id: string; document_type: DocumentType | null; document_number: string | null
   scan_name: string | null; verified: boolean; version: number }
@@ -167,7 +191,7 @@ export function isMinor(dateOfBirth: string, today = inZone(serverNow()).date): 
 /** A Player or Staff member added on this device starts at version 1, so its edits replay before any read. */
 export const noteNew = (id: string) => noteVersion(id, 1)
 
-/** The form with this session's pending Squad, Staff, Eligibility and submit commands laid over, in order. */
+/** The form with this session's pending Squad, Staff, Eligibility, photo and submit commands laid over, in order. */
 export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): RegistrationForm {
   let players = form.players.map((p) => ({ ...p }))
   let staff = form.staff.map((x) => ({ ...x }))
@@ -176,7 +200,7 @@ export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): Reg
     if (a.team_id !== team.id) continue
     if (name === 'add_player' && !players.some((p) => p.id === a.player_id)) {
       players.push({ id: String(a.player_id), name: String(a.name), shirtNumber: Number(a.shirt_number), dateOfBirth: String(a.date_of_birth),
-        consent: a.consent === true, givenBy: a.consent === true ? String(a.given_by ?? '') : null, version: 1, eligibility: null })
+        consent: a.consent === true, givenBy: a.consent === true ? String(a.given_by ?? '') : null, version: 1, eligibility: null, photo: null })
     } else if (name === 'edit_player') {
       const p = players.find((x) => x.id === a.player_id)
       if (!p) continue
@@ -195,9 +219,12 @@ export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): Reg
       if (typeof a.document_number === 'string') e.documentNumber = a.document_number
       if (typeof a.scan_name === 'string') e.scanName = a.scan_name
       p.eligibility = e
+    } else if (name === 'set_photo') {
+      const x = players.find((y) => y.id === a.person_id) ?? staff.find((y) => y.id === a.person_id)
+      if (x) x.photo = { path: String(a.photo_path), cutout: a.is_cutout === true, url: null }
     } else if (name === 'remove_player') players = players.filter((p) => p.id !== a.player_id)
     else if (name === 'add_staff' && !staff.some((x) => x.id === a.staff_id)) {
-      staff.push({ id: String(a.staff_id), name: String(a.name), role: String(a.role), version: 1 })
+      staff.push({ id: String(a.staff_id), name: String(a.name), role: String(a.role), version: 1, photo: null })
     } else if (name === 'edit_staff') {
       const x = staff.find((y) => y.id === a.staff_id)
       if (x && typeof a.name === 'string') x.name = a.name

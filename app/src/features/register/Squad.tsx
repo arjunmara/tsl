@@ -1,14 +1,15 @@
 import { useId, useRef, useState } from 'react'
 import { forgetRefused, send, type Upload } from '../../domain/commands'
 import { formatDay, inZone } from '../../domain/format'
-import { resizeImage } from '../../domain/image'
+import { removeBackground } from '../../domain/cutout'
+import { downloadAsPng, encodeImage, resizeImage, toCanvas } from '../../domain/image'
 import { messageFor, messages } from '../../domain/messages'
 import {
-  DOCUMENT_TYPES, documentLabel, isMinor, noteNew, scanBucket, type RegistrationForm, type SquadPlayer, type StaffMember,
+  DOCUMENT_TYPES, documentLabel, isMinor, noteNew, photoBucket, scanBucket, type Photo, type RegistrationForm, type SquadPlayer, type StaffMember,
 } from '../../domain/registration'
 import { serverNow } from '../../domain/clock'
 import { STAFF_ROLES } from '../../domain/tournaments'
-import { DestructiveButton, PrimaryButton } from '../../ui/Button'
+import { DestructiveButton, PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { Field } from '../../ui/Field'
 import { StatusPill } from '../../ui/StatusPill'
 import { blocked, useForm } from '../auth/form'
@@ -41,7 +42,7 @@ export function Squad({ form, reload }: { form: RegistrationForm; reload: () => 
     // A conflict waits in the hand-back sheet (Keep theirs / Send mine); any other refusal is said here and dropped.
     if (r.ok || r.code === 'queued' || r.code === 'version_conflict') return null
     if (r.commandId) void forgetRefused(r.commandId)
-    if (r.uploadFailed) return messages.scan_upload_failed
+    if (r.uploadFailed) return upload?.bucket === photoBucket ? messages.photo_upload_failed : messages.scan_upload_failed
     return r.code === 'lineup_violation' && r.message ? r.message : messageFor(r.code)
   }
   const { starters, maxBench } = form.rules
@@ -185,6 +186,7 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
         onSave={(given_by) => (setMissing(false), setHeldDob(null),
           void save({ consent: true, given_by, ...(heldDob ? { date_of_birth: heldDob } : {}) }))} />}
       <Problem text={problem} />
+      <PhotoSection id={p.id} name={p.name} photo={p.photo} form={form} run={run} />
       <EligibilityProof player={p} form={form} run={run} />
       <DestructiveButton label="Remove from the Squad" accessibleLabel={`Remove ${p.name} from the Squad`} sheetTitle={`Remove ${p.name}?`}
         before={`${p.name} in the Squad`} after="Removed, with their details" actionLabel={`Remove ${p.name}`}
@@ -285,6 +287,108 @@ function EligibilityProof({ player: p, form, run }: { player: SquadPlayer; form:
   )
 }
 
+// Photos: at most 1024px on the longest side and 2 MiB (the bucket's limit; PNG where the browser can't encode WebP).
+const PHOTO_MAX = 1024
+const PHOTO_LIMIT = 2097152
+
+/**
+ * A Player's or Staff member's photo (Story 2.5): any image from the camera or gallery, shown at once with "Removing
+ * background…" while MediaPipe cuts the person out on the phone; the transparent WebP is uploaded by the outbox before
+ * set_photo. If removal fails: Try again, or keep the photo with its background (stored is_cutout = false).
+ */
+function PhotoSection({ id, name, photo, form, run }: { id: string; name: string; photo: Photo | null; form: RegistrationForm; run: Run }) {
+  const [phase, setPhase] = useState<'idle' | 'removing' | 'failed'>('idle')
+  const [preview, setPreview] = useState<string | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const picked = useRef<HTMLCanvasElement | null>(null)
+  const inputId = useId()
+  const show = (blob: Blob | null) => setPreview((old) => {
+    if (old) URL.revokeObjectURL(old)
+    return blob && URL.createObjectURL(blob)
+  })
+
+  async function pick(file: File | undefined) {
+    if (!file || phase === 'removing') return
+    setProblem(null)
+    try {
+      picked.current = await toCanvas(file, PHOTO_MAX)
+    } catch {
+      return setProblem(messages.photo_unreadable)
+    }
+    picked.current.toBlob(show)
+    await cut()
+  }
+  async function cut() {
+    const canvas = picked.current
+    if (!canvas) return
+    setProblem(null)
+    setPhase('removing')
+    let blob: Blob
+    try {
+      blob = await removeBackground(canvas, PHOTO_LIMIT)
+    } catch (err) {
+      if (!(err instanceof RangeError)) return setPhase('failed')
+      setPhase('idle')
+      return setProblem(messages.image_too_large)
+    }
+    await store(blob, true)
+  }
+  async function keep() {
+    const canvas = picked.current
+    if (!canvas) return
+    let blob: Blob
+    try {
+      blob = await encodeImage(canvas, PHOTO_LIMIT)
+    } catch {
+      return setProblem(messages.image_too_large)
+    }
+    await store(blob, false)
+  }
+  async function store(blob: Blob, cutout: boolean) {
+    setPhase('idle')
+    show(blob)
+    const path = `${form.team.tournamentId}/${form.team.id}/${id}/${crypto.randomUUID()}.webp`
+    const refused = await run('set_photo', { person_id: id, photo_path: path, is_cutout: cutout }, id,
+      { bucket: photoBucket, path, blob, contentType: blob.type || 'image/webp', upsert: false })
+    // Refused (upload or command): the stored photo, if any, shows again.
+    if (refused) show(null)
+    picked.current = null
+    setProblem(refused)
+  }
+  async function download() {
+    setProblem(null)
+    try {
+      await downloadAsPng(photo!.url!, name)
+    } catch {
+      setProblem(messages.photo_download_failed)
+    }
+  }
+
+  const src = preview ?? photo?.url
+  return (
+    <section className="photo" aria-label={`Photo of ${name}`}>
+      <h3 className="body-strong">Photo</h3>
+      {src && <img className="photo-image" src={src} alt={`Photo of ${name}`} />}
+      {phase === 'idle' && photo && <p className="meta">{photo.cutout ? 'Background removed' : 'Kept with its background'}</p>}
+      <p role="status" className="body">{phase === 'removing' ? 'Removing background…' : ''}</p>
+      {phase === 'failed' && (
+        <div className="photo-failed">
+          <p role="alert" className="body-strong">{messages.cutout_failed}</p>
+          <PrimaryButton label="Try removing the background again" onClick={() => void cut()} />
+          <SecondaryButton label="Keep the photo with its background" onClick={() => void keep()} />
+        </div>
+      )}
+      <input id={inputId} className="ui-visually-hidden file-input" type="file" accept="image/*" disabled={phase === 'removing'}
+        onChange={(ev) => (void pick(ev.target.files?.[0]), (ev.target.value = ''))} />
+      <label htmlFor={inputId} className="ui-button ui-secondary file-button" aria-disabled={phase === 'removing' || undefined}>
+        {photo || preview ? 'Change photo' : 'Add photo'}
+      </label>
+      {photo?.url && phase === 'idle' && <SecondaryButton label="Download the photo as PNG" onClick={() => void download()} />}
+      <Problem text={problem} />
+    </section>
+  )
+}
+
 function RoleSelect({ roles, value, onChange }: { roles: string[]; value: string; onChange: (v: string) => void }) {
   const id = useId()
   return (
@@ -350,6 +454,7 @@ function StaffCard({ staff: s, form, run }: { staff: StaffMember; form: Registra
         requiredMessage={messages.staff_name_required} validate={checkName} autoComplete="off" />
       <RoleSelect roles={roles} value={s.role} onChange={(role) => void save({ role })} />
       <Problem text={problem} />
+      <PhotoSection id={s.id} name={s.name} photo={s.photo} form={form} run={run} />
       <DestructiveButton label="Remove from the Staff" accessibleLabel={`Remove ${s.name} from the Staff`} sheetTitle={`Remove ${s.name}?`}
         before={`${s.name}, ${roleLabel(s.role)}`} after="Removed from the Staff" actionLabel={`Remove ${s.name}`}
         onConfirm={() => void run('remove_staff', { staff_id: s.id }, s.id).then(setProblem)} />

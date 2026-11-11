@@ -272,3 +272,21 @@ collect real documents on live before then. Check with `select public from stora
 from the camera: the card shows the file name only. In Storage → eligibility-scans the file is under
 `<tournament>/<team>/<player>/`. Uploading as a Team manager relies on Supabase allowing an upload without upsert with only an
 insert policy; if it fails with a row-level security error, tell the developer before going further.
+
+## Apply 0015_player_photos.sql (Story 2.5)
+
+Apply after 0014 and before the app deploy with photos on the `/register` Player and Staff cards (test first, then live);
+that page fails to load until this is applied. It adds `photo_path` and `is_cutout` (both or neither) to `app.player` and
+`app.staff`, logged by field name only, and the command `set_photo` (the Team, a Player in its Squad or one of its Staff;
+versioned on that person with the conflict envelope; Season action `edit_squad`; path `<tournament id>/<team id>/<person
+id>/<uuid>.webp`). The view **`app.player_photo_public`** (security invoker, so the caller's own RLS applies) is the only
+place Graphics, the Post-match pack and the Overlay may read a Player photo: its `photo_path` is null unless that Season's
+Photo consent is recorded with who gave it and the photo is a cut-out. It returns the object path; the caller signs a URL.
+
+It also creates the **private `player-photos` Storage bucket** (WebP or PNG, at most 2 MiB): Organisers of the folder's
+Tournament and a live grant for exactly that Team read and add (the grant only for its own Squad or Staff while the Squad can
+change); never upsert, no update or delete policy (Story 2.10 deletes through the Storage API). Check with
+`select public, file_size_limit from storage.buckets where id = 'player-photos';` (`false`, 2097152) and
+`select count(*) from pg_policies where tablename = 'objects' and policyname like 'player_photos%';` (2). Then on the test
+preview, open a Registration link on a phone, open a Player and tap "Add photo": the card shows the photo with "Removing
+background…", then the cut-out; in Storage → player-photos the file is under `<tournament>/<team>/<player>/`.

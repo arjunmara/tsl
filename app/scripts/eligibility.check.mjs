@@ -152,7 +152,7 @@ const photo = async (page) => Buffer.from(await page.evaluate(() => {
   g.fillRect(200, 200, 2600, 120)
   return c.toDataURL('image/jpeg', 0.9).split(',')[1]
 }), 'base64')
-const scanInput = (c) => c.locator('input[type=file]')
+const scanInput = (c) => c.locator('section.eligibility input[type=file]')
 const DOCUMENT_TEXT = "Document didn't upload. Try again."
 
 try {
