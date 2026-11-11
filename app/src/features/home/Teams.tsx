@@ -13,7 +13,7 @@ import { blocked, useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
 import type { Head } from './Home'
 
-export const teamStatusLabel: Record<TeamStatus, string> = { invited: 'Invited', submitted: 'Submitted', approved: 'Approved', returned: 'Returned' }
+export const teamStatusLabel: Record<TeamStatus, string> = { invited: 'Invited', submitted: 'Submitted', approved: 'Approved', returned: 'Returned', withdrawn: 'Withdrawn' }
 
 /** The Season's Teams with this user's pending Team commands laid over; reloads as they send and when the signal returns. */
 export function useTeams(tournamentId: string, seasonId: string) {

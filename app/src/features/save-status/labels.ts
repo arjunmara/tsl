@@ -45,6 +45,9 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   edit_eligibility: (a) => (a.scan_path != null ? "Upload a Player's document scan"
     : a.document_type != null ? "Change a Player's document type" : "Change a Player's document number"),
   verify_eligibility: () => "Mark a Player's document verified",
+  approve_team: () => 'Approve a Team',
+  return_team: () => 'Return a Team with a note',
+  withdraw_team: () => 'Withdraw a Team',
   set_photo: (a) => (a.is_cutout === false ? 'Save a photo with its background' : 'Save a cut-out photo'),
 }
 

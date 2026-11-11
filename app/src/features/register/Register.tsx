@@ -104,6 +104,9 @@ export function Register() {
 function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }) {
   const [form, setForm] = useState(initial)
   const closed = registrationClosed(form)
+  // An approved or withdrawn Team is read-only for its manager (Story 2.8); the server refuses changes too.
+  const status = form.team.status
+  const locked = status === 'approved' || status === 'withdrawn'
   const day = form.deadline ? formatDay(form.deadline) : null
   async function load() {
     const f = await registrationForm(hash)
@@ -116,7 +119,21 @@ function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }
         <p className="meta">{form.tournamentName} · Season {form.seasonNumber}</p>
         <h1 className="title">Team registration</h1>
       </header>
-      {!closed && <SaveStatusBar />}
+      {!closed && !locked && <SaveStatusBar />}
+      {status === 'returned' && (
+        <section className="deadline-banner">
+          <p className="body-strong">The organiser returned this Team with a note:</p>
+          {form.team.returnNote && <p className="body">{form.team.returnNote}</p>}
+          <p className="body">Change what the note asks for, then send this Team for review again.</p>
+        </section>
+      )}
+      {locked && (
+        <section className="deadline-banner">
+          <p className="body-strong">{status === 'approved' ? 'The organiser approved this Team.' : 'The organiser withdrew this Team.'}</p>
+          <p className="body">{status === 'approved' ? 'This form can only be read now. To change anything, ask the organiser.'
+            : "It won't play in this Season. This form can only be read."}</p>
+        </section>
+      )}
       <section className="deadline-banner" aria-live="polite">
         {closed ? (
           <>
@@ -130,7 +147,7 @@ function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }
           </>
         )}
       </section>
-      {closed ? <ClosedTeam form={form} /> : <TeamEditor form={form} setForm={setForm} load={load} />}
+      {closed || locked ? <ClosedTeam form={form} /> : <TeamEditor form={form} setForm={setForm} load={load} />}
     </main>
   )
 }

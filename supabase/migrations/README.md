@@ -340,3 +340,15 @@ Steps, on **test** first, then the same on **live** (each project has its own se
 
 Until step 5 is done the job runs but its call fails (no URL), so no scan is deleted: don't collect real documents on live
 before the check in step 6 passes.
+
+## Apply 0017_review_teams.sql (Story 2.8)
+
+Apply after 0016 and before the app deploy with "Approve team", "Return with note" and "Withdraw team" on the Team page (test
+first, then live). It adds the Team status `withdrawn` and the column `team.return_note`, the Organiser-only commands
+`approve_team` (a submitted Team whose Squad and Staff meet the Line-up rules), `return_team` (a submitted or approved Team,
+with a note of 1–500 characters the Team manager sees) and `withdraw_team` (any status), all under the Season action
+`review_team` in setup and registration, and the view `app.draw_team`: the approved Teams the Draw (Epic 3) may place, read
+through the reader's RLS. `app.authorize` now also reads the Team's status: an approved Team refuses its manager's changes
+(`team_approved`), a withdrawn Team refuses every change but review (`team_withdrawn`). A submitted Team stays editable;
+approval re-checks the Line-up rules. Steps: paste `0017_review_teams.sql` into the SQL Editor and run it. Check: as an
+Organiser, `select count(*) from app.draw_team` runs (0 until a Team is approved).

@@ -2,7 +2,7 @@ import { appUrl } from './appUrl'
 import type { OutboxEntry } from './commands'
 import { supabase } from './supabase'
 
-export type TeamStatus = 'invited' | 'submitted' | 'approved' | 'returned'
+export type TeamStatus = 'invited' | 'submitted' | 'approved' | 'returned' | 'withdrawn'
 /** A Team as its row and the Teams tab show it; linkId is its active Registration link, null when it has none. */
 export type Team = { id: string; name: string; code: string; kitColour: string | null; status: TeamStatus; linkId: string | null }
 
@@ -45,6 +45,12 @@ export async function seasonTeams(seasonId: string): Promise<{ teams: Team[] } |
 export function overlayTeams(base: Team[], queued: OutboxEntry[], seasonId: string): Team[] {
   const teams = base.map((t) => ({ ...t }))
   for (const { name, args: a } of queued) {
+    // Reviews carry only the Team's id (Story 2.8); every other Team command names its Season.
+    const review = reviewStatus(name, teams.find((x) => x.id === a.team_id)?.status)
+    if (review) {
+      teams.find((x) => x.id === a.team_id)!.status = review
+      continue
+    }
     if (a.season_id !== seasonId) continue
     const t = teams.find((x) => x.id === a.team_id || (name === 'revoke_registration_link' && x.linkId === a.link_id))
     if (name === 'add_team' && !t) {
@@ -53,6 +59,14 @@ export function overlayTeams(base: Team[], queued: OutboxEntry[], seasonId: stri
     else if (name === 'revoke_registration_link' && t) t.linkId = null
   }
   return teams
+}
+
+/** The status a pending review command leads to from the current one, or null when it isn't a review or changes nothing. */
+export function reviewStatus(name: string, from: TeamStatus | undefined): TeamStatus | null {
+  if (!from || from === 'withdrawn') return null
+  if (name === 'approve_team') return from === 'submitted' ? 'approved' : null
+  if (name === 'return_team') return from === 'submitted' || from === 'approved' ? 'returned' : null
+  return name === 'withdraw_team' ? 'withdrawn' : null
 }
 
 // The plain token never leaves the device that made it: kept here per link id, so this phone can share the link again

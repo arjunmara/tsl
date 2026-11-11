@@ -60,6 +60,8 @@ jobs:
         run: npm run check:paper
       - name: Organiser views a scan and marks Eligibility verified (Story 2.7)
         run: npm run check:verify
+      - name: Organiser approves, returns or withdraws a Team (Story 2.8)
+        run: npm run check:review
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
       # and write, Activity log, idempotency), the co-organiser and Team leak and race tests (Stories 1.14, 2.1) and the pg_proc
       # command skeleton check.

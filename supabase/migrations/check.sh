@@ -1511,6 +1511,61 @@ q "delete from storage.objects where bucket_id = 'eligibility-scans' and name = 
   || fail "cron: command"
 ! (echo "begin; drop schema cron cascade;"; cat "$dir/0016_verify_eligibility.sql") | psql >/dev/null 2>&1 || fail "0016 applied without pg_cron"
 
+# --- Approve, return or withdraw a Team (Story 2.8). A organises T5 (S5 in registration: Squad 2 to 3, Staff manager and
+# coach; S6 started); B organises T2. Q (A's paper Team) is submitted with 2 Players and a manager; G6 holds Q's grant, G5
+# Y's (Y invited). app.draw_team lists only approved Teams, through the reader's RLS.
+apt() { tc "$1" "approve_team('$(cmd "$2")', '$3')"; }
+ret() { tc "$1" "return_team('$(cmd "$2")', '$3', $4)"; }
+wd() { tc "$1" "withdraw_team('$(cmd "$2")', '$3')"; }
+qst() { q "select status||'/'||coalesce(return_note, '-')||'/'||version from app.team where id='$Q'"; }
+draw() { as "$1" "select coalesce(string_agg(code, ',' order by code), 'none') from app.draw_team"; }
+qv=$(ver $Q)
+[ "$(qst)" = "submitted/-/$qv" ] || fail "review: fixture $(qst)"
+
+# Fences: Q's own grant, another Team's grant and another Tournament's Organiser can't review; anon can't call.
+for who in $G6 $G5 $B; do
+  [ "$(apt $who 1600 $Q)|$(ret $who 1601 $Q "'x'")|$(wd $who 1602 $Q)" = 'not_authorized|not_authorized|not_authorized' ] \
+    || fail "leak: $who reviewed Q"
+  for r in 1600 1601 1602; do redo $r; done
+done
+for f in "approve_team('$(cmd 1603)', '$Q')" "return_team('$(cmd 1603)', '$Q', 'x')" "withdraw_team('$(cmd 1603)', '$Q')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+[ "$(qst)" = "submitted/-/$qv" ] || fail "leak: a refused review wrote"
+
+# Refusals: not sent for review, no note, a started Season, the Line-up rules in words.
+[ "$(apt $A 1604 $Y)|$(ret $A 1605 $Y "'Fix it'")|$(ret $A 1606 $Q "'   '")|$(ret $A 1607 $Q "null")|$(ret $A 1608 $Q "repeat('x', 501)")|$(apt $A 1609 $Z)" \
+  = 'team_not_submitted|team_not_submitted|note_invalid|note_invalid|note_invalid|season_started' ] || fail "review: refusals"
+q "update app.season set staff_roles = '{coach}' where id = '$S5'" >/dev/null
+[ "$(msg $A "approve_team('$(cmd 1610)', '$Q')")|$(qst)" = "Manager isn't an allowed Staff role.|submitted/-/$qv" ] || fail "approve: Line-up rules"
+q "update app.season set staff_roles = '{manager,coach}' where id = '$S5'" >/dev/null
+
+# Approve: status approved (version kept), in the Draw for A only; a repeat is ok; the manager's form is read-only, the
+# Organiser still edits.
+[ "$(apt $A 1611 $Q)|$(qst)|$(apt $A 1612 $Q)" = "ok|approved/-/$qv|ok" ] || fail "approve"
+[ "$(draw $A)|$(draw $B)|$(draw $G5)" = 'PSF|none|none' ] || fail "draw_team: $(draw $A) $(draw $B) $(draw $G5)"
+[ "$(et $G6 1613 $Q $qv "name => 'Late'")|$(ep $G6 1614 $Q $Q1 "$(pv $Q1), name => 'Late'")|$(tc $G6 "submit_team('$(cmd 1615)', '$Q')")" \
+  = 'team_approved|team_approved|team_approved' ] || fail "approved: manager not locked"
+[ "$(et $A 1616 $Q $qv "kit_colour => '#1d4ed8'")" = ok ] || fail "approved: Organiser locked"
+qv=$(ver $Q)
+[ "$(q "select count(*)||':'||bool_and(actor = '$A') from app.activity_log where command_id = '$(cmd 1611)' and after->>'status' = 'approved'")" = '1:true' ] \
+  || fail "approve: log row"
+
+# Return with a note (trimmed): returned, out of the Draw; the manager reads the note, edits and sends again.
+[ "$(ret $A 1620 $Q "'  Add the coach''s name.  '")|$(qst)" = "ok|returned/Add the coach's name./$qv" ] || fail "return: $(qst)"
+[ "$(as $G6 "select status||'/'||return_note from app.team")|$(as $B "select count(*) from app.team where id='$Q'")|$(draw $A)" \
+  = "returned/Add the coach's name.|0|none" ] || fail "return: reads"
+[ "$(apt $A 1621 $Q)|$(ep $G6 1622 $Q $Q1 "$(pv $Q1), name => 'Sita K. Rana'")|$(tc $G6 "submit_team('$(cmd 1623)', '$Q')")|$(q "select status from app.team where id='$Q'")" \
+  = 'team_not_submitted|ok|ok|submitted' ] || fail "return: manager edits and sends again"
+
+# Withdraw (from any status): read-only for everyone, out of the Draw; the grant still reads; repeat ok; review refused.
+[ "$(apt $A 1630 $Q)|$(wd $A 1631 $Q)|$(q "select status from app.team where id='$Q'")|$(wd $A 1632 $Q)|$(draw $A)" = 'ok|ok|withdrawn|ok|none' ] \
+  || fail "withdraw"
+[ "$(et $G6 1633 $Q $(ver $Q) "name => 'Back'")|$(et $A 1634 $Q $(ver $Q) "name => 'Back'")|$(ap $A 1635 $Q $Q4 "name => 'Z', shirt_number => 30, date_of_birth => '$grown', consent => false")|$(tc $A "submit_team('$(cmd 1636)', '$Q')")" \
+  = 'team_withdrawn|team_withdrawn|team_withdrawn|team_withdrawn' ] || fail "withdrawn: still editable"
+[ "$(apt $A 1637 $Q)|$(ret $A 1638 $Q "'x'")|$(as $G6 "select count(*) from app.team")" = 'team_withdrawn|team_withdrawn|1' ] || fail "withdrawn: review or read"
+
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null
 for r in anon authenticated; do

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { forgetRefused, queuedFor, send } from '../../domain/commands'
 import { overlayForm, teamForm, type RegistrationForm } from '../../domain/registration'
@@ -116,7 +116,8 @@ function OneTeam({ tournamentId, teamId, h }: { tournamentId: string; teamId: st
               )}
               {!canReissue && <p className="meta">New links can't be made once the Season has started.</p>}
             </section>
-            <TeamSheet seasonId={h.season.id} teamId={team.id} />
+            {canReissue && <Review team={team} tournamentId={tournamentId} done={reload} />}
+            <TeamSheet key={team.status} seasonId={h.season.id} teamId={team.id} />
           </>
         )}
       </div>
@@ -144,7 +145,7 @@ function TeamSheet({ seasonId, teamId }: { seasonId: string; teamId: string }) {
       </>
     )
   }
-  return form.seasonStatus === 'setup' || form.seasonStatus === 'registration'
+  return (form.seasonStatus === 'setup' || form.seasonStatus === 'registration') && form.team.status !== 'withdrawn'
     ? <Editor key={attempt} initial={form} load={async () => { const f = await load(seasonId, teamId); return typeof f === 'string' ? null : f }} />
     : <ClosedTeam form={form} />
 }
@@ -157,4 +158,77 @@ async function load(seasonId: string, teamId: string) {
 function Editor({ initial, load }: { initial: RegistrationForm; load: () => Promise<RegistrationForm | null> }) {
   const [form, setForm] = useState(initial)
   return <TeamEditor form={form} setForm={setForm} load={load} />
+}
+
+/**
+ * Approve, return with a note, or withdraw the Team (Story 2.8). Status is the server's (approve_team, return_team,
+ * withdraw_team); the Team list lays pending reviews over it. A refusal is said here in words and dropped.
+ */
+function Review({ team, tournamentId, done }: { team: Team; tournamentId: string; done: () => void }) {
+  const [writing, setWriting] = useState(false)
+  const [note, setNote] = useState('')
+  const [noteError, setNoteError] = useState<string | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
+  const noteId = useId()
+  const s = team.status
+
+  async function review(name: string, args: Record<string, unknown>, said: string) {
+    if (busy) return
+    setProblem(null)
+    setNotice('')
+    setBusy(true)
+    const r = await send(name, { team_id: team.id, ...args }, { scope: tournamentId })
+    setBusy(false)
+    if (!r.ok && r.code !== 'queued') {
+      if (r.commandId) void forgetRefused(r.commandId)
+      setProblem(r.code === 'lineup_violation' && r.message ? `Can't approve: ${r.message}` : messageFor(r.code))
+    } else {
+      setWriting(false)
+      setNote('')
+      setNotice(r.code === 'queued' ? `${messages.offline} ${said} once it's sent.` : said)
+    }
+    done()
+  }
+
+  function sendNote() {
+    const n = note.trim()
+    if (!n || n.length > 500) return setNoteError(messages.note_invalid)
+    setNoteError(null)
+    void review('return_team', { note: n }, `${team.name} is returned. The Team manager sees your note on their link`)
+  }
+
+  return (
+    <section className="card">
+      <h2 className="body-strong">Review</h2>
+      <p className="body">{s === 'withdrawn' ? 'This Team is withdrawn. It stays out of the Draw and its link can only be read.'
+        : s === 'approved' ? 'Approved: this Team can be placed in the Draw. Its manager can no longer change it.'
+          : s === 'submitted' ? 'The Team manager sent this Team for review.'
+            : s === 'returned' ? 'Returned to the Team manager. They can change it and send it again.'
+              : 'The Team manager hasn\'t sent this Team for review yet.'}</p>
+      <p role="status" className="body">{notice}</p>
+      <Problem text={problem} />
+      {s === 'submitted' && (
+        <PrimaryButton label="Approve team" onClick={() => void review('approve_team', {}, `${team.name} is approved`)} />
+      )}
+      {(s === 'submitted' || s === 'approved') && (writing ? (
+        <>
+          <div className="ui-field">
+            <label className="body-strong" htmlFor={noteId}>Note for the Team manager</label>
+            <textarea id={noteId} className="ui-input ui-textarea" rows={4} maxLength={500} value={note} aria-invalid={noteError ? true : undefined}
+              aria-describedby={noteError ? `${noteId}-error` : undefined} onChange={(e) => setNote(e.target.value)} autoFocus />
+            {noteError && <p id={`${noteId}-error`} className="meta ui-error">{noteError}</p>}
+          </div>
+          <PrimaryButton label="Send note and return team" onClick={sendNote} />
+          <SecondaryButton label="Discard the note" onClick={() => (setWriting(false), setNote(''), setNoteError(null))} />
+        </>
+      ) : <SecondaryButton label="Return with note" onClick={() => setWriting(true)} />)}
+      {s !== 'withdrawn' && (
+        <DestructiveButton label="Withdraw team" sheetTitle={`Withdraw ${team.name}?`} before={`${team.name} can register and be placed in the Draw`}
+          after={`${team.name} leaves the Draw and its link can only be read. This can't be undone`} actionLabel={`Withdraw ${team.name}`}
+          onConfirm={() => void review('withdraw_team', {}, `${team.name} is withdrawn`)} />
+      )}
+    </section>
+  )
 }
