@@ -741,3 +741,52 @@
   border: 1px solid var(--line);
   border-radius: var(--rounded-md);
 }
+
+/* The chit Draw board (Story 3.1): dashed slot boxes in columns, Team chips below. Selection is an ink outline, not colour alone. */
+.draw,
+.draw-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.draw-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--spacing-3);
+}
+.draw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+.draw-slot,
+.draw-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-height: var(--spacing-touch-min);
+  padding: 0 var(--spacing-3);
+  border-radius: var(--rounded-md);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.draw-slot {
+  border: 2px dashed var(--ink-muted);
+  background: none;
+}
+.draw-slot-filled {
+  border-style: solid;
+  background: var(--surface);
+}
+.draw-chip {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.draw-chip[aria-pressed="true"] {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+.draw-chip[draggable="true"] {
+  cursor: grab;
+}

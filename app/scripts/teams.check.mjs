@@ -85,7 +85,7 @@ async function fresh({ season = {}, teams = [], share = 'none' } = {}) {
       // The open Team's form read (Story 2.6) embeds its Season and Tournament.
       return json(route, mock.teams.map((t) => ({ ...t, version: 1, tournament: { name: 'Gulmi Cup' }, season: mock.season })))
     }
-    if (['/rest/v1/squad_entry', '/rest/v1/staff', '/rest/v1/eligibility_record'].includes(path)) return json(route, [])
+    if (['/rest/v1/squad_entry', '/rest/v1/staff', '/rest/v1/eligibility_record', '/rest/v1/draw_slot'].includes(path)) return json(route, [])
     if (path === '/rest/v1/sponsor') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     const a = JSON.parse(req.postData())

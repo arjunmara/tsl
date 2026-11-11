@@ -72,7 +72,7 @@ async function fresh({ status = 'registration', width = 390 } = {}) {
     }
     if (path === '/rest/v1/staff') return json(route, url.searchParams.get('team_id') !== `eq.${TEAM}` ? [] : mock.staff.map((x) => ({ ...x, team_id: TEAM, photo_path: null, is_cutout: null })))
     if (path === '/rest/v1/eligibility_record') return json(route, [])
-    if (path === '/rest/v1/sponsor') return json(route, [])
+    if (path === '/rest/v1/sponsor' || path === '/rest/v1/draw_slot') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     const a = JSON.parse(req.postData() ?? '{}')
     const cmd = path.replace('/rest/v1/rpc/', '')

@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -1727,6 +1727,110 @@ q "delete from storage.objects where bucket_id = 'eligibility-scans' and name = 
   || fail "job: a failed scan deletion is not retried"
 [ "$(q "select count(*) from storage.objects where bucket_id='player-photos' and name in ('$T5/$X/$SF1/$V2.webp', '$T5/$X/$P5/$V3.webp')")|$(q "select count(*) from app.file_to_delete where bucket_id = 'player-photos'")" = '2|0' ] \
   || fail "job: deleted a photo still in use, or the queue kept deleted photos"
+
+# --- Record the live chit Draw (Story 3.1). A organises T6 (S10: 2 groups of 4; 8 approved Teams D1..D8, plus DI invited and
+# DW withdrawn; OS is an approved Team of A's other Season S5); B organises T2 (S2 setup). Slot ids are made on the client.
+T6=11111111-0000-4000-8000-0000000000d6 S10=21111111-0000-4000-8000-0000000000d6
+sid() { printf '71111111-0000-4000-8000-%012d' "$1"; }
+dt() { printf '72111111-0000-4000-8000-%012d' "$1"; }
+pl() { tc "$1" "place_team_in_draw('$(cmd "$2")', '$S10', '$(sid "$2")', '$(dt "$3")', $4, $5${6:+, $6})"; }
+un() { tc "$1" "unplace_team_from_draw('$(cmd "$2")', '$S10', '$(dt "$3")')"; }
+rnd() { tc "$1" "place_rest_at_random('$(cmd "$2")', '$S10')"; }
+slots() { q "select coalesce(string_agg(grp||'.'||pos||'='||t.code, ' ' order by grp, pos), '-') from app.draw_slot d join app.team t on t.id = d.team_id where d.season_id='$S10'"; }
+[ "$(create $A 1900 $T6 $S10 'Draw Cup')" != "" ] || fail "draw: fixture"
+q "update app.season set structure = 'groups_knockout', group_count = 2, teams_per_group = 4, qualifiers_per_group = 2 where id='$S10'" >/dev/null
+for i in 1 2 3 4 5 6 7 8; do
+  q "insert into app.team (id, tournament_id, season_id, name, code, status) values ('$(dt $i)', '$T6', '$S10', 'Draw team $i', 'D$i', 'approved')" >/dev/null
+done
+q "insert into app.team (id, tournament_id, season_id, name, code, status) values ('$(dt 9)', '$T6', '$S10', 'Invited', 'DI', 'invited'),
+   ('$(dt 10)', '$T6', '$S10', 'Withdrawn', 'DW', 'withdrawn'), ('$(dt 11)', '$T5', '$S5', 'Other season', 'OS', 'approved')" >/dev/null
+
+# Not before registration: the Season is still in setup.
+[ "$(pl $A 1901 1 1 1)|$(un $A 1902 1)|$(rnd $A 1903)" = 'season_setup|season_setup|season_setup' ] || fail "draw: allowed in setup"
+q "update app.season set status = 'registration' where id='$S10'" >/dev/null
+
+# Fences: another Tournament's Organiser can't place or send back; anon can't call; no client writes or helper calls.
+for who in $B $G1; do
+  [ "$(pl $who 1904 1 1 1)|$(un $who 1905 1)|$(rnd $who 1906)" = 'not_authorized|not_authorized|not_authorized' ] || fail "leak: $who recorded the Draw"
+  for r in 1904 1905 1906; do redo $r; done
+done
+for f in "place_team_in_draw('$(cmd 1907)', '$S10', '$(sid 1907)', '$(dt 1)', 1, 1)" "unplace_team_from_draw('$(cmd 1907)', '$S10', '$(dt 1)')" \
+         "place_rest_at_random('$(cmd 1907)', '$S10')" "draw_slots('$S10')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+out=$(as $A "select app.draw_slots('$S10')" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "Organiser can execute draw_slots: $out"
+out=$(as $A "insert into app.draw_slot (id, tournament_id, season_id, grp, pos, team_id) values (gen_random_uuid(), '$T6', '$S10', 1, 1, '$(dt 1)')" 2>&1 || true)
+[[ $out == *"permission denied"* ]] || fail "Organiser can write draw_slot: $out"
+[ "$(slots)" = - ] || fail "draw: a refused command wrote"
+
+# Only approved Teams of the same Season, and slots the Structure offers.
+[ "$(pl $A 1910 9 1 1)|$(pl $A 1911 10 1 1)|$(pl $A 1912 11 1 1)|$(pl $A 1913 99 1 1)" = 'team_not_approved|team_not_approved|team_not_approved|team_not_approved' ] \
+  || fail "draw: unapproved Teams placed"
+[ "$(pl $A 1914 1 3 1)|$(pl $A 1915 1 1 5)|$(pl $A 1916 1 0 1)|$(pl $A 1917 1 1 0)" = 'slot_invalid|slot_invalid|slot_invalid|slot_invalid' ] || fail "draw: slot out of range"
+q "update app.season set structure = 'league' where id='$S10'" >/dev/null
+[ "$(pl $A 1918 1 1 1)|$(rnd $A 1919)" = 'no_draw|no_draw' ] || fail "draw: a League has a Draw"
+q "update app.season set structure = 'groups_knockout' where id='$S10'" >/dev/null
+[ "$(slots)" = - ] || fail "draw: refusals wrote"
+
+# Place: a row with the Team, version 1, logged; a repeat answers alike; the same Team in the same slot again is ok.
+r1=$(as $A "select app.place_team_in_draw('$(cmd 1920)', '$S10', '$(sid 1920)', '$(dt 1)', 1, 1)")
+[ "$(q "select (r->>'ok')||(r->>'version')||(r->>'complete') from (select '$r1'::jsonb r) x")" = true1false ] || fail "place: $r1"
+[ "$(as $A "select app.place_team_in_draw('$(cmd 1920)', '$S10', '$(sid 1920)', '$(dt 1)', 1, 1)")" = "$r1" ] || fail "place: repeat answered differently"
+[ "$(slots)" = '1.1=D1' ] || fail "place: $(slots)"
+[ "$(q "select count(*)||':'||bool_and(actor = '$A') from app.activity_log where command_id='$(cmd 1920)' and table_name = 'draw_slot' and op = 'insert'")" = '1:true' ] \
+  || fail "place: log row"
+[ "$(pl $A 1921 1 1 1)|$(pl $A 1922 1 1 2)|$(pl $A 1923 2 1 1)" = 'ok|team_placed|version_conflict' ] || fail "place: repeat, moved Team, taken slot"
+[ "$(slots)" = '1.1=D1' ] || fail "place: refusals changed the Draw"
+[ "$(pl $A 1924 3 1 2 0)" = ok ] || fail "place: a wrong expected_version on an empty slot"
+
+# Taken slot: the conflict names the occupant and a role-free name; Use mine (expected_version = theirs) replaces them.
+r=$(as $A "select app.place_team_in_draw('$(cmd 1925)', '$S10', '$(sid 1925)', '$(dt 2)', 1, 1)")
+[ "$(q "select (r->>'code')||(r->'conflict'->>'current_version')||(r->'conflict'->'current'->>'team_id')||(r->'conflict'->>'changed_by') from (select '$r'::jsonb r) x")" = "version_conflict1$(dt 1)a" ] \
+  || fail "place: conflict envelope $r"
+[ "$(pl $A 1926 2 1 1 1)|$(slots)" = 'ok|1.1=D2 1.2=D3' ] || fail "place: Use mine"
+
+# Send back: the slot empties, a repeat and a Team never placed are ok.
+[ "$(un $A 1930 3)|$(slots)|$(un $A 1931 3)|$(un $A 1932 1)" = 'ok|1.1=D2|ok|ok' ] || fail "unplace"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 1930)' and table_name = 'draw_slot' and op = 'delete'")" = 1 ] || fail "unplace: log row"
+
+# Seeds stay: D1 and D8 pinned, then the rest at random, in one command; every Team in a distinct slot of a Structure slot.
+[ "$(pl $A 1933 1 1 2)|$(pl $A 1934 8 2 4)|$(slots)" = 'ok|ok|1.1=D2 1.2=D1 2.4=D8' ] || fail "seeds: $(slots)"
+r=$(as $A "select app.place_rest_at_random('$(cmd 1935)', '$S10')")
+[ "$(q "select (r->>'ok')||(r->>'placed')||(r->>'complete') from (select '$r'::jsonb r) x")" = true5true ] || fail "random: $r"
+[ "$(q "select count(*)||':'||count(distinct team_id)||':'||count(distinct (grp, pos)) from app.draw_slot where season_id='$S10'")" = '8:8:8' ] || fail "random: not 8 distinct"
+[ "$(q "select string_agg(code, ',' order by code) from app.team t join app.draw_slot d on d.team_id = t.id where d.season_id='$S10' and grp between 1 and 2 and pos between 1 and 4")" = D1,D2,D3,D4,D5,D6,D7,D8 ] \
+  || fail "random: Teams outside the groups"
+[ "$(q "select string_agg(t.code, ',' order by t.code) from app.draw_slot d join app.team t on t.id = d.team_id where (grp, pos) in ((1,1), (1,2), (2,4))")" = D1,D2,D8 ] \
+  || fail "random: a seed moved"
+[ "$(as $A "select (r->>'placed')||(r->>'complete') from app.place_rest_at_random('$(cmd 1936)', '$S10') r")" = 0true ] || fail "random: nothing left"
+[ "$(as $A "select app.place_rest_at_random('$(cmd 1935)', '$S10')")" = "$r" ] || fail "random: repeat answered differently"
+# Every placement can still be sent back one by one; the last one back in completes the Draw.
+last=$(q "select grp||','||pos from app.draw_slot where team_id='$(dt 5)'")
+[ "$(un $A 1939 5)|$(as $A "select (r->>'ok')||(r->>'complete') from app.place_team_in_draw('$(cmd 1940)', '$S10', '$(sid 1940)', '$(dt 5)', $last) r")" = 'ok|truetrue' ] \
+  || fail "complete flag on the last placement"
+
+# Knockout-only: bracket slots 1..8 in group 0; group numbers are invalid; random fills the rest.
+q "delete from app.draw_slot where season_id='$S10'; update app.season set structure = 'knockout' where id='$S10'" >/dev/null
+[ "$(pl $A 1950 1 0 1)|$(pl $A 1951 2 1 1)|$(pl $A 1952 3 0 9)|$(slots)" = 'ok|slot_invalid|slot_invalid|0.1=D1' ] || fail "knockout: $(slots)"
+[ "$(as $A "select (r->>'placed')||(r->>'complete') from app.place_rest_at_random('$(cmd 1953)', '$S10') r")" = 7true ] || fail "knockout: random"
+[ "$(q "select count(distinct pos)||':'||min(pos)||':'||max(pos) from app.draw_slot where season_id='$S10' and grp = 0")" = '8:1:8' ] || fail "knockout: slots"
+
+# Leaks: another Tournament sees no slot and no log row; anon reads nothing.
+[ "$(as $B "select count(*) from app.draw_slot")|$(as $B "select count(*) from app.activity_log where table_name = 'draw_slot'")|$(as $A "select count(*) from app.draw_slot")" = '0|0|8' ] \
+  || fail "leak: another Tournament reads the Draw"
+out=$(as anon "select count(*) from app.draw_slot" 2>&1 || true)
+[[ $out == *"permission denied"* ]] || fail "leak: anon reads the Draw: $out"
+# B naming its own Season with T6's Team places nothing.
+S2n=$(q "select id from app.season where tournament_id='$T2'")
+[ "$(as $B "select r->>'code' from app.place_team_in_draw('$(cmd 1960)', '$S2n', '$(sid 1960)', '$(dt 1)', 1, 1) r")" != ok ] \
+  && [ "$(as $B "select count(*) from app.draw_slot")" = 0 ] || fail "leak: B placed in its own Season"
+
+# After the Season starts the Draw is locked.
+q "update app.season set status = 'started' where id='$S10'" >/dev/null
+[ "$(un $A 1970 1)|$(rnd $A 1971)|$(pl $A 1972 1 0 1)" = 'season_started|season_started|season_started' ] || fail "draw: started Season still changes"
+[ "$(as $A "select count(*) from app.draw_slot")" = 8 ] || fail "draw: a locked Draw changed"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

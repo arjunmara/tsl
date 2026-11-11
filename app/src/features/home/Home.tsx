@@ -2,16 +2,17 @@ import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { queuedFor } from '../../domain/commands'
 import { messages } from '../../domain/messages'
-import { logoUrl, tournamentSetup, type SeasonAnswers, type SeasonSummary } from '../../domain/tournaments'
+import { logoUrl, tournamentSetup, type SeasonAnswers, type SeasonSummary, type Structure } from '../../domain/tournaments'
 import { backIcon, IconButton, PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { Problem } from '../auth/Screen'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { overlay, Unavailable, UUID } from '../setup/Setup'
+import { Draw } from './Draw'
 import { statusLabel } from '../tournaments/MyTournaments'
 import { TeamPage } from './TeamPage'
 import { Teams } from './Teams'
 
-export type Head = { name: string; logoPath: string | null; logoBlob: Blob | null; season: SeasonSummary & { answers: SeasonAnswers } }
+export type Head = { name: string; logoPath: string | null; logoBlob: Blob | null; season: SeasonSummary & { answers: SeasonAnswers; structure: Structure } }
 
 // The last server read per Tournament, so the home opens offline after one visit in this page load.
 const lastHead = new Map<string, Head>()
@@ -182,6 +183,8 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
                 <p className="body">Setup of Season {h.season.number} is at step {h.season.setupStep + 1} of 7.</p>
                 <PrimaryButton label="Continue setup" onClick={() => navigate(`/t/${tournamentId}/setup/${h.season.setupStep + 1}`)} />
               </>
+            ) : h.season.status !== 'setup' && h.season.structure.structure !== 'league' ? (
+              <Draw tournamentId={tournamentId} head={h} fallback={matchesText[h.season.status]} />
             ) : <p className="body">{matchesText[h.season.status]}</p>)}
             {tab === 'teams' && (teamId ? (
               // Side by side on a laptop; on a phone only the open Team.

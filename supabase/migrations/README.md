@@ -395,3 +395,14 @@ Steps, on **test** first, then **live**:
 4. On the test preview, as an Organiser, open a Team, open a Player card with a photo, tap "Delete personal details" and
    confirm. The card shows no photo, date of birth, guardian or document number; within the hour the photo is gone from
    Storage → player-photos.
+
+## Apply 0020_chit_draw.sql (Story 3.1)
+
+Apply after 0019 and before the app deploy with the Draw board on the Matches tab (test first, then live). It adds the table
+`app.draw_slot` (a row per Team placed: Season, group number or 0 for a knockout bracket, slot number, Team, version) with
+its Organiser-read policy and Activity-log trigger, the Season action `edit_draw` (registration only), the helper
+`app.draw_slots` (the slots a Structure offers) and the Organiser-only commands `place_team_in_draw`,
+`unplace_team_from_draw` and `place_rest_at_random`. Only approved Teams of the Season can be placed (`team_not_approved`);
+a taken slot hands back the conflict envelope (Keep theirs / Use mine); a League has no Draw (`no_draw`). Steps: paste
+`0020_chit_draw.sql` into the SQL Editor and run it. Check: as an Organiser, `select count(*) from app.draw_slot` runs
+(0 until a Team is placed).

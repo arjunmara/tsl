@@ -59,7 +59,7 @@ async function fresh({ viewport = { width: 390, height: 844 }, setupStep = 3, bl
     const path = new URL(req.url()).pathname
     if (path === '/rest/v1/tournament') return json(route, mock.rows)
     if (path === '/rest/v1/format_preset') return json(route, [FUTSAL])
-    if (path === '/rest/v1/sponsor' || path === '/rest/v1/team') return json(route, [])
+    if (path === '/rest/v1/sponsor' || path === '/rest/v1/team' || path === '/rest/v1/draw_slot') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     const a = JSON.parse(req.postData())
     const cmd = path.replace('/rest/v1/rpc/', '')
