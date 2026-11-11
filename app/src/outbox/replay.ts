@@ -4,7 +4,8 @@ import { db, type Conflict, type Upload } from './db'
 /** version: the changed row's version after an ok command, when the command reports it. uploadFailed: the file was refused. */
 export type Result = { ok: boolean; code: string | null; message: string | null; conflict?: Conflict; version?: number; uploadFailed?: true }
 export type Config = {
-  run: (name: string, args: Record<string, unknown>, commandId: string) => Promise<Result>
+  /** enteredAt: when the change was made on the device, by the server-corrected clock (deadline checks use it). */
+  run: (name: string, args: Record<string, unknown>, commandId: string, enteredAt?: string) => Promise<Result>
   /** Uploads an entry's file; its failure codes are handled like a command's (offline retries). */
   upload: (u: Upload) => Promise<Result>
   /** The signed-in user's id, or null. */
@@ -61,7 +62,7 @@ async function pass(): Promise<'done' | 'retry'> {
       }
       // A versioned edit sends the base version as it is now (unknown base: null, which the server answers as a conflict).
       const args = e.versionOf ? { ...e.args, expected_version: (await db.versions.get(e.versionOf))?.version ?? null } : e.args
-      return c.run(e.name, args, e.commandId)
+      return c.run(e.name, args, e.commandId, e.enteredAt)
     })().finally(() => on.sending(false))
     if (r.ok) {
       await db.transaction('rw', db.entries, db.versions, async () => {

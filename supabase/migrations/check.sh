@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -698,9 +698,9 @@ wait $held
 op() { tc "$1" "open_registration('$(cmd "$2")', '$3')"; }
 v2=$(q "select version from app.season where id='$S2'")
 [ "$(op $B 330 $S2)|$(q "select status from app.season where id='$S2'")" = 'setup_incomplete|setup' ] || fail "open_registration: incomplete setup"
-q "update app.season set photo_consent = 'Photos may be posted.', starts_on = '2026-12-01', ends_on = '2026-12-10' where id='$S2'" >/dev/null
+q "update app.season set photo_consent = 'Photos may be posted.', starts_on = '2099-12-01', ends_on = '2099-12-10' where id='$S2'" >/dev/null
 [ "$(op $B 331 $S2)" = setup_incomplete ] || fail "open_registration: no deadline"
-q "update app.season set registration_deadline = '2026-11-20' where id='$S2'" >/dev/null
+q "update app.season set registration_deadline = '2099-11-20' where id='$S2'" >/dev/null
 [ "$(op $B 332 $S2)|$(q "select status||'/'||version from app.season where id='$S2'")" = "ok|registration/$v2" ] || fail "open_registration"
 [ "$(q "select count(*) from app.activity_log where command_id='$(cmd 332)' and table_name='season' and after->>'status'='registration'")" = 1 ] \
   || fail "open_registration: not logged"
@@ -849,7 +849,7 @@ LW=81111111-0000-4000-8000-000000000004 LX2=81111111-0000-4000-8000-000000000005
 TX=${TK1/A/x} TY=${TK1/A/y} TZ=${TK1/A/z} TW=${TK1/A/w} TX2=${TK1/A/2} TX3=${TK1/A/3}
 q "insert into auth.users (id, is_anonymous) values ('$G1', true), ('$G2', true), ('$G3', true), ('$G4', true)" >/dev/null
 [ "$(create $A 500 $T5 $S5 'Grant Cup' | grep -c '"ok": true')" = 1 ] || fail "grant: fixture tournament"
-q "update app.season set status = 'registration', registration_deadline = '2026-11-20' where id = '$S5';
+q "update app.season set status = 'registration', registration_deadline = '2099-11-20' where id = '$S5';
    insert into app.season (id, tournament_id, number, status) values ('$S6', '$T5', 2, 'setup');
    update app.season set status = 'registration' where id = '$S6';
    insert into app.team (id, tournament_id, season_id, name, code) values ('$X', '$T5', '$S5', 'Xenon', 'XEN'),
@@ -893,7 +893,7 @@ r=$(as $G1 "select app.redeem_registration_link('$(cmd 501)', '$TX')")
   || fail "redeem: bad tokens (or the stored hash itself) accepted"
 [ "$(rd $A 505 $TY)|$(rd $U 506 $TY)" = 'not_authorized|email_not_verified' ] || fail "redeem: an account redeemed a link"
 # The grant reads its own Team and the form's Season facts, nothing else.
-[ "$(seen $G1)|$(form $G1)" = "$X|Grant Cup|1|registration|2026-11-20" ] || fail "grant: G1's reads"
+[ "$(seen $G1)|$(form $G1)" = "$X|Grant Cup|1|registration|2099-11-20" ] || fail "grant: G1's reads"
 tables=$(q "select string_agg(table_name, ' ' order by table_name) from information_schema.role_table_grants
              where grantee = 'authenticated' and table_schema = 'app' and privilege_type = 'SELECT'
                and table_name not in ('team', 'format_preset', 'season_transition', 'season_action')")
@@ -1565,6 +1565,76 @@ qv=$(ver $Q)
 [ "$(et $G6 1633 $Q $(ver $Q) "name => 'Back'")|$(et $A 1634 $Q $(ver $Q) "name => 'Back'")|$(ap $A 1635 $Q $Q4 "name => 'Z', shirt_number => 30, date_of_birth => '$grown', consent => false")|$(tc $A "submit_team('$(cmd 1636)', '$Q')")" \
   = 'team_withdrawn|team_withdrawn|team_withdrawn|team_withdrawn' ] || fail "withdrawn: still editable"
 [ "$(apt $A 1637 $Q)|$(ret $A 1638 $Q "'x'")|$(as $G6 "select count(*) from app.team")" = 'team_withdrawn|team_withdrawn|1' ] || fail "withdrawn: review or read"
+
+# --- Links close at the deadline; reopen one for a reason (Story 2.9). A organises T5 (S5 in registration); B organises T2.
+# G1 holds X's grant, G5 Y's. A link is open through the deadline day in Asia/Kathmandu; a grant's command counts by its
+# x-entered-at header (capped at now) if received within app.grace_window(). The check widens the window to 2 days to
+# place "now" inside it, then puts it back.
+at_() { psql <<<"begin; set local role authenticated; set local request.jwt.claims to '{\"sub\":\"$1\"}';
+  set local request.headers to '{\"x-entered-at\":\"$2\"}'; select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.$3 r; commit;"; }
+kit() { echo "kit_colour => '#$(printf '%06x' "$1")'"; }
+today=$(q "select (now() at time zone 'Asia/Kathmandu')::date")
+deadline() { q "update app.season set registration_deadline = '$1' where id='$S5'" >/dev/null; }
+closes=$(q "select (('$today'::date)::timestamp) at time zone 'Asia/Kathmandu'")
+[ "$(q "select app.grace_window()")" = '01:00:00' ] || fail "deadline: grace window"
+ast_="add_staff('$(cmd 1709)', '$X', gen_random_uuid(), 'Late', 'coach')"
+LX6=81111111-0000-4000-8000-000000000029 TX6=${TK1/A/6}
+[ "$(ri $A 1699 $S5 $X $LX6 $(hash $TX6))|$(rd $G1 1698 $TX6)" = 'ok|ok' ] || fail "deadline: fixture grant"
+
+# Open through the deadline day: a grant edits with no header (counts as now).
+deadline "$today"
+[ "$(et $G5 1700 $Y $(ver $Y) "$(kit 1)")" = ok ] || fail "deadline: open on the deadline day"
+# Closed since midnight: entered before the close and received within the window is accepted; entered after, or no header,
+# a future (capped) or unreadable one, refused; the Squad too. The Organiser still edits.
+deadline "$(q "select '$today'::date - 1")"
+q "create or replace function app.grace_window() returns interval language sql immutable security definer set search_path = '' as \$\$ select interval '2 days' \$\$" >/dev/null
+[ "$(at_ $G5 "$(q "select '$closes'::timestamptz - interval '1 minute'")" "edit_team('$(cmd 1701)', '$Y', $(ver $Y), $(kit 2))")" = ok ] \
+  || fail "deadline: entered before the close, within the window"
+r=$(echo "$(at_ $G5 "$(q "select '$closes'::timestamptz + interval '1 minute'")" "edit_team('$(cmd 1702)', '$Y', $(ver $Y), $(kit 3))")|$(et $G5 1703 $Y $(ver $Y) "$(kit 3)")|$(at_ $G5 2999-01-01T00:00:00Z "edit_team('$(cmd 1704)', '$Y', $(ver $Y), $(kit 3))")|$(at_ $G5 nonsense "edit_team('$(cmd 1705)', '$Y', $(ver $Y), $(kit 3))")|$(at_ $G1 "$(q "select '$closes'::timestamptz + interval '1 minute'")" "$ast_")"); [ "$r" \
+  = 'registration_closed|registration_closed|registration_closed|registration_closed|registration_closed' ] || fail "deadline: late commands accepted: $r"
+[ "$(msg $G5 "edit_team('$(cmd 1703)', '$Y', $(ver $Y), $(kit 3))")" = 'Not allowed.' ] || fail "deadline: stored refusal"
+[ "$(et $A 1706 $Y $(ver $Y) "$(kit 4)")" = ok ] || fail "deadline: Organiser locked out"
+# Outside the window (the real 1 hour, deadline two days back): entered before the close is refused too.
+q "create or replace function app.grace_window() returns interval language sql immutable security definer set search_path = '' as \$\$ select interval '1 hour' \$\$" >/dev/null
+deadline "$(q "select '$today'::date - 2")"
+[ "$(at_ $G5 "$(q "select '$closes'::timestamptz - interval '1 day 1 minute'")" "edit_team('$(cmd 1707)', '$Y', $(ver $Y), $(kit 5))")" = registration_closed ] \
+  || fail "deadline: accepted outside the grace window"
+deadline "$(q "select '$today'::date - 1")"
+
+# Reopen: fences first (grants, another Tournament, anon); nothing changes.
+ro_() { tc "$1" "reopen_registration_link('$(cmd "$2")', '$3', $4, $5)"; }
+reopen() { q "select coalesce(reopened_until::text, '-')||'/'||coalesce(reopen_reason, '-')||'/'||version from app.team where id='$1'"; }
+yv=$(ver $Y)
+[ "$(ro_ $G5 1710 $Y "'x'" "'$today'")|$(ro_ $G1 1711 $Y "'x'" "'$today'")|$(ro_ $B 1712 $Y "'x'" "'$today'")" = 'not_authorized|not_authorized|not_authorized' ] \
+  || fail "leak: reopen by a grant or another Tournament"
+out=$(as anon "select app.reopen_registration_link('$(cmd 1713)', '$Y', 'x', '$today')" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can reopen: $out"
+for f in "grace_window()" "link_closes_at('$Y')" "season_allows('$S5', 'edit_team', '$Y')"; do
+  out=$(as $A "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "Organiser can execute $f: $out"
+done
+# Refusals in words: no reason, a past date, no date, a date after the start.
+q "update app.season set starts_on = '$today'::date + 10, ends_on = '$today'::date + 20 where id='$S5'" >/dev/null
+[ "$(ro_ $A 1714 $Y "'   '" "'$today'")|$(ro_ $A 1715 $Y "'Injury'" "'$today'::date - 1")|$(ro_ $A 1716 $Y "'Injury'" null)|$(ro_ $A 1717 $Y "'Injury'" "'$today'::date + 11")|$(reopen $Y)" \
+  = "reason_invalid|reopen_date_invalid|reopen_date_invalid|reopen_date_invalid|-/-/$yv" ] || fail "reopen: refusals"
+[ "$(msg $A "reopen_registration_link('$(cmd 1718)', '$Y', repeat('x', 201), '$today')")" = 'Write a reason of 1 to 200 characters.' ] \
+  || fail "reopen: reason in words"
+# Reopened through today: only Y's grant edits again (X's stays closed); the reopen and the manager's change carry the reason,
+# the change its device (G5's grant); the Team's version is kept by the reopen.
+[ "$(ro_ $A 1720 $Y "'  Injury replacement '" "'$today'")|$(reopen $Y)" = "ok|$today/Injury replacement/$yv" ] || fail "reopen"
+[ "$(et $G5 1721 $Y $yv "$(kit 6)")|$(et $G1 1722 $X $(ver $X) "$(kit 6)")|$(at_ $G1 "$today" "${ast_//$(cmd 1709)/$(cmd 1719)}")" = 'ok|registration_closed|registration_closed' ] \
+  || fail "reopen: not only that Team"
+[ "$(q "select reason||':'||actor from app.activity_log where command_id='$(cmd 1720)'")|$(q "select reason||':'||actor from app.activity_log where command_id='$(cmd 1721)'")" \
+  = "Injury replacement:$A|Injury replacement:$G5" ] || fail "reopen: log rows"
+[ "$(as $G5 "select concat_ws('|', reopened_until, reopen_reason) from app.team")" = "$today|Injury replacement" ] || fail "reopen: the manager reads it"
+# Before the deadline a manager's change carries no reason; the reopen date past, the link closes again.
+deadline "$today"
+[ "$(et $G5 1723 $Y $(ver $Y) "$(kit 7)")|$(q "select coalesce(reason, '-') from app.activity_log where command_id='$(cmd 1723)'")" = 'ok|-' ] \
+  || fail "reopen: reason on a change before the deadline"
+q "update app.team set reopened_until = '$today'::date - 1 where id='$Y'" >/dev/null
+deadline "$(q "select '$today'::date - 1")"
+[ "$(et $G5 1724 $Y $(ver $Y) "$(kit 8)")" = registration_closed ] || fail "reopen: past reopen date still open"
+q "update app.season set registration_deadline = '2099-11-20', starts_on = null, ends_on = null where id='$S5'" >/dev/null
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

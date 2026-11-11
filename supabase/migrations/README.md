@@ -352,3 +352,17 @@ through the reader's RLS. `app.authorize` now also reads the Team's status: an a
 (`team_approved`), a withdrawn Team refuses every change but review (`team_withdrawn`). A submitted Team stays editable;
 approval re-checks the Line-up rules. Steps: paste `0017_review_teams.sql` into the SQL Editor and run it. Check: as an
 Organiser, `select count(*) from app.draw_team` runs (0 until a Team is approved).
+
+## Apply 0018_registration_deadline.sql (Story 2.9)
+
+Apply after 0017 and before the app deploy with "Reopen link" on the Team page (test first, then live). Registration links
+now close on the server at the end of the deadline day in Asia/Kathmandu: `app.season_allows(season, action, team)` refuses a
+Team manager's change with `registration_closed` unless it was entered on the phone before the close (the outbox sends its
+`entered_at` as the request header `x-entered-at`) and arrives within `app.grace_window()` (1 hour; to change it, redefine
+that one function). Organisers still edit until the Season starts. The Organiser-only command `reopen_registration_link`
+(Season action `reopen_link`, setup and registration) reopens one Team's link through a new closing date (today up to the
+start date) for a reason of 1–200 characters, stored on the Team (`reopened_until`, `reopen_reason`); the Team manager's
+changes after the deadline carry that reason in the Activity log. Steps: paste `0018_registration_deadline.sql` into the SQL
+Editor and run it. Check: `select app.grace_window();` returns `01:00:00`. Then, on the test preview, open a Registration
+link and save a change while watching the browser's network tab: the request carries `x-entered-at` and is not blocked by
+CORS (if it is, tell the developer).

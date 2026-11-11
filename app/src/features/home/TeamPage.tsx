@@ -1,7 +1,9 @@
 import { useEffect, useId, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { forgetRefused, queuedFor, send } from '../../domain/commands'
-import { overlayForm, teamForm, type RegistrationForm } from '../../domain/registration'
+import { serverNow } from '../../domain/clock'
+import { formatDay, inZone } from '../../domain/format'
+import { lastOpenDay, overlayForm, registrationClosed, reopened, teamForm, type RegistrationForm } from '../../domain/registration'
 import { messageFor, messages } from '../../domain/messages'
 import { newLink } from '../../domain/teamCode'
 import { linkToken, registrationUrl, rememberLink, type Team } from '../../domain/teams'
@@ -117,7 +119,7 @@ function OneTeam({ tournamentId, teamId, h }: { tournamentId: string; teamId: st
               {!canReissue && <p className="meta">New links can't be made once the Season has started.</p>}
             </section>
             {canReissue && <Review team={team} tournamentId={tournamentId} done={reload} />}
-            <TeamSheet key={team.status} seasonId={h.season.id} teamId={team.id} />
+            <TeamSheet key={team.status} tournamentId={tournamentId} seasonId={h.season.id} teamId={team.id} />
           </>
         )}
       </div>
@@ -126,7 +128,7 @@ function OneTeam({ tournamentId, teamId, h }: { tournamentId: string; teamId: st
 }
 
 /** The Team's form as its manager sees it, read through the Organiser's membership; as text once the Season has started. */
-function TeamSheet({ seasonId, teamId }: { seasonId: string; teamId: string }) {
+function TeamSheet({ tournamentId, seasonId, teamId }: { tournamentId: string; seasonId: string; teamId: string }) {
   const [form, setForm] = useState<RegistrationForm | 'missing' | 'offline' | 'unknown' | null>(null)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
@@ -145,9 +147,82 @@ function TeamSheet({ seasonId, teamId }: { seasonId: string; teamId: string }) {
       </>
     )
   }
-  return (form.seasonStatus === 'setup' || form.seasonStatus === 'registration') && form.team.status !== 'withdrawn'
-    ? <Editor key={attempt} initial={form} load={async () => { const f = await load(seasonId, teamId); return typeof f === 'string' ? null : f }} />
-    : <ClosedTeam form={form} />
+  return (form.seasonStatus === 'setup' || form.seasonStatus === 'registration') && form.team.status !== 'withdrawn' ? (
+    <>
+      <Reopen form={form} tournamentId={tournamentId} done={() => setAttempt((n) => n + 1)} />
+      <Editor key={attempt} initial={form} load={async () => { const f = await load(seasonId, teamId); return typeof f === 'string' ? null : f }} />
+    </>
+  ) : <ClosedTeam form={form} />
+}
+
+/**
+ * Once the deadline has passed (Story 2.9): whether the Team manager's link is closed or reopened, and "Reopen link" with a
+ * reason and a new closing date (reopen_registration_link). Organisers edit until the Season starts either way.
+ */
+function Reopen({ form, tournamentId, done }: { form: RegistrationForm; tournamentId: string; done: () => void }) {
+  const today = inZone(serverNow()).date
+  const [writing, setWriting] = useState(false)
+  const [reason, setReason] = useState('')
+  const [until, setUntil] = useState(today)
+  const [errors, setErrors] = useState<{ reason?: string; until?: string }>({})
+  const [problem, setProblem] = useState<string | null>(null)
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
+  const id = useId()
+  const t = form.team
+  if (!form.deadline || today <= form.deadline || t.status === 'approved') return null
+  const day = formatDay(lastOpenDay(form)!)
+
+  async function reopen() {
+    const n = reason.trim()
+    const e = { ...(!n || n.length > 200 ? { reason: messages.reason_invalid } : {}), ...(!until || until < today ? { until: messages.reopen_date_invalid } : {}) }
+    setErrors(e)
+    if (Object.keys(e).length || busy) return
+    setProblem(null)
+    setBusy(true)
+    const r = await send('reopen_registration_link', { team_id: t.id, reason: n, until }, { scope: tournamentId })
+    setBusy(false)
+    if (!r.ok && r.code !== 'queued') {
+      if (r.commandId) void forgetRefused(r.commandId)
+      return setProblem(messageFor(r.code))
+    }
+    setWriting(false)
+    setReason('')
+    setNotice(r.code === 'queued' ? `${messages.offline} The link reopens once this is sent.` : `${t.name}'s link is open until ${formatDay(until)}.`)
+    done()
+  }
+
+  const field = (key: 'reason' | 'until') => ({
+    id: `${id}-${key}`, className: key === 'reason' ? 'ui-input ui-textarea' : 'ui-input', 'aria-invalid': errors[key] ? true : undefined,
+    'aria-describedby': errors[key] ? `${id}-${key}-error` : undefined,
+  })
+  const error = (key: 'reason' | 'until') => errors[key] && <p id={`${id}-${key}-error`} className="meta ui-error">{errors[key]}</p>
+  return (
+    <section className="card">
+      <h2 className="body-strong">Registration deadline</h2>
+      <p className="body">{registrationClosed(form) ? `The link closed on ${day}. The Team manager can only read it.`
+        : reopened(form) ? `Reopened until ${day}: ${t.reopenReason}` : `Open until ${day}.`}</p>
+      <p role="status" className="body">{notice}</p>
+      <Problem text={problem} />
+      {writing ? (
+        <>
+          <div className="ui-field">
+            <label className="body-strong" htmlFor={`${id}-reason`}>Reason for reopening</label>
+            <textarea {...field('reason')} rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+            {error('reason')}
+          </div>
+          <div className="ui-field">
+            <label className="body-strong" htmlFor={`${id}-until`}>New closing date</label>
+            <input {...field('until')} type="date" min={today} value={until} onChange={(e) => setUntil(e.target.value)} />
+            {until && <p className="meta">Open through {formatDay(until)}</p>}
+            {error('until')}
+          </div>
+          <PrimaryButton label="Reopen this Team's link" onClick={() => void reopen()} />
+          <SecondaryButton label="Cancel reopening" onClick={() => (setWriting(false), setErrors({}))} />
+        </>
+      ) : <SecondaryButton label="Reopen link" onClick={() => setWriting(true)} />}
+    </section>
+  )
 }
 
 async function load(seasonId: string, teamId: string) {

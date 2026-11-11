@@ -14,15 +14,18 @@ export type CommandResult = { ok: boolean; code: string | null; message: string 
 
 /**
  * Runs an `app` command. Only the outbox calls this; features use send(). Pass the same commandId to retry the same command: the server returns
- * the stored result instead of running it twice. Never throws.
+ * the stored result instead of running it twice. enteredAt goes as the header x-entered-at: the server's deadline checks
+ * count the change by it, within its grace window. Never throws.
  */
 export async function runCommand(
   name: string,
   args: Record<string, unknown>,
   commandId: string = crypto.randomUUID(),
+  enteredAt?: string,
 ): Promise<CommandResult> {
   try {
-    const { data, error, status } = await supabase.schema('app').rpc(name, { command_id: commandId, ...args })
+    const call = supabase.schema('app').rpc(name, { command_id: commandId, ...args })
+    const { data, error, status } = await (enteredAt ? call.setHeader('x-entered-at', enteredAt) : call)
     if (!error) return data as CommandResult
     // postgrest-js reports a failed fetch as an error with status 0; no EXECUTE means the session is gone.
     // 5xx may have run (retry); any other 4xx is a definite refusal.

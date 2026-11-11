@@ -11,6 +11,8 @@ export type RegistrationTeam = {
   id: string; tournamentId: string; name: string; code: string; kitColour: string | null; status: TeamStatus; version: number
   /** The Organiser's note while the Team is returned (Story 2.8); absent in a copy kept before it. */
   returnNote?: string | null
+  /** The link is open through this day for this reason, even after the deadline (Story 2.9). */
+  reopenedUntil?: string | null; reopenReason?: string | null
 }
 /** Eligibility documents a Player can prove eligibility with, and their words. */
 export const DOCUMENT_TYPES = [
@@ -75,7 +77,7 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
   try {
     const app = supabase.schema('app')
     const [t, f, ru, sq, st, el] = await Promise.all([
-      app.from('team').select('id, tournament_id, name, code, kit_colour, status, return_note, version').limit(2),
+      app.from('team').select('id, tournament_id, name, code, kit_colour, status, return_note, reopened_until, reopen_reason, version').limit(2),
       app.rpc('registration_form'),
       app.rpc('registration_rules'),
       app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_path, is_cutout, photo_consent(consent_given, given_by))')
@@ -86,7 +88,8 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
     const all = [t, f, ru, sq, st, el]
     if (all.some((x) => x.error)) return all.some((x) => x.error && x.status === 0) || !navigator.onLine ? kept() : { code: 'unknown' }
     const row = (t.data ?? [])[0] as {
-      id: string; tournament_id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; return_note: string | null; version: number
+      id: string; tournament_id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; return_note: string | null
+      reopened_until: string | null; reopen_reason: string | null; version: number
     } | undefined
     const s = ((f.data ?? []) as { tournament_name: string; season_number: number; season_status: SeasonStatus; registration_deadline: string | null }[])[0]
     if (!row || !s || (t.data ?? []).length > 1) {
@@ -94,7 +97,8 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
       return { code: 'link_dead' }
     }
     const form: RegistrationForm = {
-      team: { id: row.id, tournamentId: row.tournament_id, name: row.name, code: row.code, kitColour: row.kit_colour, status: row.status, returnNote: row.return_note, version: row.version },
+      team: { id: row.id, tournamentId: row.tournament_id, name: row.name, code: row.code, kitColour: row.kit_colour, status: row.status, returnNote: row.return_note,
+        reopenedUntil: row.reopened_until, reopenReason: row.reopen_reason, version: row.version },
       tournamentName: s.tournament_name, seasonNumber: s.season_number, seasonStatus: s.season_status, deadline: s.registration_deadline,
       // RLS already limits the grant to its Team; the filter keeps any other Team's rows out of this form regardless.
       rules: rulesFrom(ru.data), players: withEligibility(((sq.data ?? []) as unknown as EntryRow[]).filter((e) => e.team_id === row.id)
@@ -130,7 +134,7 @@ export async function teamForm(seasonId: string, teamId: string): Promise<{ form
   try {
     const app = supabase.schema('app')
     const [t, sq, st, el] = await Promise.all([
-      app.from('team').select('id, tournament_id, name, code, kit_colour, status, return_note, version, tournament(name), '
+      app.from('team').select('id, tournament_id, name, code, kit_colour, status, return_note, reopened_until, reopen_reason, version, tournament(name), '
         + 'season(number, status, registration_deadline, photo_consent, starters, max_bench, staff_roles)').eq('season_id', seasonId).eq('id', teamId),
       app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_path, is_cutout, photo_consent(season_id, consent_given, given_by))')
         .eq('team_id', teamId).order('shirt_number'),
@@ -140,7 +144,8 @@ export async function teamForm(seasonId: string, teamId: string): Promise<{ form
     const all = [t, sq, st, el]
     if (all.some((x) => x.error)) return { code: all.some((x) => x.error && x.status === 0) || !navigator.onLine ? 'offline' : 'unknown' }
     type TeamRow = {
-      id: string; tournament_id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; return_note: string | null; version: number
+      id: string; tournament_id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; return_note: string | null
+      reopened_until: string | null; reopen_reason: string | null; version: number
       tournament: { name: string } | null
       season: { number: number; status: SeasonStatus; registration_deadline: string | null; photo_consent: string | null; starters: number | null
         max_bench: number | null; staff_roles: string[] | null } | null
@@ -154,7 +159,8 @@ export async function teamForm(seasonId: string, teamId: string): Promise<{ form
         .filter((c) => (c as { season_id?: string }).season_id === seasonId) } } : e))
     const records = (Array.isArray(el.data) ? el.data as { verified_at: string | null }[] : []).map((r) => ({ ...r, verified: !!r.verified_at }))
     const form: RegistrationForm = {
-      team: { id: row.id, tournamentId: row.tournament_id, name: row.name, code: row.code, kitColour: row.kit_colour, status: row.status, returnNote: row.return_note, version: row.version },
+      team: { id: row.id, tournamentId: row.tournament_id, name: row.name, code: row.code, kitColour: row.kit_colour, status: row.status, returnNote: row.return_note,
+        reopenedUntil: row.reopened_until, reopenReason: row.reopen_reason, version: row.version },
       tournamentName: row.tournament?.name ?? '', seasonNumber: s.number, seasonStatus: s.status, deadline: s.registration_deadline,
       rules: rulesFrom([{ consent_statement: s.photo_consent, starters: s.starters, max_bench: s.max_bench, staff_roles: s.staff_roles }]),
       players: withEligibility(entries.flatMap(playerFrom), records),
@@ -192,12 +198,26 @@ export function overlayTeam(team: RegistrationTeam, queued: OutboxEntry[]): Regi
   return t
 }
 
+/** The link's last open day: the deadline, or the Team's reopen date if later (Story 2.9). null: no deadline. */
+export const lastOpenDay = (f: RegistrationForm): string | null => {
+  const r = f.team.reopenedUntil
+  return f.deadline && r && r > f.deadline ? r : f.deadline
+}
+/** When the link closes: the end of its last open day in Asia/Kathmandu (+05:45, no daylight saving), in ms. */
+export const closesAt = (f: RegistrationForm): number | null => {
+  const day = lastOpenDay(f)
+  return day ? Date.parse(`${day}T00:00:00+05:45`) + 86_400_000 : null
+}
+/** True while the Team's link is reopened past the deadline. */
+export const reopened = (f: RegistrationForm) => !!f.team.reopenReason && lastOpenDay(f) !== f.deadline
 /**
- * Read-only once the Season has started, or after the Registration deadline (the last open day, Asia/Kathmandu) by the
- * server-corrected clock. Reopening one link for a reason is Story 2.9.
+ * Read-only once the Season has started, or once the link closes by the server-corrected clock. The server decides
+ * the same in app.season_allows, counting a queued change by when it was made, within its grace window.
  */
-export const registrationClosed = (f: RegistrationForm) =>
-  !(f.seasonStatus === 'setup' || f.seasonStatus === 'registration') || (!!f.deadline && inZone(serverNow()).date > f.deadline)
+export const registrationClosed = (f: RegistrationForm, now = serverNow().getTime()) => {
+  const end = closesAt(f)
+  return !(f.seasonStatus === 'setup' || f.seasonStatus === 'registration') || (end !== null && now >= end)
+}
 
 type StaffRow = { team_id: string; id: string; name: string; role: string; version: number; photo_path: string | null; is_cutout: boolean | null }
 const photoFrom = (path: string | null, cutout: boolean | null): Photo | null => (path ? { path, cutout: !!cutout, url: null } : null)

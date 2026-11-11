@@ -48,6 +48,7 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   approve_team: () => 'Approve a Team',
   return_team: () => 'Return a Team with a note',
   withdraw_team: () => 'Withdraw a Team',
+  reopen_registration_link: () => "Reopen a Team's link",
   set_photo: (a) => (a.is_cutout === false ? 'Save a photo with its background' : 'Save a cut-out photo'),
 }
 

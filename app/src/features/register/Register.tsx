@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { hasSession, signInAnonymously, signOut } from '../../domain/auth'
-import { forgetRefused, queuedFor, send } from '../../domain/commands'
+import { serverNow } from '../../domain/clock'
+import { forgetRefused, queuedFor, send, useOutbox } from '../../domain/commands'
 import { formatDay } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
-import { forgetForm, overlayForm, redeem, registrationClosed, registrationForm, type RegistrationForm } from '../../domain/registration'
+import {
+  closesAt, forgetForm, lastOpenDay, overlayForm, redeem, reopened, registrationClosed, registrationForm, type RegistrationForm,
+} from '../../domain/registration'
 import { CODE, sha256Hex, TOKEN } from '../../domain/teamCode'
 import { SecondaryButton } from '../../ui/Button'
 import { Field } from '../../ui/Field'
@@ -100,14 +103,26 @@ export function Register() {
   )
 }
 
-/** The Team form: open until the deadline (fields save on leaving them), then read-only. */
+/**
+ * The Team form: open until the link closes (fields save on leaving them), then read-only by itself. The clock is read
+ * every 15 s, but not while a field has focus, so a change being typed at the close is still sent (the server judges it).
+ */
 function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }) {
   const [form, setForm] = useState(initial)
-  const closed = registrationClosed(form)
+  const [now, setNow] = useState(() => serverNow().getTime())
+  useEffect(() => {
+    const t = setInterval(() => document.activeElement?.matches('input, textarea, select') || setNow(serverNow().getTime()), 15_000)
+    return () => clearInterval(t)
+  }, [])
+  const waiting = useOutbox().entries.length > 0
+  const closed = registrationClosed(form, now)
+  const end = closesAt(form)
+  const minutes = end === null ? Infinity : Math.ceil((end - now) / 60_000)
   // An approved or withdrawn Team is read-only for its manager (Story 2.8); the server refuses changes too.
   const status = form.team.status
   const locked = status === 'approved' || status === 'withdrawn'
-  const day = form.deadline ? formatDay(form.deadline) : null
+  const last = lastOpenDay(form)
+  const day = last ? formatDay(last) : null
   async function load() {
     const f = await registrationForm(hash)
     return 'form' in f ? overlayForm(f.form, await queuedFor(f.form.team.id)) : null
@@ -119,7 +134,7 @@ function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }
         <p className="meta">{form.tournamentName} · Season {form.seasonNumber}</p>
         <h1 className="title">Team registration</h1>
       </header>
-      {!closed && !locked && <SaveStatusBar />}
+      {((!closed && !locked) || waiting) && <SaveStatusBar />}
       {status === 'returned' && (
         <section className="deadline-banner">
           <p className="body-strong">The organiser returned this Team with a note:</p>
@@ -142,7 +157,9 @@ function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }
           </>
         ) : (
           <>
-            {day && <p className="body-strong">Open until {day}.</p>}
+            {reopened(form) && <p className="body">The organiser reopened this form: {form.team.reopenReason}</p>}
+            {minutes <= 30 ? <p className="body-strong">Closes in {minutes} {minutes === 1 ? 'minute' : 'minutes'}</p>
+              : day && <p className="body-strong">Open until {day}.</p>}
             <p className="body">After that this form can only be read.</p>
           </>
         )}

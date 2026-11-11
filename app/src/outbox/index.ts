@@ -63,7 +63,7 @@ export async function send(
         const u = await config.upload(opts.upload)
         if (!u.ok) return { ...u, uploadFailed: true as const }
       }
-      return config.run(name, args, commandId)
+      return config.run(name, args, commandId, config.now().toISOString())
     }
   })
   storing = stored.catch(() => {})
