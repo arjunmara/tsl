@@ -8,6 +8,7 @@ import { Problem } from '../auth/Screen'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { overlay, Unavailable, UUID } from '../setup/Setup'
 import { Fixtures } from './Fixtures'
+import { StartCard } from './StartCard'
 import { statusLabel } from '../tournaments/MyTournaments'
 import { TeamPage } from './TeamPage'
 import { Teams } from './Teams'
@@ -184,7 +185,12 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
                 <PrimaryButton label="Continue setup" onClick={() => navigate(`/t/${tournamentId}/setup/${h.season.setupStep + 1}`)} />
               </>
             ) : h.season.status !== 'setup' ? (
-              <Fixtures tournamentId={tournamentId} head={h} fallback={matchesText[h.season.status]} />
+              <>
+                {h.season.status === 'registration' && (
+                  <StartCard tournamentId={tournamentId} seasonId={h.season.id} number={h.season.number} onStarted={() => setAttempt((n) => n + 1)} />
+                )}
+                <Fixtures tournamentId={tournamentId} head={h} fallback={matchesText[h.season.status]} />
+              </>
             ) : <p className="body">{matchesText[h.season.status]}</p>)}
             {tab === 'teams' && (teamId ? (
               // Side by side on a laptop; on a phone only the open Team.

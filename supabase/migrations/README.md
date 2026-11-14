@@ -441,3 +441,13 @@ differently fails with `downstream_started`. No command writes a score yet (Epic
 into the SQL Editor and run it. Check: `select count(*) from app.standings('<season id>')` runs as an Organiser (one row per placed
 Team). `check.sh` also runs `standings.parity.mjs`, which feeds Season 1 and the `league.test.js` cases through the database and
 fails on any order different from `league.js`.
+
+## Apply 0024_start_season.sql (Story 3.5)
+
+Apply after 0023 and before the app deploy with "Start tournament" on the Matches tab (test first, then live). It adds the Season
+action `start_season` (registration only), the read function `app.start_check(season)` (Organisers of the Tournament only: `ready`,
+the reason in words and the Teams it names) and the Organiser-only command `start_season`, which re-checks readiness under a lock and
+moves the Season from registration to started (`start_blocked` with the same reason when not ready). Ready means at least two
+non-withdrawn Teams, every one approved, every approved Team in the Draw (a League has none) and the Fixtures published. Nothing
+moves a started Season back. Steps: paste `0024_start_season.sql` into the SQL Editor and run it. Check:
+`select app.start_check('<season id>')` runs as an Organiser (`ready` false with a reason until the Season is ready).

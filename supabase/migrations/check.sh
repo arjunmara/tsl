@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -2039,6 +2039,91 @@ T8=11111111-0000-4000-8000-0000000000d8 S12=21111111-0000-4000-8000-0000000000d8
 [ "$(create $A 2200 $T8 $S12 'Parity Cup')" != "" ] || fail "parity: fixture"
 command -v node >/dev/null || fail "parity: node is needed"
 PG_CONTAINER=$name PARITY_TOURNAMENT=$T8 PARITY_SEASON=$S12 node "$dir/standings.parity.mjs" || fail "parity: standings differ from matchday/league.js"
+
+# --- Start the tournament (Story 3.5). A organises T9 (S13: 2 groups of 2, teams Y1..Y4 approved); B and G1 do not.
+T9=11111111-0000-4000-8000-0000000000d9 S13=21111111-0000-4000-8000-0000000000d9
+yt() { printf '76111111-0000-4000-8000-%012d' "$1"; }
+ss() { tc "$1" "start_season('$(cmd "$2")', '$S13')"; }
+sc() { as "$1" "select app.start_check('$S13')->>'$2'"; }
+yslot() { q "insert into app.draw_slot (id, tournament_id, season_id, grp, pos, team_id) values (gen_random_uuid(), '$T9', '$S13', $(( ($1 - 1) / 2 + 1 )), $(( ($1 - 1) % 2 + 1 )), '$(yt $1)')" >/dev/null; }
+[ "$(create $A 2300 $T9 $S13 'Start Cup')" != "" ] || fail "start: fixture"
+q "update app.season set structure = 'groups_knockout', group_count = 2, teams_per_group = 2, qualifiers_per_group = 1 where id='$S13'" >/dev/null
+for i in 1 2 3 4; do
+  q "insert into app.team (id, tournament_id, season_id, name, code, status) values ('$(yt $i)', '$T9', '$S13', 'Start team $i', 'Y$i', 'approved')" >/dev/null
+done
+# Not in setup (or later): refused with the Season's own code.
+[ "$(ss $A 2301)" = season_setup ] || fail "start: allowed in setup"
+q "update app.season set status = 'registration' where id='$S13'" >/dev/null
+# Fences: another Tournament's Organiser and an anonymous Team manager can't start or read; anon can't call.
+for who in $B $G1; do
+  [ "$(ss $who 2302)" = not_authorized ] || fail "leak: $who started the Season"
+  redo 2302
+done
+[ "$(as $B "select app.start_check('$S13') is null")|$(as $A "select app.start_check('$S13') is null")" = 't|f' ] || fail "leak: another Tournament reads start_check"
+for f in "start_season('$(cmd 2303)', '$S13')" "start_check('$S13')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+st9() { q "select status from app.season where id='$S13'"; }
+blocked() { # $1 command number, $2 expected reason: start_blocked with the same text as start_check, nothing changed
+  local r; r=$(as $A "select app.start_season('$(cmd "$1")', '$S13')")
+  [ "$(q "select (r->>'code')||'|'||(r->>'message') from (select \$j\$$r\$j\$::jsonb r) x")" = "start_blocked|$2" ] || fail "start: $2 / $r"
+  [ "$(sc $A reason)|$(sc $A ready)|$(st9)" = "$2|false|registration" ] || fail "start_check: $2 / $(sc $A reason)"
+}
+# No Teams approved (under two).
+q "update app.team set status = 'withdrawn' where season_id='$S13'" >/dev/null
+blocked 2304 "Can't start yet: no Teams approved."
+# One approved Team and one pending: the approval reason comes first.
+q "update app.team set status = 'approved' where code = 'Y1' and season_id='$S13'; update app.team set status = 'submitted' where code = 'Y2' and season_id='$S13'" >/dev/null
+blocked 2340 "Can't start yet: 1 Team still needs approval (Y2)"
+# Needs approval: one Team (singular), two (plural, in code order); a withdrawn Team is ignored.
+q "update app.team set status = 'approved' where season_id='$S13' and code <> 'Y2'; update app.team set status = 'withdrawn' where code = 'Y4' and season_id='$S13'" >/dev/null
+q "update app.team set status = 'approved' where code = 'Y4' and season_id='$S13'" >/dev/null
+q "update app.team set status = 'submitted' where code = 'Y2' and season_id='$S13'" >/dev/null
+blocked 2305 "Can't start yet: 1 Team still needs approval (Y2)"
+[ "$(as $A "select app.start_check('$S13')->'teams'->0->>'id'")" = "$(yt 2)" ] || fail "start_check: teams list"
+q "update app.team set status = 'returned' where code = 'Y1' and season_id='$S13'" >/dev/null
+blocked 2306 "Can't start yet: 2 Teams still need approval (Y1, Y2)"
+q "update app.team set status = 'approved' where season_id='$S13'" >/dev/null
+# Draw incomplete: nobody placed, then two placed.
+blocked 2307 "Can't start yet: 4 Teams aren't in the Draw (Y1, Y2, Y3, Y4)"
+yslot 1; yslot 2
+blocked 2308 "Can't start yet: 2 Teams aren't in the Draw (Y3, Y4)"
+yslot 3
+blocked 2309 "Can't start yet: 1 Team isn't in the Draw (Y4)"
+yslot 4
+# Unpublished.
+blocked 2310 "Can't start yet: publish the Fixtures first."
+q "update app.season set fixtures_published_at = now() where id='$S13'" >/dev/null
+# Ready; a withdrawn Team is ignored, whether placed or not.
+q "insert into app.team (id, tournament_id, season_id, name, code, status) values ('$(yt 9)', '$T9', '$S13', 'Gone', 'YW', 'withdrawn')" >/dev/null
+[ "$(sc $A reason)|$(sc $A ready)" = 'Ready to start: 4 Teams approved, Draw recorded.|true' ] || fail "start_check: ready $(sc $A reason)"
+# Exactly one approved Team and nothing else in the way.
+q "update app.team set status = 'withdrawn' where season_id='$S13' and code <> 'Y1'" >/dev/null
+blocked 2341 "Can't start yet: only 1 Team approved."
+q "update app.team set status = 'approved' where season_id='$S13' and code <> 'YW'" >/dev/null
+# Another Tournament's Organiser still can't; the refused ids wrote nothing; the Season is still in registration.
+[ "$(st9)" = registration ] || fail "start: a refusal moved the Season"
+# Start: one answer, logged once, repeat answers alike, a second command says season_started, locks hold.
+r1=$(as $A "select app.start_season('$(cmd 2311)', '$S13')")
+[ "$(q "select (r->>'ok')||(r->>'code' is null)::text from (select '$r1'::jsonb r) x")" = truetrue ] && [ "$(st9)" = started ] || fail "start: $r1"
+[ "$(as $A "select app.start_season('$(cmd 2311)', '$S13')")" = "$r1" ] || fail "start: repeat answered differently"
+[ "$(q "select count(*)||':'||bool_and(actor = '$A')||':'||bool_and(after->>'status' = 'started' and before->>'status' = 'registration') from app.activity_log where command_id='$(cmd 2311)' and table_name = 'season' and op = 'update'")" = '1:true:true' ] \
+  || fail "start: log row"
+[ "$(ss $A 2312)" = season_started ] || fail "start: twice"
+[ "$(tc $A "place_team_in_draw('$(cmd 2313)', '$S13', '$(sid 2313)', '$(yt 1)', 1, 1)")|$(tc $A "unplace_team_from_draw('$(cmd 2314)', '$S13', '$(yt 1)')")|$(tc $A "publish_fixtures('$(cmd 2315)', '$S13')")" \
+  = 'season_started|season_started|season_started' ] || fail "start: Draw or Fixtures still editable"
+[ "$(tc $A "set_lineup_rules('$(cmd 2316)', '$S13', 1, 5, 5)")" = season_started ] || fail "start: setup still editable"
+# Nothing moves a started Season back.
+out=$(q "update app.season set status = 'registration' where id='$S13'" 2>&1 || true)
+[[ $out == *"cannot change from started to registration"* ]] || fail "start: moved back: $out"
+# A League needs no Draw.
+T10=11111111-0000-4000-8000-0000000000da S14=21111111-0000-4000-8000-0000000000da
+[ "$(create $A 2320 $T10 $S14 'League Start')" != "" ] || fail "start: league fixture"
+q "update app.season set structure = 'league', status = 'registration', fixtures_published_at = now() where id='$S14';
+   insert into app.team (id, tournament_id, season_id, name, code, status) values ('$(yt 21)', '$T10', '$S14', 'L1', 'L1', 'approved'), ('$(yt 22)', '$T10', '$S14', 'L2', 'L2', 'approved')" >/dev/null
+[ "$(as $A "select app.start_check('$S14')->>'reason'")" = 'Ready to start: 2 Teams approved.' ] || fail "start_check: League text"
+[ "$(tc $A "start_season('$(cmd 2321)', '$S14')")" = ok ] || fail "start: League"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

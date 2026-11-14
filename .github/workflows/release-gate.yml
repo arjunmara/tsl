@@ -88,3 +88,5 @@ jobs:
           fi
       - name: Standings and knockout progression (Story 3.4)
         run: npm run check:standings
+      - name: Start the tournament (Story 3.5)
+        run: npm run check:start

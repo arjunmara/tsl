@@ -180,7 +180,7 @@ try {
     await until(page, async () => mock.teams[0].status === 'submitted', 'submit_team not accepted')
     await page.locator('.team-pane').getByText('Sent for review.', { exact: false }).waitFor()
     // Every command went to TEAM through the Organiser's session, one Squad for one Team.
-    for (const c of mock.calls.filter((x) => x.cmd !== 'server_now')) assert.equal(c.team_id, TEAM, `${c.cmd} not for the Team`)
+    for (const c of mock.calls.filter((x) => !['server_now', 'start_check'].includes(x.cmd))) assert.equal(c.team_id, TEAM, `${c.cmd} not for the Team`)
     assert.deepEqual(mock.players.map((p) => p.name), ['Sita Rana', 'Rita Rana', 'Mina Rana'])
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390, 'horizontal scroll')
     // Back to Teams: the list, Teams still selected.

@@ -120,6 +120,7 @@ export function Draw({ tournamentId, head: h, fallback }: { tournamentId: string
     <div className="draw">
       <p role="status" aria-live="polite" className="body-strong">{notice}</p>
       <Problem text={problem} />
+      {h.season.status === 'started' && <p className="meta">{messages.season_started}</p>}
       {columns.length === 0 && <p className="body">{fallback}</p>}
       <div className="draw-cols">
         {columns.map((c) => (

@@ -56,6 +56,7 @@ async function fresh({ kick = false } = {}) {
     if (path === '/rest/v1/team') return json(route, teams)
     if (path === '/rest/v1/draw_slot') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
+    if (path === '/rest/v1/rpc/start_check') return json(route, { ready: false, teams: [], reason: "Can't start yet: no Teams approved." })
     if (path === '/rest/v1/season') return json(route, [{ fixtures_published_at: mock.published ? '2026-11-12T00:00:00Z' : null }])
     if (path === '/rest/v1/match') return json(route, mock.matches)
     if (path === '/rest/v1/rpc/standings' || path === '/rest/v1/rpc/match_sides') return json(route, [])

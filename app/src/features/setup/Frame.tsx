@@ -1,11 +1,14 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router'
+import { messages } from '../../domain/messages'
 import { PrimaryButton, SecondaryButton } from '../../ui/Button'
 
 export const STEPS = ['Name & logo', 'Description & rules', 'Dates', 'Format', 'Line-up rules', 'Structure', 'Sponsors']
 
 /** True when a wizard step is shown as a Settings section: no Next, no step progress, Back returns to Settings. */
 export const SettingsMode = createContext(false)
+/** True once the Season has started: steps 2 to 6 (rules, dates, Format, Line-up rules, Structure) lock; name, logo and Sponsors stay open. */
+export const SeasonStarted = createContext(false)
 
 /** Where Back goes from this step: the previous step (step 1: My tournaments), or Settings in a Settings section. */
 export function useLeave(tournamentId: string, step: number) {
@@ -25,11 +28,13 @@ export function Frame({ step, onBack, onNext, backLabel, nextLabel = 'Next', chi
   step: number; onBack: () => void; onNext?: () => void; backLabel?: string; nextLabel?: string; children: ReactNode
 }) {
   const settings = useContext(SettingsMode)
+  const locked = useContext(SeasonStarted) && step >= 2 && step <= 6
   if (settings) {
     return (
       <main className="wizard" onSubmitCapture={(e) => (e.preventDefault(), e.stopPropagation())}>
         <h1 className="title">Settings · {STEPS[step - 1]}</h1>
-        {children}
+        {locked && <p className="body">{messages.season_started}</p>}
+        <fieldset disabled={locked} className="wizard-fields">{children}</fieldset>
         <div className="wizard-bar">
           <div className="wizard-bar-inner">
             <SecondaryButton label={backLabel ?? 'Back to settings'} onClick={onBack} />

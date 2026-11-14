@@ -13,7 +13,7 @@ import { Problem } from '../auth/Screen'
 import { resizeImage } from '../../domain/image'
 import { brandDefaults, readable, textColours } from './brand'
 import { StepFour } from './Format'
-import { Frame, SettingsMode, useLeave } from './Frame'
+import { Frame, SeasonStarted, SettingsMode, useLeave } from './Frame'
 import { StepFive, StepSix } from './LineupStructure'
 import { overlaySponsors, StepSeven } from './Sponsors'
 import { StepThree, StepTwo } from './RulesDates'
@@ -170,7 +170,12 @@ function overlayAnswers(base: SeasonAnswers, queued: OutboxEntry[]): SeasonAnswe
 // ponytail: kept for this page load only; a reload offline shows "Can't reach the server".
 const lastRead = new Map<string, Base>()
 
-function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }) {
+function LoadStep(props: { tournamentId: string; step: number }) {
+  const [started, setStarted] = useState(false)
+  return <SeasonStarted.Provider value={started}><LoadStepBody {...props} onStarted={setStarted} /></SeasonStarted.Provider>
+}
+
+function LoadStepBody({ tournamentId, step, onStarted }: { tournamentId: string; step: number; onStarted: (started: boolean) => void }) {
   const settings = useContext(SettingsMode)
   const [loaded, setLoaded] = useState<Loaded | 'missing' | null>(null)
   const [problem, setProblem] = useState<{ step: number; text: string } | null>(null)
@@ -222,6 +227,7 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
       }
       const t = r.tournament
       if (!t || !t.season) return setLoaded('missing')
+      onStarted(t.season.status === 'started')
       let sponsors: Sponsor[] = []
       if (step === 7) {
         const sp = await seasonSponsors(t.season.id)
@@ -243,7 +249,7 @@ function LoadStep({ tournamentId, step }: { tournamentId: string; step: number }
     return () => {
       live = false
     }
-  }, [tournamentId, step, attempt])
+  }, [tournamentId, step, attempt, onStarted])
 
   const back = useLeave(tournamentId, step)
   if (loaded === 'missing') return step === 1 || settings ? <Unavailable /> : <Navigate to={`/t/${tournamentId}/setup/1`} replace />

@@ -8,13 +8,15 @@ export type ConfirmSheetProps = {
   before: string
   after: string
   actionLabel: string
+  /** One more line under the change. */
+  note?: string
   destructive?: boolean
   onConfirm: () => void
   onClose: () => void
 }
 
 /** States the change as before → after; a destructive one opens with focus on Cancel. */
-export function ConfirmSheet({ open, title, before, after, actionLabel, destructive, onConfirm, onClose }: ConfirmSheetProps) {
+export function ConfirmSheet({ open, title, before, after, actionLabel, note, destructive, onConfirm, onClose }: ConfirmSheetProps) {
   const changeId = useId()
   return (
     <Sheet open={open} title={title} describedBy={changeId} onClose={onClose}>
@@ -24,6 +26,7 @@ export function ConfirmSheet({ open, title, before, after, actionLabel, destruct
             {before} <span aria-hidden="true">→</span>
             <span className="ui-visually-hidden"> to</span> {after}
           </p>
+          {note && <p className="body">{note}</p>}
           <div className="ui-sheet-actions">
             <button type="button" className="ui-button ui-primary" onClick={() => {
               try {

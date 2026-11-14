@@ -102,6 +102,7 @@ export const messages = {
   downstream_started: "The next Match has started, so this result can't change who plays in it.",
   shootout_not_needed: 'These Teams are not level any more, so no shootout is needed. Reload the page.',
   match_missing: 'That Match is no longer there. Reload the page.',
+  start_blocked: "The tournament can't start yet. Reload the page to see what is left to do.",
   no_fixtures: 'Suggest the Fixtures first.',
   fixtures_unknown: "Couldn't load the Fixtures. Try loading them again.",
   note_invalid: 'Write a note of 1 to 500 characters for the Team manager.',

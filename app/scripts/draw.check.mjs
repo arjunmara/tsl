@@ -65,6 +65,7 @@ async function fresh({ structure = 'groups_knockout', teams = [...approvedTeams(
     if (path === '/rest/v1/team') return json(route, mock.teams.map((t) => ({ ...t, version: 1 })))
     if (path === '/rest/v1/draw_slot') return json(route, mock.slots)
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
+    if (path === '/rest/v1/rpc/start_check') return json(route, { ready: false, teams: [], reason: "Can't start yet: no Teams approved." })
     if (!req.postData()) return json(route, [])
     const a = JSON.parse(req.postData())
     const cmd = path.replace('/rest/v1/rpc/', '')

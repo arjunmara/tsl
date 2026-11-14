@@ -204,6 +204,20 @@
 :root:has(.wizard-bar) {
   scroll-padding-bottom: var(--wizard-bar-height);
 }
+.wizard-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.start-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
 .wizard {
   max-width: 60rem;
   margin: 0 auto;
