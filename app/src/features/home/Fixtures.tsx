@@ -14,6 +14,7 @@ import { Problem } from '../auth/Screen'
 import { useOnline } from '../app/online'
 import { Draw, useDraw } from './Draw'
 import type { Head } from './Home'
+import { Standings, useStandings } from './Standings'
 import { useTeams } from './Teams'
 
 /** The Season's Fixtures in order, with this user's pending swaps and kick-offs laid over; reloads when the signal returns. */
@@ -63,6 +64,7 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
   const { teams } = useTeams(tournamentId, h.season.id)
   const { slots } = useDraw(tournamentId, h.season.id)
   const { matches, published, reload, retry } = useMatches(tournamentId, h.season.id)
+  const standings = useStandings(h.season.id, Array.isArray(matches) && matches.length > 0)
   const online = useOnline()
   const pending = useOutbox().entries.filter((e) => e.scope === tournamentId && e.state === 'pending').length
   const [confirm, setConfirm] = useState(false)
@@ -174,9 +176,11 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
     <PrimaryButton label="Suggest fixtures" disabled disabledReason={league ? 'Approve at least two Teams first.' : 'Record the whole draw first.'} />
   )
 
+  const sides = new Map((standings.data?.sides ?? []).map((x) => [x.matchId, x]))
   const card = (m: Match, i: number) => {
-    const home = sideText(m.homeTeamId, m.homeSrc, byId)
-    const away = sideText(m.awayTeamId, m.awaySrc, byId)
+    const s = sides.get(m.id)
+    const home = sideText(s ? s.homeTeamId : m.homeTeamId, m.homeSrc, byId)
+    const away = sideText(s ? s.awayTeamId : m.awayTeamId, m.awaySrc, byId)
     const body = (
       <>
         <span className="meta">{matchMeta(m)}</span>
@@ -222,6 +226,10 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
           <ul className="cards" ref={list}>{matches.map(card)}</ul>
         </DndContext>
       ))}
+      {matches.length > 0 && !arranging && standings.data && (
+        <Standings seasonId={h.season.id} rows={standings.data.rows} matches={matches} sides={sides} byId={byId}
+          canRecord={h.season.status === 'started'} reload={standings.reload} />
+      )}
       {league ? (!matches.length && !editable && <p className="body">{fallback}</p>)
         : ((editable && !published) || !matches.length) && <Draw tournamentId={tournamentId} head={h} fallback={fallback} />}
       {league && !matches.length && editable && !ready && <p className="body">{fallback}</p>}

@@ -99,6 +99,8 @@ export const messages = {
   fixtures_published: 'The Fixtures are published, so they can not be suggested again.',
   kickoff_outside_season: "That date is outside the Season's dates. Pick a date inside the Season.",
   kickoff_missing: 'Every Match needs a kick-off time before you publish. Reload the page.',
+  downstream_started: "The next Match has started, so this result can't change who plays in it.",
+  shootout_not_needed: 'These Teams are not level any more, so no shootout is needed. Reload the page.',
   match_missing: 'That Match is no longer there. Reload the page.',
   no_fixtures: 'Suggest the Fixtures first.',
   fixtures_unknown: "Couldn't load the Fixtures. Try loading them again.",

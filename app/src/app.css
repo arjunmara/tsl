@@ -866,3 +866,37 @@
 .match-moves .ui-button {
   min-height: var(--spacing-touch-min, 3rem);
 }
+
+/* Group tables and the knockout bracket (Story 3.4). */
+.standings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  overflow-x: auto;
+}
+.standings table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.standings caption {
+  text-align: start;
+  padding-block-end: var(--spacing-2);
+}
+.standings th,
+.standings td {
+  padding: var(--spacing-2) var(--spacing-1);
+  text-align: end;
+}
+.standings th:first-child {
+  text-align: start;
+}
+.standings thead th {
+  border-block-end: 2px solid var(--ink);
+}
+.bracket-match {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}

@@ -74,7 +74,7 @@ jobs:
         run: npm run check:arrange
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
       # and write, Activity log, idempotency), the co-organiser and Team leak and race tests (Stories 1.14, 2.1) and the pg_proc
-      # command skeleton check.
+      # command skeleton check, and the standings parity check against matchday/league.js (Story 3.4).
       - name: Migration, leak tests and command skeleton check (Stories 1.4, 1.6)
         working-directory: .
         run: bash supabase/migrations/check.sh
@@ -86,6 +86,5 @@ jobs:
           if grep -qiE 'Accept-Profile|Content-Profile' sync.py; then
             echo "::error::sync.py sets a schema profile header (reads a non-public schema)"; exit 1
           fi
-      # Slots filled by later stories; each stays a passing no-op until then.
-      - name: Standings test (Story 3.4)
-        run: echo "not yet implemented"
+      - name: Standings and knockout progression (Story 3.4)
+        run: npm run check:standings

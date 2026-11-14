@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -1927,6 +1927,118 @@ q "update app.season set status = 'started' where id='$S10'" >/dev/null
 # The Season has started: Fixtures can't be suggested or replaced.
 [ "$(sf $A 1980 "$(fx 400 3)" true)|$(ms)" = 'season_started|2' ] || fail "fixtures: allowed after start"
 [ "$(sw $A 2040 $M1 6 $M2 5)|$(ko $A 2041 $M1 6 '2026-11-13 10:00+05:45')|$(pub $A 2042)" = 'season_started|season_started|season_started' ] || fail "fixtures: arranged after start"
+
+# --- Standings and knockout progression (Story 3.4). A organises T7 (S11: 2 groups of 3, X1..X3 in Group A, X4..X6 in Group B,
+# semi-finals A1 v B2 and B1 v A2, then the Final); B and G1 do not. Results are seeded with SQL: no command writes a score yet.
+T7=11111111-0000-4000-8000-0000000000d7 S11=21111111-0000-4000-8000-0000000000d7
+xt() { printf '74111111-0000-4000-8000-%012d' "$1"; }
+xm() { printf '75111111-0000-4000-8000-%012d' "$1"; }
+shoot() { tc "$1" "record_tiebreak_shootout('$(cmd "$2")', '$S11', '$(sid "$2")', '$(xt "$3")', '$(xt "$4")')"; }
+st() { as $A "select string_agg(s.grp||'.'||s.pos||'='||t.code||':'||s.pts||(case when s.provisional then '?' else '' end), ' ' order by s.grp, s.pos)
+  from app.standings('$S11') s join app.team t on t.id = s.team_id"; }
+sides() { as $A "select string_agg(coalesce(h.code, r.home_src, '-')||'v'||coalesce(a.code, r.away_src, '-'), ' ' order by m.ord)
+  from app.match_sides('$S11') r join app.match m on m.id = r.match_id left join app.team h on h.id = r.home_team_id
+  left join app.team a on a.id = r.away_team_id where m.stage = 'knockout'"; }
+gm() { q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id) values ('$(xm "$1")', '$T7', '$S11', 'group', 'Group', $1, '$(xt "$2")', '$(xt "$3")')" >/dev/null; }
+fin() { q "update app.match set status = 'finished', hg = $2, ag = $3 where id = '$(xm "$1")'" >/dev/null; }
+[ "$(create $A 2100 $T7 $S11 'Standings Cup')" != "" ] || fail "standings: fixture"
+q "update app.season set structure = 'groups_knockout', group_count = 2, teams_per_group = 3, qualifiers_per_group = 2 where id='$S11'" >/dev/null
+for i in 1 2 3 4 5 6; do
+  q "insert into app.team (id, tournament_id, season_id, name, code, status) values ('$(xt $i)', '$T7', '$S11', 'Standing team $i', 'X$i', 'approved');
+     insert into app.draw_slot (id, tournament_id, season_id, grp, pos, team_id) values (gen_random_uuid(), '$T7', '$S11', $(( (i - 1) / 3 + 1 )), $(( (i - 1) % 3 + 1 )), '$(xt $i)')" >/dev/null
+done
+gm 1 1 2; gm 2 2 3; gm 3 3 1; gm 4 4 5; gm 5 5 6; gm 6 4 6
+q "insert into app.match (id, tournament_id, season_id, stage, round, label, ord, home_src, away_src) values
+  ('$(xm 20)', '$T7', '$S11', 'knockout', 'SF', 'SF1', 20, 'A1', 'B2'), ('$(xm 21)', '$T7', '$S11', 'knockout', 'SF', 'SF2', 21, 'B1', 'A2'),
+  ('$(xm 22)', '$T7', '$S11', 'knockout', 'Final', 'Final', 22, 'Winner SF1', 'Winner SF2')" >/dev/null
+# No result yet: every row on 0, no shootout needed, labels kept.
+[ "$(st)" = '1.1=X1:0 1.2=X2:0 1.3=X3:0 2.1=X4:0 2.2=X5:0 2.3=X6:0' ] || fail "standings: empty table $(st)"
+[ "$(sides)" = 'A1vB2 B1vA2 Winner SF1vWinner SF2' ] || fail "standings: labels $(sides)"
+# Fences: another Tournament's Organiser reads nothing and records nothing; anon can't call; no client writes; helpers closed.
+[ "$(as $B "select count(*) from app.standings('$S11')")|$(as $B "select count(*) from app.match_sides('$S11')")|$(as $A "select count(*) from app.match_sides('$S11')")" = '0|0|9' ] \
+  || fail "leak: another Tournament reads standings or sides"
+[ "$(as $B "select count(*) from app.tiebreak_shootout")|$(as $B "select count(*) from app.match where season_id = '$S11'")" = '0|0' ] || fail "leak: shootouts or Matches visible"
+for f in "standings('$S11')" "match_sides('$S11')" "record_tiebreak_shootout('$(cmd 2101)', '$S11', '$(sid 2101)', '$(xt 1)', '$(xt 2)')" "standings_calc('$S11')" "match_resolve('$S11')"; do
+  out=$(as anon "select * from app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+for f in "standings_calc('$S11')" "match_resolve('$S11')"; do
+  out=$(as $A "select * from app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "Organiser can execute $f: $out"
+done
+out=$(as anon "select count(*) from app.tiebreak_shootout" 2>&1 || true)
+[[ $out == *"permission denied"* ]] || fail "leak: anon reads shootouts: $out"
+out=$(as $A "insert into app.tiebreak_shootout (id, tournament_id, season_id, winner_team_id, loser_team_id) values (gen_random_uuid(), '$T7', '$S11', '$(xt 1)', '$(xt 2)')" 2>&1 || true)
+[[ $out == *"permission denied"* ]] || fail "Organiser can write tiebreak_shootout: $out"
+[ "$(shoot $A 2102 1 2)" = season_setup ] || fail "shootout: allowed in setup"
+q "update app.season set status = 'registration' where id='$S11'; update app.season set status = 'started' where id='$S11'" >/dev/null
+for who in $B $G1; do
+  [ "$(shoot $who 2103 1 2)" = not_authorized ] || fail "leak: $who recorded a shootout"
+  redo 2103
+done
+# Group A: three Teams each beat one other 1-0. One Match open: no group yet, A1 unresolved and nothing provisional.
+fin 1 1 0; fin 2 1 0
+[ "$(st)" = '1.1=X1:3 1.2=X2:3 1.3=X3:0 2.1=X4:0 2.2=X5:0 2.3=X6:0' ] || fail "standings: partial $(st)"
+[ "$(sides)" = 'A1vB2 B1vA2 Winner SF1vWinner SF2' ] || fail "standings: an unfinished group resolved $(sides)"
+fin 3 1 0; fin 4 1 0; fin 5 1 0; fin 6 1 0
+# Level on points, head-to-head points and goal difference, no shootout: provisional, and the knockout slots already resolve.
+[ "$(st)" = '1.1=X1:3? 1.2=X2:3? 1.3=X3:3? 2.1=X4:6 2.2=X5:3 2.3=X6:0' ] || fail "standings: provisional $(st)"
+[ "$(sides)" = 'X1vX5 X4vX2 Winner SF1vWinner SF2' ] || fail "standings: slots $(sides)"
+[ "$(as $A "select s.shootout_with = '$(xt 2)' from app.standings('$S11') s where s.team_id = '$(xt 1)'")" = t ] || fail "standings: shootout_with"
+# Knockout Matches never count in a table.
+q "update app.match set status = 'finished', hg = 5, ag = 0 where id = '$(xm 20)'" >/dev/null
+[ "$(st)" = '1.1=X1:3? 1.2=X2:3? 1.3=X3:3? 2.1=X4:6 2.2=X5:3 2.3=X6:0' ] || fail "standings: a knockout Match counted $(st)"
+q "update app.match set status = 'scheduled', hg = null, ag = null, home_team_id = null, away_team_id = null where id = '$(xm 20)'" >/dev/null
+# Record the shootout: not needed for Teams that are not level, other Season or other Teams; the order flips; goals and points stay.
+[ "$(shoot $A 2110 4 5)|$(shoot $A 2111 1 6)|$(shoot $A 2112 1 99)" = 'shootout_not_needed|shootout_not_needed|shootout_not_needed' ] || fail "shootout: not needed"
+[ "$(shoot $A 2113 1 3)" = shootout_not_needed ] || fail "shootout: Teams that are not next to each other in the tie"
+[ "$(as $A "select count(*) from app.tiebreak_shootout")" = 0 ] || fail "shootout: a refusal wrote"
+r=$(as $A "select app.record_tiebreak_shootout('$(cmd 2114)', '$S11', '$(sid 2114)', '$(xt 2)', '$(xt 1)')")
+[ "$(q "select r->>'ok' from (select '$r'::jsonb r) x")" = true ] || fail "shootout: $r"
+[ "$(as $A "select app.record_tiebreak_shootout('$(cmd 2114)', '$S11', '$(sid 2114)', '$(xt 2)', '$(xt 1)')")" = "$r" ] \
+  && [ "$(as $A "select count(*) from app.tiebreak_shootout")" = 1 ] || fail "shootout: replay"
+[ "$(q "select count(*)||':'||bool_and(actor = '$A') from app.activity_log where command_id='$(cmd 2114)' and table_name = 'tiebreak_shootout' and op = 'insert'")" = '1:true' ] \
+  || fail "shootout: log row"
+[ "$(st)" = '1.1=X2:3 1.2=X1:3? 1.3=X3:3? 2.1=X4:6 2.2=X5:3 2.3=X6:0' ] || fail "shootout: order did not flip $(st)"
+[ "$(as $A "select string_agg(s.gf||'-'||s.ga, ',' order by s.pos) from app.standings('$S11') s where s.grp = 1")" = '1-1,1-1,1-1' ] || fail "shootout: goals changed"
+[ "$(sides)" = 'X2vX5 X4vX1 Winner SF1vWinner SF2' ] || fail "shootout: slots did not follow $(sides)"
+# A knockout Match level after play is decided by its shootout; level with none stays unresolved.
+q "update app.match set status = 'finished', hg = 2, ag = 2, home_pens = 4, away_pens = 3 where id = '$(xm 20)'" >/dev/null
+q "update app.match set status = 'finished', hg = 1, ag = 1 where id = '$(xm 21)'" >/dev/null
+[ "$(sides)" = 'X2vX5 X4vX1 X2vWinner SF2' ] || fail "knockout: pens winner $(sides)"
+out=$(q "update app.match set home_pens = 2, away_pens = 2 where id = '$(xm 21)'" 2>&1 || true)
+[[ $out == *violates* ]] || fail "knockout: level shootout accepted: $out"
+q "update app.match set home_pens = 3, away_pens = 2 where id = '$(xm 21)'" >/dev/null
+[ "$(sides)" = 'X2vX5 X4vX1 X2vX4' ] || fail "knockout: Final sides $(sides)"
+# Freeze: the Final goes live with X2 v X4 written into it; then a result or a shootout that changes them is refused.
+q "update app.match set status = 'live' where id = '$(xm 22)'" >/dev/null
+[ "$(q "select h.code||'v'||a.code from app.match m join app.team h on h.id = m.home_team_id join app.team a on a.id = m.away_team_id where m.id = '$(xm 22)'")" = X2vX4 ] \
+  || fail "freeze: sides not written"
+out=$(q "update app.match set hg = 1, ag = 3, home_pens = null, away_pens = null where id = '$(xm 20)'" 2>&1 || true)
+[[ $out == *downstream_started* ]] || fail "freeze: result change allowed: $out"
+[ "$(q "select hg||'-'||ag from app.match where id = '$(xm 20)'")" = 2-2 ] || fail "freeze: the refused change wrote"
+[ "$(shoot $A 2120 1 3)" = downstream_started ] && [ "$(as $A "select count(*) from app.tiebreak_shootout")" = 1 ] || fail "freeze: shootout allowed"
+# A change that leaves every frozen side as it is still saves.
+q "update app.match set hg = 3, ag = 3, home_pens = 5, away_pens = 4 where id = '$(xm 20)'" >/dev/null
+[ "$(sides)" = 'X2vX5 X4vX1 X2vX4' ] || fail "freeze: harmless change moved the sides $(sides)"
+# Frozen sides are kept when the Match is read back, whatever the label would say now.
+[ "$(as $A "select count(*) from app.match_sides('$S11') r where r.match_id = '$(xm 22)' and r.home_team_id = r.home_resolved and r.away_team_id = r.away_resolved")" = 1 ] \
+  || fail "freeze: resolved differs from frozen"
+
+# League: one table, every approved Team, league Matches only.
+q "delete from app.match where season_id = '$S11'; delete from app.draw_slot where season_id = '$S11'; delete from app.tiebreak_shootout where season_id = '$S11';
+   update app.season set structure = 'league' where id = '$S11'" >/dev/null
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status, hg, ag) values
+  ('$(xm 1)', '$T7', '$S11', 'league', 'League', 1, '$(xt 1)', '$(xt 2)', 'finished', 3, 1),
+  ('$(xm 2)', '$T7', '$S11', 'group', 'Group', 2, '$(xt 3)', '$(xt 2)', 'finished', 9, 0)" >/dev/null
+[ "$(as $A "select string_agg(s.grp||'.'||s.pos||'='||t.code||':'||s.pts, ' ' order by s.pos) from app.standings('$S11') s join app.team t on t.id = s.team_id")" = '0.1=X1:3 0.2=X3:0 0.3=X4:0 0.4=X5:0 0.5=X6:0 0.6=X2:0' ] \
+  || fail "standings: League $(as $A "select string_agg(s.pos||t.code||s.pts, ' ' order by s.pos) from app.standings('$S11') s join app.team t on t.id = s.team_id")"
+
+# Parity with matchday/league.js: Season 1 and the league.test.js cases, in a throwaway Season, must give the same order.
+T8=11111111-0000-4000-8000-0000000000d8 S12=21111111-0000-4000-8000-0000000000d8
+[ "$(create $A 2200 $T8 $S12 'Parity Cup')" != "" ] || fail "parity: fixture"
+command -v node >/dev/null || fail "parity: node is needed"
+PG_CONTAINER=$name PARITY_TOURNAMENT=$T8 PARITY_SEASON=$S12 node "$dir/standings.parity.mjs" || fail "parity: standings differ from matchday/league.js"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

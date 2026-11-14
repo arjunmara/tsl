@@ -427,3 +427,17 @@ versions bump, a stale version returns `version_conflict`), `set_kick_off` (a ki
 `kickoff_outside_season`) and `publish_fixtures` (every Match needs a kick-off: `kickoff_missing`). `suggest_fixtures` is redefined to
 refuse once published (`fixtures_published`). Steps: paste `0022_arrange_publish_fixtures.sql` into the SQL Editor and run it.
 Check: `select fixtures_published_at from app.season` runs (null until published).
+
+## Apply 0023_standings_progression.sql (Story 3.4)
+
+Apply after 0022 and before the app deploy with the group tables and bracket on the Matches tab (test first, then live). It widens
+`app.match.status` to scheduled, live and finished, adds `home_pens` / `away_pens` (a knockout Match level after play is decided by
+them), the table `app.tiebreak_shootout` (member read, Activity-log trigger), the Season action `record_shootout` (started only),
+the read functions `app.standings(season)` and `app.match_sides(season)` (members of the Tournament only; the rules of
+`matchday/league.js` in the Season's `tiebreaks` order), the Organiser-only command `record_tiebreak_shootout` (`shootout_not_needed`
+for Teams that are not level, `downstream_started` when it would change a Team already frozen into a live Match) and the freezing
+of knockout slots: when a Match turns live its resolved Teams are written into it, and a change that would resolve a frozen side
+differently fails with `downstream_started`. No command writes a score yet (Epic 4). Steps: paste `0023_standings_progression.sql`
+into the SQL Editor and run it. Check: `select count(*) from app.standings('<season id>')` runs as an Organiser (one row per placed
+Team). `check.sh` also runs `standings.parity.mjs`, which feeds Season 1 and the `league.test.js` cases through the database and
+fails on any order different from `league.js`.

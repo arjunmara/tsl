@@ -35,6 +35,7 @@
     "check:erase": "node scripts/erase.check.mjs",
     "check:draw": "node scripts/draw.check.mjs",
     "check:arrange": "node scripts/arrange.check.mjs",
+    "check:standings": "node scripts/standings.check.mjs",
     "check:fixtures": "node scripts/fixtures.check.mjs && node scripts/fixtures.ui.check.mjs"
   },
   "dependencies": {
