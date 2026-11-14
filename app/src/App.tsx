@@ -11,6 +11,7 @@ import { SignUp } from './features/auth/SignUp'
 import { MyTournaments } from './features/tournaments/MyTournaments'
 import { NewTournament, SettingsSection, SetupStep } from './features/setup/Setup'
 import { Home } from './features/home/Home'
+import { MatchDetail } from './features/home/MatchDetail'
 import { Settings } from './features/home/Settings'
 import { CoOrganisers } from './features/home/CoOrganisers'
 import { Invite } from './features/auth/Invite'
@@ -79,6 +80,7 @@ export function App() {
             <Route element={<RequireVerified />}>
               <Route path="/new" element={<NewTournament />} />
               <Route path="/t/:tournamentId/setup/:step" element={<SetupStep />} />
+              <Route path="/t/:tournamentId/m/:matchId" element={<MatchDetail />} />
               <Route path="/t/:tournamentId" element={<Home />} />
               <Route path="/t/:tournamentId/teams/:teamId" element={<Home />} />
               <Route path="/t/:tournamentId/settings" element={<Settings />} />

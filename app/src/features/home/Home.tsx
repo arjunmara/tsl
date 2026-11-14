@@ -7,7 +7,7 @@ import { backIcon, IconButton, PrimaryButton, SecondaryButton } from '../../ui/B
 import { Problem } from '../auth/Screen'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { overlay, Unavailable, UUID } from '../setup/Setup'
-import { Draw } from './Draw'
+import { Fixtures } from './Fixtures'
 import { statusLabel } from '../tournaments/MyTournaments'
 import { TeamPage } from './TeamPage'
 import { Teams } from './Teams'
@@ -183,8 +183,8 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
                 <p className="body">Setup of Season {h.season.number} is at step {h.season.setupStep + 1} of 7.</p>
                 <PrimaryButton label="Continue setup" onClick={() => navigate(`/t/${tournamentId}/setup/${h.season.setupStep + 1}`)} />
               </>
-            ) : h.season.status !== 'setup' && h.season.structure.structure !== 'league' ? (
-              <Draw tournamentId={tournamentId} head={h} fallback={matchesText[h.season.status]} />
+            ) : h.season.status !== 'setup' ? (
+              <Fixtures tournamentId={tournamentId} head={h} fallback={matchesText[h.season.status]} />
             ) : <p className="body">{matchesText[h.season.status]}</p>)}
             {tab === 'teams' && (teamId ? (
               // Side by side on a laptop; on a phone only the open Team.

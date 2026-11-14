@@ -33,7 +33,8 @@
     "check:review": "node scripts/review.check.mjs",
     "check:deadline": "node scripts/deadline.check.mjs",
     "check:erase": "node scripts/erase.check.mjs",
-    "check:draw": "node scripts/draw.check.mjs"
+    "check:draw": "node scripts/draw.check.mjs",
+    "check:fixtures": "node scripts/fixtures.check.mjs && node scripts/fixtures.ui.check.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.2.2",

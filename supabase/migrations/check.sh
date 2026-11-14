@@ -1827,10 +1827,63 @@ S2n=$(q "select id from app.season where tournament_id='$T2'")
 [ "$(as $B "select r->>'code' from app.place_team_in_draw('$(cmd 1960)', '$S2n', '$(sid 1960)', '$(dt 1)', 1, 1) r")" != ok ] \
   && [ "$(as $B "select count(*) from app.draw_slot")" = 0 ] || fail "leak: B placed in its own Season"
 
+# --- Suggested fixtures (Story 3.2). Same Season S10 (knockout, 8 Teams all placed); A organises it, B and G1 do not.
+mid() { printf '73111111-0000-4000-8000-%012d' "$1"; }
+# A SQL jsonb expression: $2 Fixtures, ids mid($1 + i), Team i v Team i+1.
+fx() { echo "(select jsonb_agg(jsonb_build_object('id', format('73111111-0000-4000-8000-%s', lpad(($1 + i)::text, 12, '0')), 'stage', 'knockout',
+  'round', 'Round 1', 'label', 'QF' || i, 'ord', i, 'home_team', format('72111111-0000-4000-8000-%s', lpad(i::text, 12, '0')),
+  'away_team', format('72111111-0000-4000-8000-%s', lpad((i + 1)::text, 12, '0')), 'home_src', null, 'away_src', null)) from generate_series(1, $2) i)"; }
+sf() { tc "$1" "suggest_fixtures('$(cmd "$2")', '$S10', $3${4:+, $4})"; }
+ms() { q "select count(*) from app.match where season_id='$S10'"; }
+for who in $B $G1; do
+  [ "$(sf $who 1981 "$(fx 100 3)")" = not_authorized ] || fail "leak: $who suggested Fixtures"
+  redo 1981
+done
+out=$(as anon "select app.suggest_fixtures('$(cmd 1982)', '$S10', '[]'::jsonb)" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute suggest_fixtures: $out"
+out=$(as $A "insert into app.match (id, tournament_id, season_id, stage, round, ord) values (gen_random_uuid(), '$T6', '$S10', 'group', 'x', 1)" 2>&1 || true)
+[[ $out == *"permission denied"* ]] || fail "Organiser can write match: $out"
+# Refusals write nothing: a bad list, duplicate order, an unapproved or foreign Team, an incomplete Draw.
+[ "$(sf $A 1983 "'[]'::jsonb")|$(sf $A 1984 "'{}'::jsonb")|$(sf $A 1985 "(select jsonb_set($(fx 100 2), '{1,ord}', '1'))")" = 'fixtures_invalid|fixtures_invalid|fixtures_invalid' ] \
+  || fail "fixtures: bad lists"
+[ "$(sf $A 1986 "(select jsonb_set($(fx 100 2), '{0,stage}', '\"cup\"'))")" = fixtures_invalid ] || fail "fixtures: bad stage"
+[ "$(sf $A 1987 "(select jsonb_set($(fx 100 2), '{0,home_team}', '\"$(dt 9)\"'))")|$(sf $A 1988 "(select jsonb_set($(fx 100 2), '{0,away_team}', '\"$(dt 11)\"'))")" \
+  = 'team_not_approved|team_not_approved' ] || fail "fixtures: unapproved or foreign Team"
+pos8=$(q "select pos from app.draw_slot where team_id='$(dt 8)'")
+q "delete from app.draw_slot where team_id='$(dt 8)'" >/dev/null
+[ "$(sf $A 1989 "$(fx 100 3)")" = draw_incomplete ] || fail "fixtures: incomplete Draw"
+q "insert into app.draw_slot (id, tournament_id, season_id, grp, pos, team_id) values (gen_random_uuid(), '$T6', '$S10', 0, $pos8, '$(dt 8)')" >/dev/null
+[ "$(ms)" = 0 ] || fail "fixtures: refusals wrote"
+# Suggest: rows with version 1, status scheduled, no score, logged; a repeat answers alike; a second list is refused until replace.
+r1=$(as $A "select app.suggest_fixtures('$(cmd 1990)', '$S10', $(fx 100 3))")
+[ "$(q "select (r->>'ok')||(r->>'count') from (select '$r1'::jsonb r) x")" = true3 ] || fail "fixtures: $r1"
+[ "$(as $A "select app.suggest_fixtures('$(cmd 1990)', '$S10', $(fx 100 3))")" = "$r1" ] || fail "fixtures: repeat answered differently"
+[ "$(q "select count(*)||':'||min(version)||':'||min(status)||':'||count(hg)||':'||count(kick_off) from app.match")" = '3:1:scheduled:0:0' ] || fail "fixtures: row shape"
+[ "$(q "select count(*)||':'||bool_and(actor = '$A') from app.activity_log where command_id='$(cmd 1990)' and table_name = 'match' and op = 'insert'")" = '3:true' ] \
+  || fail "fixtures: log rows"
+[ "$(sf $A 1991 "$(fx 200 2)")|$(sf $A 1992 "$(fx 100 2)" true)" = 'fixtures_exist|already_exists' ] || fail "fixtures: second list or reused id"
+[ "$(sf $A 1993 "$(fx 200 2)" true)|$(ms)|$(q "select string_agg(id::text, ',' order by ord) from app.match")" = "ok|2|$(mid 201),$(mid 202)" ] || fail "fixtures: replace"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 1993)' and table_name = 'match' and op = 'delete'")" = 3 ] || fail "fixtures: replace log"
+# Leaks: another Tournament sees no Fixture and no log row; anon reads nothing.
+[ "$(as $B "select count(*) from app.match")|$(as $B "select count(*) from app.activity_log where table_name = 'match'")|$(as $A "select count(*) from app.match")" = '0|0|2' ] \
+  || fail "leak: another Tournament reads Fixtures"
+out=$(as anon "select count(*) from app.match" 2>&1 || true)
+[[ $out == *"permission denied"* ]] || fail "leak: anon reads Fixtures: $out"
+# A League needs no Draw.
+q "delete from app.draw_slot where season_id='$S10'; update app.season set structure = 'league' where id='$S10'" >/dev/null
+[ "$(sf $A 1994 "$(fx 300 2)" true)|$(ms)" = 'ok|2' ] || fail "fixtures: League without a Draw"
+# Put the Draw back for the started-Season check below.
+q "update app.season set structure = 'knockout' where id='$S10'" >/dev/null
+for i in 1 2 3 4 5 6 7 8; do
+  q "insert into app.draw_slot (id, tournament_id, season_id, grp, pos, team_id) values (gen_random_uuid(), '$T6', '$S10', 0, $i, '$(dt $i)')" >/dev/null
+done
+
 # After the Season starts the Draw is locked.
 q "update app.season set status = 'started' where id='$S10'" >/dev/null
 [ "$(un $A 1970 1)|$(rnd $A 1971)|$(pl $A 1972 1 0 1)" = 'season_started|season_started|season_started' ] || fail "draw: started Season still changes"
 [ "$(as $A "select count(*) from app.draw_slot")" = 8 ] || fail "draw: a locked Draw changed"
+# The Season has started: Fixtures can't be suggested or replaced.
+[ "$(sf $A 1980 "$(fx 400 3)" true)|$(ms)" = 'season_started|2' ] || fail "fixtures: allowed after start"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

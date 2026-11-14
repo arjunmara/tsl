@@ -52,6 +52,7 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   place_team_in_draw: () => 'Place a Team in the Draw',
   unplace_team_from_draw: () => 'Send a Team back to the chips',
   place_rest_at_random: () => 'Place the rest of the Teams at random',
+  suggest_fixtures: (a) => (a.replace ? 'Replace the suggested Fixtures' : 'Suggest the Fixtures'),
   reopen_registration_link: () => "Reopen a Team's link",
   set_photo: (a) => (a.is_cutout === false ? 'Save a photo with its background' : 'Save a cut-out photo'),
 }

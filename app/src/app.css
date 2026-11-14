@@ -790,3 +790,39 @@
 .draw-chip[draggable="true"] {
   cursor: grab;
 }
+
+/* Match cards (Story 3.2): round above, the two sides in display-md either side of "v", kick-off below, chevron at the end. */
+.fixtures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.match-card {
+  position: relative;
+  width: 100%;
+  min-height: var(--spacing-touch-min);
+  padding-inline-end: var(--spacing-8, 3rem);
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.match-sides {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+}
+.match-side {
+  margin: 0;
+  font-family: var(--display-md-font-family);
+  font-size: var(--display-md-font-size);
+  font-weight: var(--display-md-font-weight);
+  overflow-wrap: anywhere;
+}
+.match-chevron {
+  position: absolute;
+  inset-inline-end: var(--spacing-3);
+  top: 50%;
+  translate: 0 -50%;
+}

@@ -12,7 +12,7 @@ import type { Head } from './Home'
 import { useTeams } from './Teams'
 
 /** The Season's placed Teams with this user's pending placements laid over; reloads as they send and when the signal returns. */
-function useDraw(tournamentId: string, seasonId: string) {
+export function useDraw(tournamentId: string, seasonId: string) {
   const [slots, setSlots] = useState<Slot[] | 'offline' | 'unknown' | null>(null)
   const [attempt, setAttempt] = useState(0)
   const pending = useOutbox().entries.length

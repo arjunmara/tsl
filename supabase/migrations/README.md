@@ -406,3 +406,14 @@ its Organiser-read policy and Activity-log trigger, the Season action `edit_draw
 a taken slot hands back the conflict envelope (Keep theirs / Use mine); a League has no Draw (`no_draw`). Steps: paste
 `0020_chit_draw.sql` into the SQL Editor and run it. Check: as an Organiser, `select count(*) from app.draw_slot` runs
 (0 until a Team is placed).
+
+## Apply 0021_suggested_fixtures.sql (Story 3.2)
+
+Apply after 0020 and before the app deploy with "Suggest fixtures" on the Matches tab (test first, then live). It adds the table
+`app.match` (a Fixture is a Match not yet played: stage, round, label, order, home and away Team or source label such as "A1" or
+"Winner SF1", kick-off, empty score columns) with its member-read policy and Activity-log trigger, the Season action
+`edit_fixtures` (registration only) and the Organiser-only command `suggest_fixtures`. The phone works out the pairings and
+order; the command checks that every Team is an approved Team of the Season and, with a Draw, that the Draw is complete
+(`draw_incomplete`), then inserts the whole list in one go. A second suggestion needs `replace` (`fixtures_exist`). Steps: paste
+`0021_suggested_fixtures.sql` into the SQL Editor and run it. Check: as an Organiser, `select count(*) from app.match` runs
+(0 until Fixtures are suggested).

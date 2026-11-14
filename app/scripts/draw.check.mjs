@@ -229,7 +229,7 @@ try {
     mock.answers.place_team_in_draw = [{ ok: false, code: 'team_not_approved', message: 'No.' }]
     await chip(page, 'RTM').click()
     await slot(page, 'Group A slot 1').click()
-    await text(page, 'Only approved Teams can be placed in the Draw. Reload the page.').waitFor()
+    await text(page, 'Only approved Teams can be in the Draw or have Fixtures. Reload the page.').waitFor()
     await context.close()
   }
 
