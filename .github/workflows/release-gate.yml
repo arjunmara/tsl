@@ -90,3 +90,5 @@ jobs:
         run: npm run check:standings
       - name: Start the tournament (Story 3.5)
         run: npm run check:start
+      - name: Confirm before changes after start (Story 3.6)
+        run: npm run check:confirm

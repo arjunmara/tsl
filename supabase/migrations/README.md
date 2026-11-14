@@ -451,3 +451,17 @@ moves the Season from registration to started (`start_blocked` with the same rea
 non-withdrawn Teams, every one approved, every approved Team in the Draw (a League has none) and the Fixtures published. Nothing
 moves a started Season back. Steps: paste `0024_start_season.sql` into the SQL Editor and run it. Check:
 `select app.start_check('<season id>')` runs as an Organiser (`ready` false with a reason until the Season is ready).
+
+## Apply 0025_confirm_after_start.sql (Story 3.6)
+
+Apply after 0024 and before the app deploy that lets Organisers change Squads and Fixtures after start (test first, then live).
+`app.season_action` gains a `confirm` flag: in a started Season the 11 FR-16 commands (`add_player`, `edit_player`, `remove_player`,
+`add_staff`, `edit_staff`, `remove_staff`, `add_eligibility`, `edit_eligibility`, `set_photo`, `swap_fixtures`, `set_kick_off`) are
+allowed for Organisers only when called with `confirmed => true`; without it they answer `confirmation_required` and change nothing.
+Each gained a `confirmed boolean default false` parameter (old signatures dropped, calls without it work as before; before start it
+changes nothing). `app.season_allows` has a 4-argument form for it, and `app.authorize` passes the target's `confirmed` to it. A
+Registration link still can't change a started Season (`season_started`). `suggest_fixtures` and `publish_fixtures` stay unusable
+after start (they answer `confirmation_required` and have no way to confirm). `set_season_rules` now accepts a description-only change
+after start (Season action `edit_description`); rules and the photo-consent statement stay locked. The Activity log triggers already
+record before, after and actor. Steps: paste `0025_confirm_after_start.sql` into the SQL Editor and run it. Check:
+`select action, status, confirm from app.season_action where confirm;` (2 rows: `edit_squad` and `edit_fixtures`, started).

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { forgetRefused, send, type Upload } from '../../domain/commands'
 import { formatDay, inZone } from '../../domain/format'
 import { removeBackground } from '../../domain/cutout'
@@ -10,13 +10,38 @@ import {
 import { serverNow } from '../../domain/clock'
 import { STAFF_ROLES } from '../../domain/tournaments'
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '../../ui/Button'
+import { ConfirmSheet } from '../../ui/ConfirmSheet'
 import { Field } from '../../ui/Field'
 import { StatusPill } from '../../ui/StatusPill'
 import { blocked, useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
 
 /** Sends one Squad command for the Team (after its file, if any); returns the refusal in words (dropped from the queue), else null. */
-type Run = (name: string, args: Record<string, unknown>, versionOf?: string, upload?: Upload) => Promise<string | null>
+type Run = (name: string, args: Record<string, unknown>, versionOf?: string, upload?: Upload, change?: Ask | 'given') => Promise<string | null>
+/**
+ * What a change says on the Confirm sheet once the Season has started (FR-16): the question, before → after and the button.
+ * 'given' = the caller's own sheet already confirmed it (a removal). Without one, a command is sent as it is.
+ */
+type Ask = { title: string; before: string; after: string; actionLabel: string }
+/** What run answers when the Confirm sheet was cancelled: nothing was sent, and it is not a problem to show. */
+const CANCELLED = ''
+/** Counts the cancelled changes: a field remounts and shows its saved value again. */
+const Revert = createContext(0)
+/** True once the Season has started: the Organiser's changes are confirmed first and logged. */
+const Confirming = createContext(false)
+type Part = [label: string, was: string, now: string]
+const changeAsk = (who: string, parts: Part[]): Ask => parts.length === 1
+  ? { title: `Change ${who}'s ${parts[0]![0]} from ${parts[0]![1]} to ${parts[0]![2]}?`, before: parts[0]![1], after: parts[0]![2],
+    actionLabel: `Change ${who}'s ${parts[0]![0]}` }
+  : { title: `Change ${who}'s details?`, before: parts.map(([l, was]) => `${l} ${was}`).join(', '), after: parts.map(([l, , now]) => `${l} ${now}`).join(', '),
+    actionLabel: `Save ${who}'s changes` }
+const playerAsk = (p: SquadPlayer, args: Record<string, unknown>) => changeAsk(p.name, [
+  ...('name' in args ? [['name', p.name, String(args.name)] as Part] : []),
+  ...('shirt_number' in args ? [['shirt number', String(p.shirtNumber), String(args.shirt_number)] as Part] : []),
+  ...('date_of_birth' in args ? [['date of birth', p.dateOfBirth ? formatDay(p.dateOfBirth) : 'none', formatDay(String(args.date_of_birth))] as Part] : []),
+  ...('consent' in args ? [['photo consent', p.consent ? 'given' : 'not given', args.consent ? 'given' : 'not given'] as Part]
+    : 'given_by' in args ? [['consent name', p.givenBy ?? 'none', String(args.given_by)] as Part] : []),
+])
 const roleLabel = (k: string) => STAFF_ROLES.find(([r]) => r === k)?.[1] ?? k
 const today = () => inZone(serverNow()).date
 const SHIRT = /^\d{1,2}$/
@@ -39,9 +64,22 @@ const fileName = (f: File) => Array.from(f.name.replace(/[\u0000-\u001f\u007f-\u
  */
 export function Squad({ form, reload }: { form: RegistrationForm; reload: () => Promise<void> }) {
   const teamId = form.team.id
-  const run: Run = async (name, args, versionOf, upload) => {
-    const r = await send(name, { team_id: teamId, ...args }, { scope: teamId, ...(versionOf ? { versionOf } : {}), ...(upload ? { upload } : {}) })
+  const confirming = form.seasonStatus === 'started'
+  const [asking, setAsking] = useState<(Ask & { answer: (ok: boolean) => void }) | null>(null)
+  const [reverted, setReverted] = useState(0)
+  const [saved, setSaved] = useState('')
+  const run: Run = async (name, args, versionOf, upload, change) => {
+    setSaved('')
+    // A change to a started Season is asked first; Cancel sends nothing and the field shows its saved value again.
+    const confirmed = confirming && !!change
+    if (confirmed && change !== 'given' && !await new Promise<boolean>((answer) => setAsking({ ...change!, answer }))) {
+      setReverted((n) => n + 1)
+      return CANCELLED
+    }
+    const r = await send(name, { team_id: teamId, ...args },
+      { scope: teamId, ...(confirmed ? { confirmed: true as const } : {}), ...(versionOf ? { versionOf } : {}), ...(upload ? { upload } : {}) })
     void reload()
+    if (confirmed && (r.ok || r.code === 'queued')) setSaved(messages.saved_logged)
     // A conflict waits in the hand-back sheet (Keep theirs / Send mine); any other refusal is said here and dropped.
     if (r.ok || r.code === 'queued' || r.code === 'version_conflict') return null
     if (r.commandId) void forgetRefused(r.commandId)
@@ -50,7 +88,12 @@ export function Squad({ form, reload }: { form: RegistrationForm; reload: () => 
   }
   const { starters, maxBench } = form.rules
   return (
-    <>
+    <Confirming.Provider value={confirming}>
+    <Revert.Provider value={reverted}>
+      {confirming && <p role="status" className="body">{saved}</p>}
+      <ConfirmSheet open={!!asking} title={asking?.title ?? ''} before={asking?.before ?? ''} after={asking?.after ?? ''}
+        actionLabel={asking?.actionLabel ?? 'Confirm this change'} note={messages.logged_note}
+        onConfirm={() => asking?.answer(true)} onClose={() => (asking?.answer(false), setAsking(null))} />
       <section className="card squad">
         <h2 className="body-strong">Players · {form.players.length}</h2>
         {starters !== null && maxBench !== null && (
@@ -64,8 +107,9 @@ export function Squad({ form, reload }: { form: RegistrationForm; reload: () => 
         {form.staff.map((s) => <StaffCard key={s.id} staff={s} form={form} run={run} />)}
         <AddStaff form={form} run={run} />
       </section>
-      <Submit form={form} run={run} />
-    </>
+      {!confirming && <Submit form={form} run={run} />}
+    </Revert.Provider>
+    </Confirming.Provider>
   )
 }
 
@@ -112,9 +156,14 @@ function AddPlayer({ form, run }: { form: RegistrationForm; run: Run }) {
     const id = crypto.randomUUID()
     await noteNew(id)
     const name = v['player-name']!
+    const n = form.players.length
+    const code = form.team.code
     const p = await run('add_player', { player_id: id, name, shirt_number: Number(v['shirt-number']), date_of_birth: v['date-of-birth'],
-      consent, ...(consent ? { given_by: v['given-by'] } : {}) })
+      consent, ...(consent ? { given_by: v['given-by'] } : {}) }, undefined, undefined,
+    { title: `Add ${name} to ${code}?`, before: `${code} has ${n} Players`, after: `${code} has ${n + 1} Players, with ${name} #${v['shirt-number']}`,
+      actionLabel: `Add ${name}` })
     setBusy(false)
+    if (p === CANCELLED) return
     if (p) return setProblem(p)
     setNotice(`${name} added.`)
     setDob('')
@@ -143,12 +192,22 @@ function AddPlayer({ form, run }: { form: RegistrationForm; run: Run }) {
 
 /** One Player: a summary line that opens the card; each field saves on leaving it. */
 function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: RegistrationForm; run: Run }) {
+  const confirming = useContext(Confirming)
   const [problem, setProblem] = useState<string | null>(null)
   const [consent, setConsent] = useState(p.consent)
   const [prop, setProp] = useState(p.consent)
   const [missing, setMissing] = useState(false)
   // A new date of birth that makes a consenting adult a minor waits for the guardian's name; both go in one change.
   const [heldDob, setHeldDob] = useState<string | null>(null)
+  // A cancelled change puts the tick and the held date back to what is saved.
+  const rev = useContext(Revert)
+  const [seen, setSeen] = useState(rev)
+  if (seen !== rev) {
+    setSeen(rev)
+    setConsent(p.consent)
+    setMissing(false)
+    setHeldDob(null)
+  }
   // A new read replaces the tick, unless the person ticked it and still owes the name.
   if (p.consent !== prop) {
     setProp(p.consent)
@@ -161,7 +220,7 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
     setHeldDob(null)
     void save({ date_of_birth })
   }
-  const save = async (args: Record<string, unknown>) => setProblem(await run('edit_player', { player_id: p.id, ...args }, p.id))
+  const save = async (args: Record<string, unknown>) => setProblem(await run('edit_player', { player_id: p.id, ...args }, p.id, undefined, playerAsk(p, args)))
 
   function tick(v: boolean) {
     setConsent(v)
@@ -177,14 +236,14 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
         <span className="body-strong">{p.name} · #{p.shirtNumber}</span>
         <span className="meta"> {consentLine(p)} · {documentLine(p)}</span>
       </summary>
-      <Field label="Player's name" value={p.name} onSave={(name) => void save({ name })} required requiredMessage={messages.player_name_required}
+      <Field key={`name${rev}`} label="Player's name" value={p.name} onSave={(name) => void save({ name })} required requiredMessage={messages.player_name_required}
         validate={checkName} autoComplete="off" />
-      <Field label="Shirt number" value={String(p.shirtNumber)} onSave={(v) => void save({ shirt_number: Number(v) })} required
+      <Field key={`shirt${rev}`} label="Shirt number" value={String(p.shirtNumber)} onSave={(v) => void save({ shirt_number: Number(v) })} required
         requiredMessage={messages.shirt_required} validate={shirtCheck(form.players, p.id)} inputMode="numeric" autoComplete="off" />
-      <Field label="Date of birth" type="date" value={p.dateOfBirth} onSave={saveDob} required
+      <Field key={`dob${rev}`} label="Date of birth" type="date" value={p.dateOfBirth} onSave={saveDob} required
         requiredMessage={messages.dob_required} validate={checkDob} min="1940-01-01" max={today()} hint={formatDay} />
       <ConsentBox form={form} checked={consent} onChange={tick} />
-      {consent && <Field key={heldDob ? 'guardian' : 'giver'} label={who.label} value={p.consent && !heldDob ? p.givenBy ?? '' : ''} required
+      {consent && <Field key={`${heldDob ? 'guardian' : 'giver'}${rev}`} label={who.label} value={p.consent && !heldDob ? p.givenBy ?? '' : ''} required
         requiredMessage={who.requiredMessage} validate={checkName} showErrors={missing} autoComplete="off"
         onSave={(given_by) => (setMissing(false), setHeldDob(null),
           void save({ consent: true, given_by, ...(heldDob ? { date_of_birth: heldDob } : {}) }))} />}
@@ -193,7 +252,8 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
       <EligibilityProof player={p} form={form} run={run} />
       <DestructiveButton label="Remove from the Squad" accessibleLabel={`Remove ${p.name} from the Squad`} sheetTitle={`Remove ${p.name}?`}
         before={`${p.name} in the Squad`} after="Removed, with their details" actionLabel={`Remove ${p.name}`}
-        onConfirm={() => void run('remove_player', { player_id: p.id }, p.id).then(setProblem)} />
+        note={confirming ? messages.logged_note : undefined}
+        onConfirm={() => void run('remove_player', { player_id: p.id }, p.id, undefined, 'given').then(setProblem)} />
       {form.organiser && hasPersonal(p) && (
         <DestructiveButton label="Delete personal details" accessibleLabel={`Delete personal details of ${p.name}`}
           sheetTitle={`Delete ${p.name}'s personal details?`}
@@ -229,12 +289,17 @@ function EligibilityProof({ player: p, form, run }: { player: SquadPlayer; form:
   async function store(fields: Record<string, unknown>, upload?: Upload) {
     setProblem(null)
     const id = e?.id ?? created.current
-    if (id) return setProblem(await run('edit_eligibility', { player_id: p.id, ...fields }, id, upload))
+    const ask = changeAsk(p.name, [
+      ...('document_type' in fields ? [['document type', documentLabel(e?.documentType ?? null) || 'none', documentLabel(String(fields.document_type)) || 'none'] as Part] : []),
+      ...('document_number' in fields ? [['document number', e?.documentNumber || 'none', String(fields.document_number) || 'none'] as Part] : []),
+      ...('scan_name' in fields ? [['document scan', e?.scanName ?? 'none', String(fields.scan_name)] as Part] : []),
+    ])
+    if (id) return setProblem(await run('edit_eligibility', { player_id: p.id, ...fields }, id, upload, ask))
     const recordId = crypto.randomUUID()
     created.current = recordId
     await noteNew(recordId)
-    const refused = await run('add_eligibility', { player_id: p.id, record_id: recordId, ...fields }, undefined, upload)
-    if (refused) created.current = null
+    const refused = await run('add_eligibility', { player_id: p.id, record_id: recordId, ...fields }, undefined, upload, ask)
+    if (refused !== null) created.current = null
     setProblem(refused)
   }
 
@@ -316,6 +381,7 @@ const numberWord = (t: string | null) => (t === 'emis' ? 'EMIS number' : `${docu
  * "Mark verified" sends verify_eligibility (versioned); a paper-sheet record without a scan can be verified too.
  */
 function ScanViewer({ player: p, record: e, run }: { player: SquadPlayer; record: Eligibility; run: Run }) {
+  const confirming = useContext(Confirming)
   const [url, setUrl] = useState<string | null>(null)
   const [full, setFull] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -357,7 +423,7 @@ function ScanViewer({ player: p, record: e, run }: { player: SquadPlayer; record
       {(url || !e.scanPath) && e.documentNumber && (
         <>
           <p className="body">Document number: <span className="body-strong">{e.documentNumber}</span></p>
-          <PrimaryButton label="Mark verified" onClick={() => void verify()} {...blocked(busy && 'Saving…')} />
+          {!confirming && <PrimaryButton label="Mark verified" onClick={() => void verify()} {...blocked(busy && 'Saving…')} />}
         </>
       )}
       <Problem text={problem} />
@@ -413,6 +479,14 @@ function PhotoSection({ id, name, photo, form, run }: { id: string; name: string
   const [problem, setProblem] = useState<string | null>(null)
   const picked = useRef<HTMLCanvasElement | null>(null)
   const inputId = useId()
+  // A cancelled change shows the saved photo again.
+  const rev = useContext(Revert)
+  const [seen, setSeen] = useState(rev)
+  if (seen !== rev) {
+    setSeen(rev)
+    setPreview((old) => (old && URL.revokeObjectURL(old), null))
+    picked.current = null
+  }
   const show = (blob: Blob | null) => setPreview((old) => {
     if (old) URL.revokeObjectURL(old)
     return blob && URL.createObjectURL(blob)
@@ -460,7 +534,8 @@ function PhotoSection({ id, name, photo, form, run }: { id: string; name: string
     show(blob)
     const path = `${form.team.tournamentId}/${form.team.id}/${id}/${crypto.randomUUID()}.webp`
     const refused = await run('set_photo', { person_id: id, photo_path: path, is_cutout: cutout }, id,
-      { bucket: photoBucket, path, blob, contentType: blob.type || 'image/webp', upsert: false })
+      { bucket: photoBucket, path, blob, contentType: blob.type || 'image/webp', upsert: false },
+      changeAsk(name, [['photo', photo ? 'the current photo' : 'no photo', 'the new photo']]))
     // Refused (upload or command): the stored photo, if any, shows again.
     if (refused) show(null)
     picked.current = null
@@ -530,8 +605,12 @@ function AddStaff({ form, run }: { form: RegistrationForm; run: Run }) {
     setProblem(null)
     const id = crypto.randomUUID()
     await noteNew(id)
-    const p = await run('add_staff', { staff_id: id, name: v['staff-name'], role: picked })
+    const code = form.team.code
+    const p = await run('add_staff', { staff_id: id, name: v['staff-name'], role: picked }, undefined, undefined,
+      { title: `Add ${v['staff-name']} to ${code}?`, before: `${code} has ${form.staff.length} Staff`,
+        after: `${code} has ${form.staff.length + 1} Staff, with ${v['staff-name']} as ${roleLabel(picked)}`, actionLabel: `Add ${v['staff-name']}` })
     setBusy(false)
+    if (p === CANCELLED) return
     if (p) return setProblem(p)
     setNotice(`${v['staff-name']} added as ${roleLabel(picked)}.`)
     setKey((n) => n + 1)
@@ -552,7 +631,12 @@ function AddStaff({ form, run }: { form: RegistrationForm; run: Run }) {
 
 function StaffCard({ staff: s, form, run }: { staff: StaffMember; form: RegistrationForm; run: Run }) {
   const [problem, setProblem] = useState<string | null>(null)
-  const save = async (args: Record<string, unknown>) => setProblem(await run('edit_staff', { staff_id: s.id, ...args }, s.id))
+  const rev = useContext(Revert)
+  const confirming = useContext(Confirming)
+  const save = async (args: Record<string, unknown>) => setProblem(await run('edit_staff', { staff_id: s.id, ...args }, s.id, undefined, changeAsk(s.name, [
+    ...('name' in args ? [['name', s.name, String(args.name)] as Part] : []),
+    ...('role' in args ? [['role', roleLabel(s.role), roleLabel(String(args.role))] as Part] : []),
+  ])))
   // A role the rules no longer allow still shows, so the person sees what to change.
   const roles = form.rules.staffRoles.includes(s.role) ? form.rules.staffRoles : [s.role, ...form.rules.staffRoles]
   return (
@@ -561,14 +645,15 @@ function StaffCard({ staff: s, form, run }: { staff: StaffMember; form: Registra
         <span className="body-strong">{s.name}</span>
         <span className="meta"> {roleLabel(s.role)}</span>
       </summary>
-      <Field label="Staff member's name" value={s.name} onSave={(name) => void save({ name })} required
+      <Field key={rev} label="Staff member's name" value={s.name} onSave={(name) => void save({ name })} required
         requiredMessage={messages.staff_name_required} validate={checkName} autoComplete="off" />
       <RoleSelect roles={roles} value={s.role} onChange={(role) => void save({ role })} />
       <Problem text={problem} />
       <PhotoSection id={s.id} name={s.name} photo={s.photo} form={form} run={run} />
       <DestructiveButton label="Remove from the Staff" accessibleLabel={`Remove ${s.name} from the Staff`} sheetTitle={`Remove ${s.name}?`}
         before={`${s.name}, ${roleLabel(s.role)}`} after="Removed from the Staff" actionLabel={`Remove ${s.name}`}
-        onConfirm={() => void run('remove_staff', { staff_id: s.id }, s.id).then(setProblem)} />
+        note={confirming ? messages.logged_note : undefined}
+        onConfirm={() => void run('remove_staff', { staff_id: s.id }, s.id, undefined, 'given').then(setProblem)} />
     </details>
   )
 }

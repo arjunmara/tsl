@@ -79,6 +79,9 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
     useSensor(TouchSensor, { activationConstraint: { distance: 8 } }), useSensor(KeyboardSensor))
   const league = h.season.structure.structure === 'league'
   const editable = h.season.status === 'registration'
+  const started = h.season.status === 'started'
+  // After start an Organiser can still rearrange the Fixtures, each swap confirmed first (Story 3.6).
+  const [asking, setAsking] = useState<{ title: string; before: string; after: string; go: () => void } | null>(null)
 
   // After a Move up / Move down the card sits somewhere else in the list; put focus back on its button.
   useEffect(() => {
@@ -118,9 +121,10 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
   }
 
   /** Sends one edit through the outbox. A conflict goes to the hand-back sheet; any other refusal is said here. */
-  async function edit(name: string, args: Record<string, unknown>) {
+  async function edit(name: string, args: Record<string, unknown>, confirmed = false) {
     setProblem(null)
-    const r = await send(name, { season_id: h.season.id, ...args }, { scope: tournamentId })
+    const r = await send(name, { season_id: h.season.id, ...args }, { scope: tournamentId, ...(confirmed ? { confirmed: true as const } : {}) })
+    if (confirmed && (r.ok || r.code === 'queued')) setNotice(messages.moved_logged)
     if (!r.ok && r.code !== 'queued' && r.code !== 'version_conflict') {
       if (r.commandId) void forgetRefused(r.commandId)
       setProblem(messageFor(r.code))
@@ -130,7 +134,16 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
       inflight.current = false
     }
   }
-  const swap = (a: Match, b: Match) => inflight.current ? undefined : (inflight.current = true, edit('swap_fixtures', { match_a: a.id, version_a: a.version, match_b: b.id, version_b: b.version }))
+  const doSwap = (a: Match, b: Match, confirmed: boolean) => inflight.current ? undefined
+    : (inflight.current = true, setNotice(''), edit('swap_fixtures', { match_a: a.id, version_a: a.version, match_b: b.id, version_b: b.version }, confirmed))
+  const swap = (a: Match, b: Match) => {
+    if (inflight.current) return
+    if (!started) return doSwap(a, b, false)
+    const [na, nb] = [pairName(a), pairName(b)]
+    const [pa, pb] = [matches.indexOf(a) + 1, matches.indexOf(b) + 1]
+    setAsking({ title: `Swap ${na} and ${nb}?`, before: `${na} is Match ${pa}, ${nb} is Match ${pb}`, after: `${nb} is Match ${pa}, ${na} is Match ${pb}`,
+      go: () => void doSwap(a, b, true) })
+  }
   const move = (i: number, dir: 'up' | 'down') => {
     if (inflight.current) return
     moved.current = { id: matches[i]!.id, dir, idx: i }
@@ -153,13 +166,18 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
     reload()
   }
 
+  const sides = new Map((standings.data?.sides ?? []).map((x) => [x.matchId, x]))
+  const pairName = (m: Match) => {
+    const s = sides.get(m.id)
+    return `${sideText(s ? s.homeTeamId : m.homeTeamId, m.homeSrc, byId)} v ${sideText(s ? s.awayTeamId : m.awayTeamId, m.awaySrc, byId)}`
+  }
   const waiting = pending > 0
   const missing = matches.filter((m) => !m.kickOff).length
-  const action = !editable || !h.season.structure.structure ? null : matches.length ? (
+  const action = !(editable || started) || !h.season.structure.structure ? null : matches.length ? (
     <>
       {arranging ? <PrimaryButton label="Finish arranging" onClick={() => (moved.current = null, setArranging(false))} />
         : <SecondaryButton label="Arrange fixtures" onClick={() => setArranging(true)} />}
-      {!published && (!online ? <><p className="meta">Suggesting fixtures needs a signal.</p><p className="meta">Publishing fixtures needs a signal.</p></> : (
+      {editable && !published && (!online ? <><p className="meta">Suggesting fixtures needs a signal.</p><p className="meta">Publishing fixtures needs a signal.</p></> : (
         <>
           <SecondaryButton label="Suggest fixtures again" onClick={() => setConfirm(true)} />
           {waiting ? <PrimaryButton label="Publish fixtures" disabled disabledReason="Waiting for your changes to send." />
@@ -176,7 +194,6 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
     <PrimaryButton label="Suggest fixtures" disabled disabledReason={league ? 'Approve at least two Teams first.' : 'Record the whole draw first.'} />
   )
 
-  const sides = new Map((standings.data?.sides ?? []).map((x) => [x.matchId, x]))
   const card = (m: Match, i: number) => {
     const s = sides.get(m.id)
     const home = sideText(s ? s.homeTeamId : m.homeTeamId, m.homeSrc, byId)
@@ -233,6 +250,9 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
       {league ? (!matches.length && !editable && <p className="body">{fallback}</p>)
         : ((editable && !published) || !matches.length) && <Draw tournamentId={tournamentId} head={h} fallback={fallback} />}
       {league && !matches.length && editable && !ready && <p className="body">{fallback}</p>}
+      <ConfirmSheet open={!!asking} title={asking?.title ?? ''} before={asking?.before ?? ''} after={asking?.after ?? ''}
+        actionLabel="Swap these two Fixtures" note={messages.logged_note} onConfirm={() => asking?.go()}
+        onClose={() => (inflight.current || (moved.current = null), setAsking(null))} />
       <ConfirmSheet open={confirm} title={`Replace the ${matches.length} suggested Fixtures?`} before={`${matches.length} suggested Fixtures`}
         after="a new suggestion" actionLabel="Replace the Fixtures" destructive onConfirm={() => void suggest(true)} onClose={() => setConfirm(false)} />
     </div>

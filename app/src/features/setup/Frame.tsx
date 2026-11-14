@@ -7,7 +7,7 @@ export const STEPS = ['Name & logo', 'Description & rules', 'Dates', 'Format', '
 
 /** True when a wizard step is shown as a Settings section: no Next, no step progress, Back returns to Settings. */
 export const SettingsMode = createContext(false)
-/** True once the Season has started: steps 2 to 6 (rules, dates, Format, Line-up rules, Structure) lock; name, logo and Sponsors stay open. */
+/** True once the Season has started: steps 2 to 6 (rules, dates, Format, Line-up rules, Structure) lock, but the description in step 2 saves; name, logo and Sponsors stay open. */
 export const SeasonStarted = createContext(false)
 
 /** Where Back goes from this step: the previous step (step 1: My tournaments), or Settings in a Settings section. */
@@ -29,12 +29,14 @@ export function Frame({ step, onBack, onNext, backLabel, nextLabel = 'Next', chi
 }) {
   const settings = useContext(SettingsMode)
   const locked = useContext(SeasonStarted) && step >= 2 && step <= 6
+  // Step 2 stays open for the description alone (its rules and consent statement lock inside the step).
+  const wholeStep = locked && step !== 2
   if (settings) {
     return (
       <main className="wizard" onSubmitCapture={(e) => (e.preventDefault(), e.stopPropagation())}>
         <h1 className="title">Settings · {STEPS[step - 1]}</h1>
-        {locked && <p className="body">{messages.season_started}</p>}
-        <fieldset disabled={locked} className="wizard-fields">{children}</fieldset>
+        {locked && <p className="body">{step === 2 ? messages.rules_locked : messages.season_started}</p>}
+        <fieldset disabled={wholeStep} className="wizard-fields">{children}</fieldset>
         <div className="wizard-bar">
           <div className="wizard-bar-inner">
             <SecondaryButton label={backLabel ?? 'Back to settings'} onClick={onBack} />

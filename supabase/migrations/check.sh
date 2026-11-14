@@ -1925,8 +1925,8 @@ q "update app.season set status = 'started' where id='$S10'" >/dev/null
 [ "$(un $A 1970 1)|$(rnd $A 1971)|$(pl $A 1972 1 0 1)" = 'season_started|season_started|season_started' ] || fail "draw: started Season still changes"
 [ "$(as $A "select count(*) from app.draw_slot")" = 8 ] || fail "draw: a locked Draw changed"
 # The Season has started: Fixtures can't be suggested or replaced.
-[ "$(sf $A 1980 "$(fx 400 3)" true)|$(ms)" = 'season_started|2' ] || fail "fixtures: allowed after start"
-[ "$(sw $A 2040 $M1 6 $M2 5)|$(ko $A 2041 $M1 6 '2026-11-13 10:00+05:45')|$(pub $A 2042)" = 'season_started|season_started|season_started' ] || fail "fixtures: arranged after start"
+[ "$(sf $A 1980 "$(fx 400 3)" true)|$(ms)" = 'confirmation_required|2' ] || fail "fixtures: allowed after start"
+[ "$(sw $A 2040 $M1 6 $M2 5)|$(ko $A 2041 $M1 6 '2026-11-13 10:00+05:45')|$(pub $A 2042)" = 'confirmation_required|confirmation_required|confirmation_required' ] || fail "fixtures: arranged after start without confirming"
 
 # --- Standings and knockout progression (Story 3.4). A organises T7 (S11: 2 groups of 3, X1..X3 in Group A, X4..X6 in Group B,
 # semi-finals A1 v B2 and B1 v A2, then the Final); B and G1 do not. Results are seeded with SQL: no command writes a score yet.
@@ -2112,7 +2112,7 @@ r1=$(as $A "select app.start_season('$(cmd 2311)', '$S13')")
   || fail "start: log row"
 [ "$(ss $A 2312)" = season_started ] || fail "start: twice"
 [ "$(tc $A "place_team_in_draw('$(cmd 2313)', '$S13', '$(sid 2313)', '$(yt 1)', 1, 1)")|$(tc $A "unplace_team_from_draw('$(cmd 2314)', '$S13', '$(yt 1)')")|$(tc $A "publish_fixtures('$(cmd 2315)', '$S13')")" \
-  = 'season_started|season_started|season_started' ] || fail "start: Draw or Fixtures still editable"
+  = 'season_started|season_started|confirmation_required' ] || fail "start: Draw or Fixtures still editable"
 [ "$(tc $A "set_lineup_rules('$(cmd 2316)', '$S13', 1, 5, 5)")" = season_started ] || fail "start: setup still editable"
 # Nothing moves a started Season back.
 out=$(q "update app.season set status = 'registration' where id='$S13'" 2>&1 || true)
@@ -2124,6 +2124,83 @@ q "update app.season set structure = 'league', status = 'registration', fixtures
    insert into app.team (id, tournament_id, season_id, name, code, status) values ('$(yt 21)', '$T10', '$S14', 'L1', 'L1', 'approved'), ('$(yt 22)', '$T10', '$S14', 'L2', 'L2', 'approved')" >/dev/null
 [ "$(as $A "select app.start_check('$S14')->>'reason'")" = 'Ready to start: 2 Teams approved.' ] || fail "start_check: League text"
 [ "$(tc $A "start_season('$(cmd 2321)', '$S14')")" = ok ] || fail "start: League"
+
+# --- Confirm before changes after start (Story 3.6, FR-16). A organises T5 (S6 started, Team Z) and T1 (S9 started) and S10's
+# Fixtures M1, M2 (started above). Every Squad and Fixture command needs confirmed => true once the Season has started; a
+# Registration link never passes (season_started); other Tournaments' Organisers are refused; rules text stays locked.
+ZP=91111111-0000-4000-8000-0000000000a8 ZS=a1111111-0000-4000-8000-0000000000a8 ZR=b2111111-0000-4000-8000-0000000000a8
+ZV=c2111111-0000-4000-8000-0000000000a8
+zn() { q "select count(*) from app.squad_entry where team_id='$Z'"; }
+zsh() { q "select shirt_number from app.squad_entry where player_id='$ZP'"; }
+n0=$(zn)
+addp() { tc $A "add_player('$(cmd "$1")', '$Z', '$ZP', 'Ram Thapa', 7, '$grown', false$2)"; }
+[ "$(addp 2401 '')|$(zn)" = "confirmation_required|$n0" ] || fail "confirm: Player added unconfirmed: $(addp 2401 '')"
+[ "$(addp 2401 ', confirmed => false')|$(zn)" = "confirmation_required|$n0" ] || fail "confirm: Player added with confirmed false"
+[ "$(addp 2402 ', confirmed => true')|$(zn)" = "ok|$((n0 + 1))" ] || fail "confirm: Player not added once confirmed"
+[ "$(addp 2402 ', confirmed => true')|$(zn)" = "ok|$((n0 + 1))" ] || fail "confirm: confirmed replay added again"
+[ "$(q "select count(*)||':'||bool_and(actor = '$A') from app.activity_log where command_id='$(cmd 2402)' and table_name = 'squad_entry' and op = 'insert'")" = '1:true' ] \
+  || fail "confirm: add not logged with the actor"
+ep2() { tc $A "edit_player('$(cmd "$1")', '$Z', '$ZP', $(pv $ZP), shirt_number => $2$3)"; }
+[ "$(ep2 2403 9 '')|$(zsh)" = "confirmation_required|7" ] || fail "confirm: shirt changed unconfirmed"
+[ "$(ep2 2404 9 ', confirmed => true')|$(zsh)" = "ok|9" ] || fail "confirm: shirt not changed once confirmed"
+[ "$(q "select (before->>'shirt_number')||'>'||(after->>'shirt_number')||':'||(actor = '$A')::text from app.activity_log where command_id='$(cmd 2404)' and table_name = 'squad_entry' and op = 'update'")" = '7>9:true' ] \
+  || fail "confirm: shirt change log row"
+zst() { tc $A "$1('$(cmd "$2")', '$Z', $3$4)"; }
+sc() { q "select count(*) from app.staff where team_id='$Z'"; }
+s0=$(sc)
+[ "$(zst add_staff 2405 "'$ZS', 'Hari Rana', 'coach'" '')|$(sc)" = "confirmation_required|$s0" ] || fail "confirm: Staff added unconfirmed"
+[ "$(zst add_staff 2406 "'$ZS', 'Hari Rana', 'coach'" ', confirmed => true')|$(sc)" = "ok|$((s0 + 1))" ] || fail "confirm: Staff not added once confirmed"
+sv() { q "select version from app.staff where id='$ZS'"; }
+[ "$(zst edit_staff 2407 "'$ZS', $(sv), name => 'Hari R'" '')|$(zst edit_staff 2408 "'$ZS', $(sv), name => 'Hari R'" ', confirmed => true')|$(q "select name from app.staff where id='$ZS'")" \
+  = 'confirmation_required|ok|Hari R' ] || fail "confirm: edit_staff"
+[ "$(zst add_eligibility 2409 "'$ZP', '$ZR', 'passport', 'N1234567'" '')|$(zst add_eligibility 2410 "'$ZP', '$ZR', 'passport', 'N1234567'" ', confirmed => true')" = 'confirmation_required|ok' ] \
+  || fail "confirm: add_eligibility"
+[ "$(zst edit_eligibility 2411 "'$ZP', 1, document_number => 'N7654321'" '')|$(zst edit_eligibility 2412 "'$ZP', 1, document_number => 'N7654321'" ', confirmed => true')" = 'confirmation_required|ok' ] \
+  || fail "confirm: edit_eligibility"
+ph="'$T5/$Z/$ZP/$ZV.webp', true"
+[ "$(zst set_photo 2413 "'$ZP', $(pv $ZP), $ph" '')|$(zst set_photo 2414 "'$ZP', $(pv $ZP), $ph" ', confirmed => true')" = 'confirmation_required|ok' ] || fail "confirm: set_photo"
+[ "$(zst remove_staff 2415 "'$ZS', $(sv)" '')|$(sc)" = "confirmation_required|$((s0 + 1))" ] || fail "confirm: Staff removed unconfirmed"
+[ "$(zst remove_staff 2416 "'$ZS', $(sv)" ', confirmed => true')|$(sc)" = "ok|$s0" ] || fail "confirm: Staff not removed once confirmed"
+[ "$(zst remove_player 2417 "'$ZP', $(pv $ZP)" '')|$(zn)" = "confirmation_required|$((n0 + 1))" ] || fail "confirm: Player removed unconfirmed"
+[ "$(zst remove_player 2418 "'$ZP', $(pv $ZP)" ', confirmed => true')|$(zn)" = "ok|$n0" ] || fail "confirm: Player not removed once confirmed"
+# Another Tournament's Organiser, a Registration link and anon never pass, confirmed or not; a link says season_started.
+addp2() { tc $1 "add_player('$(cmd "$2")', '$Z', '$ZP', 'Ram Thapa', 7, '$grown', false, confirmed => $3)"; }
+for c in true false; do
+  [ "$(addp2 $B 2420 $c)" = not_authorized ] || fail "leak: another Tournament's Organiser added a Player (confirmed $c)"
+  [ "$(addp2 $G3 2421 $c)" = season_started ] || fail "confirm: Registration link changed a started Season (confirmed $c)"
+  redo 2420; redo 2421
+done
+for f in "add_player('$(cmd 2422)', '$Z', '$ZP', 'x', 7, '$grown', false, confirmed => true)" "set_kick_off('$(cmd 2422)', '$S10', '$M1', 1, now(), confirmed => true)"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+[ "$(zn)|$(q "select count(*) from app.player where id='$ZP'")" = "$n0|0" ] || fail "confirm: a refused command wrote"
+# Before start nothing changes: a command carrying confirmed behaves as without it (S5 is in registration).
+[ "$(tc $A "add_player('$(cmd 2423)', '$X', '$ZP', 'Pre Start', 31, '$grown', false)")|$(tc $A "edit_player('$(cmd 2424)', '$X', '$ZP', $(pv $ZP), shirt_number => 32, confirmed => true)")" = 'ok|ok' ] \
+  || fail "confirm: registration needs no confirmation"
+# Fixtures: M1 and M2 in S10 (started).
+mv() { q "select version from app.match where id='$1'"; }
+kick() { q "select kick_off from app.match where id='$M1'"; }
+k0=$(kick)
+[ "$(ko $A 2430 $M1 $(mv $M1) '2026-11-13 09:30+05:45')|$(kick)" = "confirmation_required|$k0" ] || fail "confirm: kick-off moved unconfirmed"
+kc() { tc $A "set_kick_off('$(cmd "$1")', '$S10', '$M1', $(mv $M1), '2026-11-13 09:30+05:45'::timestamptz, confirmed => true)"; }
+[ "$(kc 2431)|$(kick)" = "ok|2026-11-13 03:45:00+00" ] || fail "confirm: kick-off not moved once confirmed: $(kick)"
+[ "$(q "select count(*)||':'||bool_and(actor = '$A' and (before->>'kick_off') is distinct from (after->>'kick_off')) from app.activity_log where command_id='$(cmd 2431)' and table_name = 'match' and op = 'update'")" = '1:true' ] \
+  || fail "confirm: kick-off log row"
+o1=$(q "select ord from app.match where id='$M1'")
+[ "$(sw $A 2432 $M1 $(mv $M1) $M2 $(mv $M2))|$(q "select ord from app.match where id='$M1'")" = "confirmation_required|$o1" ] || fail "confirm: swapped unconfirmed"
+[ "$(tc $A "swap_fixtures('$(cmd 2433)', '$S10', '$M1', $(mv $M1), '$M2', $(mv $M2), confirmed => true)")|$(q "select ord from app.match where id='$M1'")" != "ok|$o1" ] \
+  || fail "confirm: swap not applied once confirmed"
+for who in $B $G1; do
+  [ "$(tc $who "set_kick_off('$(cmd 2434)', '$S10', '$M1', $(mv $M1), now(), confirmed => true)")" = not_authorized ] || fail "leak: $who moved a kick-off after start"
+  redo 2434
+done
+# The description alone can change after start (S10, started); rules and the photo-consent statement stay locked.
+[ "$(rules $A 2440 $S10 $(q "select version from app.season where id='$S10'") "description => 'Open for all'")|$(q "select description from app.season where id='$S10'")" = 'ok|Open for all' ] \
+  || fail "description: refused after start"
+[ "$(rules $A 2441 $S10 $(q "select version from app.season where id='$S10'") "rules => 'x'")|$(rules $A 2442 $S10 $(q "select version from app.season where id='$S10'") "description => 'y', photo_consent => 'z'")" \
+  = 'season_started|season_started' ] || fail "description: rules or consent changed after start"
+[ "$(rules $B 2443 $S10 $(q "select version from app.season where id='$S10'") "description => 'Stolen'")" = not_authorized ] || fail "leak: description changed by another Tournament's Organiser"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

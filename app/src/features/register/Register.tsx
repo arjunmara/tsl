@@ -171,17 +171,23 @@ function TeamForm({ initial, hash }: { initial: RegistrationForm; hash: string }
 
 /** The Team, Squad and Staff as text: no inputs, no date of birth. */
 export function ClosedTeam({ form }: { form: RegistrationForm }) {
-  const t = form.team
   return (
     <>
-      <section className="card">
-        <h2 className="body-strong">{t.name}</h2>
-        <StatusPill state={t.status === 'approved' ? 'done' : 'pending'} label={teamStatusLabel[t.status]} />
-        <p className="body">Team code {t.code}</p>
-        <p className="body register-kit">{t.kitColour ? <>Kit colour <KitDot colour={t.kitColour} /></> : 'No kit colour yet'}</p>
-      </section>
+      <TeamCard form={form} />
       <ClosedSquad form={form} />
     </>
+  )
+}
+
+function TeamCard({ form }: { form: RegistrationForm }) {
+  const t = form.team
+  return (
+    <section className="card">
+      <h2 className="body-strong">{t.name}</h2>
+      <StatusPill state={t.status === 'approved' ? 'done' : 'pending'} label={teamStatusLabel[t.status]} />
+      <p className="body">Team code {t.code}</p>
+      <p className="body register-kit">{t.kitColour ? <>Kit colour <KitDot colour={t.kitColour} /></> : 'No kit colour yet'}</p>
+    </section>
   )
 }
 
@@ -218,6 +224,8 @@ export function TeamEditor({ form, setForm, load }: {
     void reload()
   }
 
+  // A started Season: the Team's own details are fixed; only the Squad changes, each change confirmed first.
+  if (form.seasonStatus === 'started') return <><TeamCard form={form} /><Squad form={form} reload={reload} /></>
   return (
     <>
       <section className="card">

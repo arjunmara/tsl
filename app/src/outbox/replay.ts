@@ -62,7 +62,8 @@ async function pass(): Promise<'done' | 'retry'> {
       }
       // A versioned edit sends the base version as it is now (unknown base: null, which the server answers as a conflict).
       const args = e.versionOf ? { ...e.args, expected_version: (await db.versions.get(e.versionOf))?.version ?? null } : e.args
-      return c.run(e.name, args, e.commandId, e.enteredAt)
+      // A confirmed entry sends its confirmation with every attempt, so it replays without asking again.
+      return c.run(e.name, e.confirmed ? { ...args, confirmed: true } : args, e.commandId, e.enteredAt)
     })().finally(() => on.sending(false))
     if (r.ok) {
       await db.transaction('rw', db.entries, db.versions, async () => {

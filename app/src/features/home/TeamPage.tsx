@@ -147,9 +147,10 @@ function TeamSheet({ tournamentId, seasonId, teamId }: { tournamentId: string; s
       </>
     )
   }
-  return (form.seasonStatus === 'setup' || form.seasonStatus === 'registration') && form.team.status !== 'withdrawn' ? (
+  // After start an Organiser still fixes the Squad, each change confirmed first (Story 3.6); a withdrawn Team stays text.
+  return (form.seasonStatus === 'setup' || form.seasonStatus === 'registration' || form.seasonStatus === 'started') && form.team.status !== 'withdrawn' ? (
     <>
-      <Reopen form={form} tournamentId={tournamentId} done={() => setAttempt((n) => n + 1)} />
+      {form.seasonStatus !== 'started' && <Reopen form={form} tournamentId={tournamentId} done={() => setAttempt((n) => n + 1)} />}
       <Editor key={attempt} initial={form} load={async () => { const f = await load(seasonId, teamId); return typeof f === 'string' ? null : f }} />
     </>
   ) : <ClosedTeam form={form} />

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useContext, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { send } from '../../domain/commands'
 import { BS_RANGE, formatDate, toBs } from '../../domain/format'
@@ -6,7 +6,7 @@ import { messages } from '../../domain/messages'
 import type { SeasonAnswers } from '../../domain/tournaments'
 import { Field } from '../../ui/Field'
 import { useForm } from '../auth/form'
-import { Frame, useLeave } from './Frame'
+import { Frame, SeasonStarted, useLeave } from './Frame'
 
 type Props = { tournamentId: string; seasonId: string; initial: SeasonAnswers }
 type Key = keyof SeasonAnswers
@@ -59,14 +59,18 @@ const RULES = ['description', 'rules', 'photo_consent'] as const
 
 /** Step 2, Description & rules. The photo-consent statement is needed before Next. */
 export function StepTwo(props: Props) {
-  const { ref, next, back, field } = useSeasonStep(props, 2, 'set_season_rules', RULES)
+  // Once the Season has started only the description changes (it saves on leaving the field, no sheet); the rest is text.
+  const started = useContext(SeasonStarted)
+  const { ref, next, back, field } = useSeasonStep(props, 2, 'set_season_rules', started ? ['description'] : RULES)
   return (
     <Frame step={2} onBack={back} onNext={next}>
       <form ref={ref} noValidate className="wizard-fields wizard-single" onSubmit={(e) => (e.preventDefault(), next())}>
         <Field label="Description" multiline {...field('description')} validate={atMost(1000, messages.description_long)} />
-        <Field label="Rules" multiline {...field('rules')} validate={atMost(10000, messages.rules_long)} />
-        <Field label="Photo-consent statement" multiline required requiredMessage={messages.consent_required}
-          {...field('photo_consent')} validate={atMost(2000, messages.consent_long)} />
+        <fieldset disabled={started} className="wizard-fields">
+          <Field label="Rules" multiline {...field('rules')} validate={atMost(10000, messages.rules_long)} />
+          <Field label="Photo-consent statement" multiline required requiredMessage={messages.consent_required}
+            {...field('photo_consent')} validate={atMost(2000, messages.consent_long)} />
+        </fieldset>
       </form>
     </Frame>
   )

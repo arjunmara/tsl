@@ -46,11 +46,13 @@ export type DestructiveButtonProps = {
   before: string
   after: string
   actionLabel: string
+  /** One more line under the change, e.g. "This is logged." */
+  note?: string
   onConfirm: () => void
 }
 
 // No plain onClick: a destructive action always goes through a Confirm sheet.
-export function DestructiveButton({ label, accessibleLabel, sheetTitle, before, after, actionLabel, onConfirm }: DestructiveButtonProps) {
+export function DestructiveButton({ label, accessibleLabel, sheetTitle, before, after, actionLabel, note, onConfirm }: DestructiveButtonProps) {
   const [open, setOpen] = useState(false)
   return (
     <>
@@ -63,6 +65,7 @@ export function DestructiveButton({ label, accessibleLabel, sheetTitle, before, 
         before={before}
         after={after}
         actionLabel={actionLabel}
+        note={note}
         destructive
         onConfirm={onConfirm}
         onClose={() => setOpen(false)}

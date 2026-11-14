@@ -164,6 +164,10 @@ Registration deadline (Story 2.9): a link is open through the deadline day in As
 
 **Founder setup (tsl-test now, live later):** Supabase > Authentication > Sign In / Providers > **Allow anonymous sign-ins**: on, then Save. CAPTCHA protection (Auth step 2) already covers anonymous sign-ins, so the Turnstile widget guards them. Anonymous users never get an email or a password and can only redeem a Registration link. Optional clean-up later: anonymous users with no grant can be deleted from Authentication > Users (filter "Anonymous").
 
+## Confirm before changes after start (Story 3.6)
+
+Once the Season has started, an Organiser's Squad changes (`Squad.tsx`: the `run` wrapper is the one choke point), Fixture swaps (buttons and drag, `Fixtures.tsx`) and kick-off moves (`MatchDetail.tsx`) open a Confirm sheet first: the question, before → after and "This is logged.". Confirm sends the command with `send(..., { confirmed: true })`; the outbox stores `confirmed` on the entry and adds it to the args of every attempt, so an offline change replays with no second sheet. Cancel sends nothing and the field shows its saved value. Removals use the Destructive sheet (focus on Cancel). Before start nothing asks. The description (Settings, step 2) saves on leaving the field with no sheet; the rules and photo-consent statement lock. `npm run check:confirm` (needs Google Chrome) runs the cases against a mocked server.
+
 ## Dates and money
 
 Every date the app shows goes through `src/domain/format.ts`: `formatDate('2026-10-31')` gives "Saturday · Kartik 14, 2083 BS (31 Oct 2026)". Dates are stored as AD (`date`, or `timestamptz` shown as its day in Asia/Kathmandu with `inZone`). BS comes only from the month-length table there (2040–2090 BS, so dates of birth show BS too; Season date inputs stay within 2080–2090 BS); add a year's row when the calendar committee publishes it, and dates past the table show in AD only. Date inputs use `BS_RANGE` as min/max. `npm run check:dates` checks the first and last day of every month of 2082–2084 BS.
