@@ -53,6 +53,9 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   unplace_team_from_draw: () => 'Send a Team back to the chips',
   place_rest_at_random: () => 'Place the rest of the Teams at random',
   suggest_fixtures: (a) => (a.replace ? 'Replace the suggested Fixtures' : 'Suggest the Fixtures'),
+  swap_fixtures: () => 'Swap two Fixtures',
+  set_kick_off: () => 'Set a kick-off time',
+  publish_fixtures: () => 'Publish the Fixtures',
   reopen_registration_link: () => "Reopen a Team's link",
   set_photo: (a) => (a.is_cutout === false ? 'Save a photo with its background' : 'Save a cut-out photo'),
 }
@@ -116,4 +119,7 @@ export const fieldLabels: Record<string, string> = {
   document_number: 'Document number',
   scan_name: 'Document scan',
   is_cutout: 'Background removed',
+  kick_off: 'Kick-off',
+  ord_a: 'Place of the first Match',
+  ord_b: 'Place of the second Match',
 }

@@ -103,7 +103,7 @@ export async function sendMine(seq: number) {
     if (e?.state !== 'conflict' || !e.conflict) return
     // A versioned edit takes the server's version as its base, so the edits queued behind it follow from there too.
     if (e.versionOf) await db.versions.put({ id: e.versionOf, version: e.conflict.current_version })
-    else e.args = { ...e.args, expected_version: e.conflict.current_version }
+    else e.args = { ...e.args, ...(e.conflict.resend ?? { expected_version: e.conflict.current_version }) }
     e.commandId = crypto.randomUUID()
     e.state = 'pending'
     e.attempts = 0

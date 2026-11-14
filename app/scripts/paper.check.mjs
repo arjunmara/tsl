@@ -74,6 +74,8 @@ async function fresh({ status = 'registration', width = 390 } = {}) {
     if (path === '/rest/v1/eligibility_record') return json(route, [])
     if (path === '/rest/v1/sponsor' || path === '/rest/v1/draw_slot') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
+    // Any other read (match, season) has no rows here.
+    if (req.method() === 'GET') return json(route, [])
     const a = JSON.parse(req.postData() ?? '{}')
     const cmd = path.replace('/rest/v1/rpc/', '')
     mock.calls.push({ ...a, cmd })

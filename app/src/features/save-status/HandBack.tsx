@@ -25,7 +25,7 @@ const WORDS: Record<string, string> = {
 const show = (k: string, v: unknown): string =>
   v == null || v === '' ? 'Not set' : typeof v === 'boolean' ? (v ? 'On' : 'Off')
     : Array.isArray(v) ? (v.length ? v.map((x) => show(k, x)).join(', ') : 'None')
-      : typeof v !== 'string' ? JSON.stringify(v) : DATES.has(k) ? formatDate(v) || v : WORDS[v] ?? v
+      : typeof v !== 'string' ? JSON.stringify(v) : DATES.has(k) ? formatDate(v) || v : k === 'kick_off' ? when(v) : WORDS[v] ?? v
 
 /**
  * The hand-back sheet: the user's choice for each refused change, oldest first, one at a time.

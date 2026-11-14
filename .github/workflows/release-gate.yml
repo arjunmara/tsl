@@ -70,6 +70,8 @@ jobs:
         run: npm run check:draw
       - name: Suggested fixtures and the knockout path (Story 3.2)
         run: npm run check:fixtures
+      - name: Arrange, schedule and publish Fixtures (Story 3.3)
+        run: npm run check:arrange
       # One Postgres run covers the migration check and Story 1.6's leak tests (cross-tenant read
       # and write, Activity log, idempotency), the co-organiser and Team leak and race tests (Stories 1.14, 2.1) and the pg_proc
       # command skeleton check.

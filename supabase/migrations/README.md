@@ -417,3 +417,13 @@ order; the command checks that every Team is an approved Team of the Season and,
 (`draw_incomplete`), then inserts the whole list in one go. A second suggestion needs `replace` (`fixtures_exist`). Steps: paste
 `0021_suggested_fixtures.sql` into the SQL Editor and run it. Check: as an Organiser, `select count(*) from app.match` runs
 (0 until Fixtures are suggested).
+
+## Apply 0022_arrange_publish_fixtures.sql (Story 3.3)
+
+Apply after 0021 and before the app deploy with "Arrange fixtures" and "Publish fixtures" (test first, then live). It adds
+`app.season.fixtures_published_at`, turns the unique order of Matches into a deferrable constraint (so two Matches can swap), and
+adds three Organiser-only commands under `edit_fixtures` (registration only): `swap_fixtures` (two Matches exchange their order, both
+versions bump, a stale version returns `version_conflict`), `set_kick_off` (a kick-off inside the Season's dates, Asia/Kathmandu days:
+`kickoff_outside_season`) and `publish_fixtures` (every Match needs a kick-off: `kickoff_missing`). `suggest_fixtures` is redefined to
+refuse once published (`fixtures_published`). Steps: paste `0022_arrange_publish_fixtures.sql` into the SQL Editor and run it.
+Check: `select fixtures_published_at from app.season` runs (null until published).

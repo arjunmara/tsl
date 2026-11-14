@@ -867,7 +867,7 @@ others=$(q "select string_agg(format('%s(%s)', p.proname, (select string_agg(for
     when a.n = 'command_id' then 'gen_random_uuid()' when a.n = 'tournament_id' then quote_literal('$T5')
     when a.n = 'season_id' then quote_literal('$S5') when a.n = 'team_id' then quote_literal('$X')
     when a.n = 'link_id' then quote_literal('$LX') when a.t = 'uuid'::regtype then 'gen_random_uuid()'
-    when a.t in ('integer'::regtype, 'smallint'::regtype, 'numeric'::regtype) then '1' when a.t = 'boolean'::regtype then 'true' when a.t = 'date'::regtype then '''2026-12-01'''
+    when a.t in ('integer'::regtype, 'smallint'::regtype, 'numeric'::regtype) then '1' when a.t = 'boolean'::regtype then 'true' when a.t = 'date'::regtype then '''2026-12-01''' when a.t = 'timestamptz'::regtype then 'now()'
     when a.t in ('text[]'::regtype, 'uuid[]'::regtype, 'jsonb'::regtype) then '''{}''' else '''x''' end), ', ' order by a.o)
     from unnest(p.proargnames, p.proargtypes::oid[]::regtype[]) with ordinality a(n, t, o))), E'\n' order by p.proname)
   from pg_proc p where p.pronamespace = 'app'::regnamespace and p.prorettype = 'jsonb'::regtype
@@ -1878,12 +1878,55 @@ for i in 1 2 3 4 5 6 7 8; do
   q "insert into app.draw_slot (id, tournament_id, season_id, grp, pos, team_id) values (gen_random_uuid(), '$T6', '$S10', 0, $i, '$(dt $i)')" >/dev/null
 done
 
+# --- Arrange, schedule and publish Fixtures (Story 3.3). S10 has 2 Fixtures M1 (ord 1) and M2 (ord 2), version 1, no kick-off.
+M1=$(mid 301) M2=$(mid 302)
+sw() { tc "$1" "swap_fixtures('$(cmd "$2")', '$S10', '$3', $4, '$5', $6)"; }
+ko() { tc "$1" "set_kick_off('$(cmd "$2")', '$S10', '$3', $4, '$5'::timestamptz)"; }
+pub() { tc "$1" "publish_fixtures('$(cmd "$2")', '$S10')"; }
+ords() { q "select string_agg(ord||':'||version, ' ' order by id) from app.match where season_id='$S10'"; }
+for who in $B $G1; do
+  [ "$(sw $who 2001 $M1 1 $M2 1)|$(ko $who 2002 $M1 1 '2026-11-12 10:00+05:45')|$(pub $who 2003)" = 'not_authorized|not_authorized|not_authorized' ] \
+    || fail "leak: $who arranged Fixtures"
+  redo 2001; redo 2002; redo 2003
+done
+for f in "swap_fixtures('$(cmd 2004)', '$S10', '$M1', 1, '$M2', 1)" "set_kick_off('$(cmd 2004)', '$S10', '$M1', 1, now())" "publish_fixtures('$(cmd 2004)', '$S10')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+# Swap: the two Matches exchange order and both versions bump; a repeat answers alike; refusals write nothing.
+r1=$(as $A "select app.swap_fixtures('$(cmd 2010)', '$S10', '$M1', 1, '$M2', 1)")
+[ "$(ords)" = "2:2 1:2" ] || fail "swap: $r1 / $(ords)"
+[ "$(as $A "select app.swap_fixtures('$(cmd 2010)', '$S10', '$M1', 1, '$M2', 1)")" = "$r1" ] && [ "$(ords)" = "2:2 1:2" ] || fail "swap: repeat"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 2010)' and table_name='match' and op='update'")" = 2 ] || fail "swap: log rows"
+[ "$(sw $A 2011 $M1 1 $M2 2)|$(sw $A 2012 $M1 2 $M1 2)|$(sw $A 2013 $M1 2 "$(mid 999)" 1)" = 'version_conflict|match_missing|match_missing' ] || fail "swap: refusals"
+[ "$(as $A "select r->'conflict'->'resend' from app.swap_fixtures('$(cmd 2014)', '$S10', '$M1', 1, '$M2', 2) r")" = '{"version_a": 2, "version_b": 2}' ] || fail "swap: resend"
+[ "$(ords)" = "2:2 1:2" ] || fail "swap: refusals wrote"
+[ "$(sw $A 2015 $M1 2 $M2 2)" = ok ] && [ "$(ords)" = "1:3 2:3" ] || fail "swap: back"
+# Kick-off: a Kathmandu day inside the Season's dates only (23:30 Kathmandu on the 20th is 17:45 UTC; 00:30 on the 21st is outside).
+q "update app.season set starts_on = '2026-11-10', ends_on = '2026-11-20' where id='$S10'" >/dev/null
+[ "$(ko $A 2020 $M1 3 '2026-11-09 23:59+05:45')|$(ko $A 2021 $M1 3 '2026-11-20 23:59+05:45')|$(ko $A 2022 $M1 3 '2026-11-21 00:30+05:45')" \
+  = 'kickoff_outside_season|ok|kickoff_outside_season' ] || fail "kick-off: season dates"
+[ "$(ko $A 2023 $M1 3 '2026-11-12 10:00+05:45')|$(ko $A 2024 $(mid 999) 1 '2026-11-12 10:00+05:45')" = 'version_conflict|match_missing' ] || fail "kick-off: stale or unknown"
+[ "$(q "select version||' '||(kick_off at time zone 'Asia/Kathmandu') from app.match where id='$M1'")" = '4 2026-11-20 23:59:00' ] || fail "kick-off: stored"
+# Publish needs every Match to have a kick-off, then sets the time once; a published Season can't be suggested again.
+[ "$(pub $A 2030)" = kickoff_missing ] && [ "$(q "select fixtures_published_at is null from app.season where id='$S10'")" = t ] || fail "publish: missing kick-off"
+[ "$(ko $A 2031 $M2 3 '2026-11-12 10:00+05:45')|$(pub $A 2032)" = 'ok|ok' ] || fail "publish: ok"
+p1=$(q "select fixtures_published_at from app.season where id='$S10'")
+[ -n "$p1" ] && [ "$(pub $A 2033)" = ok ] && [ "$(q "select fixtures_published_at from app.season where id='$S10'")" = "$p1" ] || fail "publish: twice"
+[ "$(sf $A 2034 "$(fx 500 2)" true)|$(ms)" = 'fixtures_published|2' ] || fail "publish: suggest again"
+# Edits still save after publishing (before the Season starts).
+[ "$(sw $A 2035 $M1 4 $M2 4)|$(ko $A 2036 $M1 5 '2026-11-13 10:00+05:45')" = 'ok|ok' ] || fail "publish: edits after"
+# Leaks: another Tournament sees no published time on this Season.
+[ "$(as $B "select count(*) from app.season where fixtures_published_at is not null")" = 0 ] || fail "leak: published Season visible"
+q "update app.season set fixtures_published_at = null, starts_on = null, ends_on = null where id='$S10'" >/dev/null
+
 # After the Season starts the Draw is locked.
 q "update app.season set status = 'started' where id='$S10'" >/dev/null
 [ "$(un $A 1970 1)|$(rnd $A 1971)|$(pl $A 1972 1 0 1)" = 'season_started|season_started|season_started' ] || fail "draw: started Season still changes"
 [ "$(as $A "select count(*) from app.draw_slot")" = 8 ] || fail "draw: a locked Draw changed"
 # The Season has started: Fixtures can't be suggested or replaced.
 [ "$(sf $A 1980 "$(fx 400 3)" true)|$(ms)" = 'season_started|2' ] || fail "fixtures: allowed after start"
+[ "$(sw $A 2040 $M1 6 $M2 5)|$(ko $A 2041 $M1 6 '2026-11-13 10:00+05:45')|$(pub $A 2042)" = 'season_started|season_started|season_started' ] || fail "fixtures: arranged after start"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

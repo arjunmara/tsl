@@ -826,3 +826,43 @@
   top: 50%;
   translate: 0 -50%;
 }
+
+/* Arrange fixtures (Story 3.3): drag handle, the card, and Move up / Move down, each 48px high and 8px apart. */
+.match-arrange {
+  display: grid;
+  grid-template-columns: var(--spacing-touch-min, 3rem) 1fr;
+  gap: var(--spacing-2, 0.5rem);
+  align-items: start;
+}
+.match-arrange.is-dragging {
+  position: relative;
+  z-index: 2;
+  opacity: 0.85;
+}
+.match-arrange.is-over {
+  outline: 3px dashed var(--ink);
+}
+.match-arrange-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1, 0.25rem);
+}
+.match-handle {
+  min-width: var(--spacing-touch-min, 3rem);
+  min-height: var(--spacing-touch-min, 3rem);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: grab;
+  touch-action: none;
+}
+.match-moves {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2, 0.5rem);
+}
+.match-moves .ui-button {
+  min-height: var(--spacing-touch-min, 3rem);
+}

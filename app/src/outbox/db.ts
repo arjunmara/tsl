@@ -1,7 +1,9 @@
 import { Dexie, type EntityTable } from 'dexie'
 
 /** A version_conflict refusal: the row as it is now on the server, and who changed it last. */
-export type Conflict = { current_version: number; current: Record<string, unknown>; changed_by: string; changed_at: string }
+export type Conflict = { current_version: number; current: Record<string, unknown>; changed_by: string; changed_at: string
+  /** Args to replace on "Send my version" when one expected_version is not enough (swap_fixtures: version_a, version_b). */
+  resend?: Record<string, unknown> }
 
 /**
  * A file to upload before the command runs (upsert, so a repeat is harmless). Removed from the entry once uploaded.
