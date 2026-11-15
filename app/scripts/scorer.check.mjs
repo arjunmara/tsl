@@ -67,6 +67,7 @@ async function ctx({ organiser }) {
       return json(route, mock.devices.filter((d) => d.user === ANON).reverse().map((d) => ({ id: d.id, season_id: S, label: d.label, expires_at: d.expires_at,
         status: d.status === 'pending' && Date.parse(d.expires_at) <= Date.now() ? 'expired' : d.status })))
     }
+    if (cmd === 'scorer_matches') return json(route, [])
     if (cmd === 'request_scorer_approval') {
       if (mock.deadLink || !mock.linked || a.token !== TOKEN) return json(route, { ok: false, code: 'link_dead', message: 'No.' })
       for (const d of mock.devices) if (d.user === ANON && d.status === 'pending') d.status = 'rejected'
@@ -148,7 +149,7 @@ try {
   assert.equal(await pp.getByTestId('score-number').innerText(), '63')
   await op.getByRole('button', { name: 'Approve 63' }).waitFor({ timeout: 9000 })
   await op.getByRole('button', { name: 'Approve 63' }).click()
-  await text(pp, 'No Match on air yet.').waitFor({ timeout: 9000 })
+  await text(pp, 'No Match to score yet.').waitFor({ timeout: 9000 })
   await button(op, "Revoke Bikash's phone").waitFor()
 
   // Expiry: the request goes stale; the phone says so and offers Ask again.
@@ -167,7 +168,7 @@ try {
 
   // Revoke the device: the phone's next poll shows the dead-link words.
   await pp.reload()
-  await text(pp, 'No Match on air yet.').waitFor()
+  await text(pp, 'No Match to score yet.').waitFor()
   await button(op, "Revoke Bikash's phone").click()
   await op.getByRole('dialog').getByRole('button', { name: "Revoke Bikash's phone" }).click()
   await text(pp, 'This link no longer works. Ask the organiser for a new one.').waitFor({ timeout: 9000 })

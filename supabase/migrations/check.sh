@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -2402,6 +2402,126 @@ q "update app.season set status = 'finished' where id='$S18'" >/dev/null
 [ "$(as $D1 "select count(*) from app.team")|$(as $D2 "select count(*) from app.activity_log")|$(as $D1 "select count(*) from app.tournament where id = '$T2'")" = '0|0|0' ] || fail "leak: a phone reads another Tournament"
 # The Registration link grant and the phone: a grant holder reads no device and can't use the scorer commands.
 [ "$(as $G1 "select count(*) from app.scorer_device")|$(tc $G1 "create_scorer_link('$(cmd 2743)', '$S17', '$(hash $STK)')")|$(approve $G1 2744 $DV3 10)" = '0|not_authorized|not_authorized' ] || fail "leak: a Registration link grant reaches devices"
+
+
+# --- Pre-match: line-ups, kit colours and On-air Match (Story 4.2). A organises T15 (S19 started, 2 starters and 2 on the bench);
+# B organises T2. X1, X2, X3 are approved Teams with Players; M1 and M2 are scheduled (X1 v X2, X1 v X3), M3 is live (X2 v X3), M4 has
+# no Teams yet, M5 is finished. D5 and D8 are approved phones of S19, D6 is pending, D7 is approved in S17 (another Season).
+T15=11111111-0000-4000-8000-0000000000f1 S19=21111111-0000-4000-8000-0000000000f1
+X1=41111111-0000-4000-8000-000000000001 X2=41111111-0000-4000-8000-000000000002 X3=41111111-0000-4000-8000-000000000003
+M1=51111111-0000-4000-8000-000000000001 M2=51111111-0000-4000-8000-000000000002 M3=51111111-0000-4000-8000-000000000003
+M4=51111111-0000-4000-8000-000000000004 M5=51111111-0000-4000-8000-000000000005
+D5=f2111111-0000-4000-8000-000000000005 D6=f2111111-0000-4000-8000-000000000006 D7=f2111111-0000-4000-8000-000000000007
+D8=f2111111-0000-4000-8000-000000000008
+pl() { printf '61111111-0000-4000-8000-%08d%04d' "$1" "$2"; }   # pl <team 1-3> <shirt>: the Player's id
+q "insert into auth.users (id, is_anonymous) values ('$D5', true), ('$D6', true), ('$D7', true), ('$D8', true)" >/dev/null
+[ "$(create $A 2800 $T15 21111111-0000-4000-8000-0000000000f0 'Prematch Cup' | grep -c '"ok": true')" = 1 ] || fail "prematch: fixture tournament"
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench) values ('$S19', '$T15', 2, 'started', 2, 2)" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$X1', '$T15', '$S19', 'Red Tigers', 'RTM', '#ff0000', 'approved'), ('$X2', '$T15', '$S19', 'Eight Eagles', 'RE8', '#0000ff', 'approved'),
+  ('$X3', '$T15', '$S19', 'Third Team', 'TTT', null, 'approved')" >/dev/null
+for t in 1 2 3; do for n in 1 2 3 4 5; do
+  q "insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl $t $n)', '$T15', 'Player $t-$n', '2000-01-01');
+     insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '$(eval echo \$X$t)', '$(pl $t $n)', $n)" >/dev/null
+done; done
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status) values
+  ('$M1', '$T15', '$S19', 'group', 'Group A', 1, '$X1', '$X2', 'scheduled'), ('$M2', '$T15', '$S19', 'group', 'Group A', 2, '$X1', '$X3', 'scheduled'),
+  ('$M3', '$T15', '$S19', 'group', 'Group A', 3, '$X2', '$X3', 'live'), ('$M5', '$T15', '$S19', 'group', 'Group A', 5, '$X1', '$X3', 'finished');
+  insert into app.match (id, tournament_id, season_id, stage, round, ord, home_src, away_src, status) values
+  ('$M4', '$T15', '$S19', 'knockout', 'Final', 4, 'Winner SF1', 'Winner SF2', 'scheduled')" >/dev/null
+q "insert into app.scorer_device (tournament_id, season_id, user_id, label, status, number_hash, expires_at) values
+  ('$T15', '$S19', '$D5', 'Pitch phone', 'approved', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S19', '$D8', 'Bench phone', 'approved', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S19', '$D6', 'Waiting phone', 'pending', repeat('0', 64), now() + interval '1 hour'),
+  ('$T14', '$S17', '$D7', 'Other season phone', 'approved', repeat('0', 64), now() + interval '1 hour')" >/dev/null
+ts() { tc "$1" "take_scoring('$(cmd "$2")', '$S19', '$3')"; }
+tm() { as "$1" "select r->>'message' from app.take_scoring('$(cmd "$2")', '$S19', '$3') r"; }
+cm() { as "$1" "select coalesce(app.console_match('$2')::text, 'none')"; }
+sc() { q "select coalesce(scoring_device::text, 'none') from app.match where id='$1'"; }
+# lu <team> <starter shirts> <bench shirts> <kit>: one side's JSON; shirts are space-separated.
+lu() { local t=$1 st= bn= n; for n in $2; do st+="\"$(pl $t "$n")\","; done; for n in ${3:-}; do bn+="\"$(pl $t "$n")\","; done
+  printf '{"team_id":"%s","starters":[%s],"bench":[%s],"kit_colour":"%s"}' "$(eval echo \$X$t)" "${st%,}" "${bn%,}" "$4"; }
+cl() { tc "$1" "confirm_lineups('$(cmd "$2")', '$S19', '$3', '$4'::jsonb, '$5'::jsonb)"; }
+clm() { as "$1" "select r->>'message' from app.confirm_lineups('$(cmd "$2")', '$S19', '$3', '$4'::jsonb, '$5'::jsonb) r"; }
+sos() { tc "$1" "show_on_stream('$(cmd "$2")', '$S19', '$3')"; }
+air() { q "select coalesce(on_air_match_id::text, 'none') from app.live_state where tournament_id='$T15'"; }
+# Isolation first: a pending phone, another Season's phone, a Registration link and another Tournament's Organiser read and change nothing.
+for who in $D6 $D7 $G1 $B; do
+  [ "$(cm $who $M1)|$(as $who "select count(*) from app.scorer_matches('$S19')")" = 'none|0' ] || fail "leak: $who reads the console"
+  [ "$(ts $who 2801 $M1)|$(cl $who 2802 $M1 '{}' '{}')|$(sos $who 2803 $M1)" = 'not_authorized|not_authorized|not_authorized' ] || fail "leak: $who ran a scoring command"
+  redo 2801; redo 2802; redo 2803
+done
+[ "$(sc $M1)|$(q "select count(*) from app.match_lineup")|$(q "select count(*) from app.live_state")" = 'none|0|0' ] || fail "prematch: a refused command wrote"
+[ "$(tc $D7 "take_scoring('$(cmd 2804)', '$S17', '$M1')")" = season_setup ] || fail "leak: another Season's phone took scoring through its own Season"
+for f in "console_match('$M1')" "scorer_matches('$S19')" "take_scoring('$(cmd 2805)', '$S19', '$M1')" "confirm_lineups('$(cmd 2805)', '$S19', '$M1', '{}', '{}')" "show_on_stream('$(cmd 2805)', '$S19', '$M1')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+# The Organiser and an approved phone read the console: both Teams home first, Squads without date of birth, the Line-up rules.
+[ "$(as $A "select (j->'rules'->>'starters')||'|'||(j->'rules'->>'max_bench')||'|'||jsonb_array_length(j->'teams')||'|'||(j->'teams'->0->>'code')||'|'||(j->'teams'->0->>'side')||'|'||jsonb_array_length(j->'teams'->0->'squad')||'|'||(j->>'holder')||'|'||(j->>'held')||'|'||(j->>'on_air') from (select app.console_match('$M1') j) x")" \
+  = '2|2|2|RTM|home|5|false|false|false' ] || fail "console_match: Organiser read"
+[ "$(cm $D5 $M1 | grep -c 'date_of_birth\|2000-01-01')" = 0 ] || fail "console_match: personal fields in the Squad"
+[ "$(cm $D5 $M1)" != none ] || fail "console_match: an approved phone reads nothing"
+# take_scoring: the phone becomes the holder, again is ok, another caller reads read-only; a Match with no Teams or a finished one can't be taken.
+[ "$(ts $D5 2810 $M1)|$(sc $M1)|$(ts $D5 2811 $M1)|$(ts $D5 2810 $M1)" = "ok|$D5|ok|ok" ] || fail "take_scoring: holder"
+[ "$(ts $A 2812 $M1)|$(tm $D8 2813 $M1)|$(sc $M1)" = "scoring_elsewhere|Another phone is scoring this match.|$D5" ] || fail "take_scoring: a second phone took over"
+[ "$(as $A "select (j->>'holder')||(j->>'held') from (select app.console_match('$M1') j) x")|$(as $D5 "select (j->>'holder')||(j->>'held') from (select app.console_match('$M1') j) x")" = 'falsetrue|truetrue' ] \
+  || fail "console_match: holder flags"
+[ "$(ts $D5 2814 $M4)|$(ts $D5 2815 $M5)|$(ts $D5 2816 $(cmd 7))|$(sc $M4)" = 'sides_unknown|match_finished|match_missing|none' ] || fail "take_scoring: unknown sides, finished or missing Match"
+[ "$(q "select count(*)||':'||bool_and(actor = '$D5') from app.activity_log where command_id='$(cmd 2810)' and table_name = 'match' and op = 'update'")" = '1:true' ] || fail "take_scoring: not logged"
+# confirm_lineups: only the holder; counts in words; Players from the Team's Squad; Teams of the Match; a kit colour.
+RED='#ff0000' BLUE='#0000ff'
+H=$(lu 1 '1 2' '3' $RED) AW=$(lu 2 '1 2' '' $BLUE)
+[ "$(cl $A 2820 $M1 "$H" "$AW")|$(cl $D8 2821 $M1 "$H" "$AW")" = 'not_scoring_device|not_scoring_device' ] || fail "confirm_lineups: a non-holder confirmed"
+[ "$(clm $D5 2822 $M1 "$(lu 1 '1' '' $RED)" "$AW")" = "Line-up needs 2 starters. You've picked 1." ] || fail "confirm_lineups: too few starters"
+[ "$(clm $D5 2823 $M1 "$H" "$(lu 2 '1 2' '3 4 5' $BLUE)")" = "Bench can hold up to 2. You've picked 3." ] || fail "confirm_lineups: bench too long"
+[ "$(cl $D5 2824 $M1 "$(lu 1 '1 2' '' $RED)" "$(lu 2 '1 1' '' $BLUE)")|$(cl $D5 2825 $M1 "$H" "$(lu 3 '1 2' '' $BLUE)")|$(cl $D5 2826 $M1 "$H" "$(lu 1 '1 2' '' $BLUE)")" \
+  = 'lineup_invalid|lineup_invalid|lineup_invalid' ] || fail "confirm_lineups: duplicate Player, a Team outside the Match, the same Team twice"
+[ "$(cl $D5 2827 $M1 "$H" "$(lu 2 '1 2' '' '#FF0000')")|$(cl $D5 2828 $M1 "$H" "$(lu 2 '1 2' '' red)")|$(cl $D5 2829 $M1 "$H" "$(printf '{"team_id":"%s","starters":["x"]}' $X2)")" \
+  = 'lineup_invalid|lineup_invalid|lineup_invalid' ] || fail "confirm_lineups: bad kit colour or bad JSON"
+[ "$(cl $D5 2830 $M1 "$(lu 1 '1 2' '' $RED)" "$(printf '{"team_id":"%s","starters":["%s","%s"],"bench":[],"kit_colour":"#0000ff"}' $X2 "$(pl 1 3)" "$(pl 1 4)")")" = lineup_invalid ] \
+  || fail "confirm_lineups: another Team's Players"
+[ "$(cl $D5 2836 $M1 "$H" "$(printf '{"team_id":"%s","starters":["%s","%s"],"bench":[]}' $X2 "$(pl 2 1)" "$(pl 2 2)")")" = lineup_invalid ] || fail "confirm_lineups: a missing kit colour"
+[ "$(sos $A 2837 $M4)" = sides_unknown ] || fail "show_on_stream: a Match with no Teams"
+[ "$(q "select count(*) from app.match_lineup")" = 0 ] || fail "confirm_lineups: a refused command wrote"
+# Confirm: both sides saved; the repeat answers alike; the console shows them.
+[ "$(cl $D5 2831 $M1 "$H" "$AW")|$(cl $D5 2831 $M1 "$H" "$AW")" = 'ok|ok' ] || fail "confirm_lineups: not saved"
+[ "$(q "select string_agg(l.side||':'||t.code||':'||l.version||':'||cardinality(l.starters)||':'||cardinality(l.bench)||':'||l.kit_colour, ' ' order by l.side) from app.match_lineup l join app.team t on t.id = l.team_id where l.match_id='$M1'")" \
+  = 'away:RE8:1:2:0:#0000ff home:RTM:1:2:1:#ff0000' ] || fail "confirm_lineups: rows"
+[ "$(cm $D5 $M1 | grep -c '"version": 1')" -ge 1 ] || fail "console_match: lineups not shown"
+[ "$(q "select count(*)||':'||bool_and(actor = '$D5') from app.activity_log where command_id='$(cmd 2831)' and table_name = 'match_lineup' and op = 'insert'")" = '2:true' ] || fail "confirm_lineups: not logged with the phone"
+[ "$(as $A "select who from app.activity_view where command_id = '$(cmd 2831)' and table_name = 'match_lineup' limit 1")" = 'Pitch phone' ] || fail "confirm_lineups: the log does not name the phone"
+# Swap and re-confirm before kick-off: the sides exchange, versions rise by one, the kit colour of the day can change.
+[ "$(cl $D5 2832 $M1 "$AW" "$(lu 1 '1 2' '3 4' '#fafafa')")" = ok ] || fail "confirm_lineups: swap"
+[ "$(q "select string_agg(l.side||':'||t.code||':'||l.version||':'||l.kit_colour, ' ' order by l.side) from app.match_lineup l join app.team t on t.id = l.team_id where l.match_id='$M1'")" \
+  = 'away:RTM:2:#fafafa home:RE8:2:#0000ff' ] || fail "confirm_lineups: swapped rows"
+[ "$(as $D5 "select (j->'teams'->0->>'code')||(j->'teams'->1->>'code') from (select app.console_match('$M1') j) x")" = RE8RTM ] || fail "console_match: swapped order"
+# A line-up of a Match that is live can't change; one nobody holds says so.
+[ "$(ts $A 2833 $M3)|$(cl $A 2834 $M3 "$(lu 2 '1 2' '' $BLUE)" "$(lu 3 '1 2' '' $RED)")" = 'ok|match_started' ] || fail "confirm_lineups: a live Match"
+[ "$(cl $D8 2835 $M2 "$H" "$AW")" = not_scoring_device ] || fail "confirm_lineups: an unheld Match"
+# show_on_stream: the holder or an Organiser; the new Match replaces the old; a phone that doesn't hold the Match can't.
+[ "$(sos $D5 2840 $M1)|$(air)|$(sos $D8 2841 $M2)|$(air)" = "ok|$M1|not_scoring_device|$M1" ] || fail "show_on_stream: holder or not"
+[ "$(sos $A 2842 $M3)|$(air)|$(q "select count(*)||':'||max(version) from app.live_state where tournament_id='$T15'")" = "ok|$M3|1:2" ] || fail "show_on_stream: the Organiser replaced the On-air Match"
+[ "$(sos $A 2843 $M3)|$(q "select version from app.live_state where tournament_id='$T15'")|$(sos $A 2844 $M5)|$(sos $A 2845 $(cmd 7))" = 'ok|2|match_finished|match_missing' ] || fail "show_on_stream: again, finished, missing"
+[ "$(as $D5 "select (j->>'on_air') from (select app.console_match('$M1') j) x")|$(as $A "select (j->>'on_air') from (select app.console_match('$M3') j) x")" = 'false|true' ] || fail "console_match: on-air flag"
+[ "$(as $A "select count(*) from app.live_state")|$(as $B "select count(*) from app.live_state")|$(as $D5 "select count(*) from app.live_state")|$(as $A "select count(*) from app.match_lineup")|$(as $D5 "select count(*) from app.match_lineup")|$(as $B "select count(*) from app.match_lineup")" = '1|0|0|2|0|0' ] \
+  || fail "leak: live_state or match_lineup read"
+# Matches for a Scorer phone: the next scheduled and the live ones, with who holds them.
+[ "$(as $D5 "select string_agg(match_id||':'||status||':'||home_code||':'||away_code||':'||held||':'||mine, ' ' order by ord) from app.scorer_matches('$S19')")" \
+  = "$M1:scheduled:RTM:RE8:true:true $M3:live:RE8:TTT:true:false" ] || fail "scorer_matches: $(as $D5 "select string_agg(match_id||':'||status||':'||held||':'||mine, ' ' order by ord) from app.scorer_matches('$S19')")"
+[ "$(as $D8 "select count(*) filter (where mine) from app.scorer_matches('$S19')")" = 0 ] || fail "scorer_matches: another phone's Match is mine"
+# Nothing writes a score or a status, and a phone writes no table directly.
+[ "$(q "select string_agg(status||coalesce(hg::text,'-'), ',' order by ord) from app.match where season_id='$S19'")" = 'scheduled-,scheduled-,live-,scheduled-,finished-' ] || fail "prematch: a Match changed"
+for stmt in "update app.match set scoring_device = null" "update app.match_lineup set side = 'home'" "insert into app.live_state (tournament_id) values ('$T15')" "delete from app.match_lineup"; do
+  out=$(as $D5 "$stmt" 2>&1 || true)
+  [[ $out == *"permission denied"* ]] || fail "a phone wrote directly: $stmt: $out"
+done
+# Revoked: the next read and command are refused (changes entered before the revoke still count within the grace window).
+q "update app.scorer_device set status = 'revoked', revoked_at = now() - interval '2 hours' where user_id = '$D5'" >/dev/null
+[ "$(cm $D5 $M1)|$(ts $D5 2850 $M2)|$(sos $D5 2851 $M1)" = 'none|not_authorized|not_authorized' ] || fail "prematch: a revoked phone still works"
+# A Season that is not started refuses every scoring command, whoever asks.
+q "update app.season set status = 'finished' where id='$S19'" >/dev/null
+[ "$(ts $A 2852 $M2)|$(sos $A 2853 $M2)|$(cl $A 2854 $M2 "$H" "$AW")" = 'season_finished|season_finished|season_finished' ] || fail "prematch: a finished Season"
 
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null

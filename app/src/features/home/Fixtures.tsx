@@ -194,6 +194,10 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
     <PrimaryButton label="Suggest fixtures" disabled disabledReason={league ? 'Approve at least two Teams first.' : 'Record the whole draw first.'} />
   )
 
+  // "Score this match" on the next scheduled Match and on any live one (Story 4.2).
+  const known = (m: Match) => { const s = sides.get(m.id); return !!((s ? s.homeTeamId : m.homeTeamId) && (s ? s.awayTeamId : m.awayTeamId)) }
+  const next = matches.find((m) => (m.status ?? 'scheduled') === 'scheduled' && known(m))?.id
+  const scorable = (m: Match) => started && (m.status === 'live' || m.id === next)
   const card = (m: Match, i: number) => {
     const s = sides.get(m.id)
     const home = sideText(s ? s.homeTeamId : m.homeTeamId, m.homeSrc, byId)
@@ -216,6 +220,7 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
           <svg className="match-chevron" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"
             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
         </button>
+        {scorable(m) && <PrimaryButton label="Score this match" onClick={() => navigate(`/t/${tournamentId}/score/${m.id}`)} />}
       </li>
     )
     return (

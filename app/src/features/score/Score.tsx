@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router'
+import { scorerMatches, type ScorerMatch } from '../../domain/console'
+import { kickOffText } from '../home/Fixtures'
 import { hasSession, signInAnonymously, signOut } from '../../domain/auth'
 import { serverNow } from '../../domain/clock'
 import { messageFor, messages } from '../../domain/messages'
@@ -159,7 +162,7 @@ export function Score() {
 function Phone({ phone, now, askAgain }: { phone: PhoneStatus; now: number; askAgain: React.ReactNode }) {
   const left = Math.ceil((Date.parse(phone.expiresAt) - now) / 60_000)
   const number = phone.status === 'pending' ? keptNumber(phone.id) : null
-  if (phone.status === 'approved') return <p className="body-strong">No Match on air yet.</p>
+  if (phone.status === 'approved') return <ApprovedMatches seasonId={phone.seasonId} />
   if (phone.status === 'revoked') return <Problem text={messages.link_dead} />
   if (phone.status === 'rejected') return <><p className="body-strong">The organiser didn't approve this request.</p>{askAgain}</>
   if (phone.status === 'expired' || (phone.status === 'pending' && left <= 0)) return <><p className="body-strong">This request expired.</p>{askAgain}</>
@@ -170,6 +173,50 @@ function Phone({ phone, now, askAgain }: { phone: PhoneStatus; now: number; askA
       <p className="display-xl score-number" data-testid="score-number">{number}</p>
       <p className="body" role="status">Waiting for the organiser to approve this phone.</p>
       <p className="meta">Expires in {left} min</p>
+    </>
+  )
+}
+
+/** An approved phone: the Season's live Matches and its next scheduled one, each opening the console (Story 4.2). */
+function ApprovedMatches({ seasonId }: { seasonId: string }) {
+  const navigate = useNavigate()
+  const { hash, state } = useLocation()
+  const [note] = useState(() => (state as { note?: string } | null)?.note ?? '')
+  const [list, setList] = useState<ScorerMatch[] | 'offline' | 'unknown' | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    let live = true
+    void scorerMatches(seasonId).then((r) => live && setList('code' in r ? r.code : r))
+    return () => {
+      live = false
+    }
+  }, [seasonId, attempt])
+  if (list === null) return <p className="body" aria-busy="true">Loading the matches…</p>
+  if (typeof list === 'string') {
+    return (
+      <>
+        <Problem text={list === 'offline' ? messages.offline : messages.fixtures_unknown} />
+        <SecondaryButton label="Try loading the matches again" onClick={() => (setList(null), setAttempt((n) => n + 1))} />
+      </>
+    )
+  }
+  return (
+    <>
+      <p role="status" aria-live="polite" className="body-strong">{note}</p>
+      {list.length === 0 && <p className="body-strong">No Match to score yet.</p>}
+      <ul className="cards">
+        {list.map((m) => (
+          <li key={m.matchId} className="card match-card">
+            <span className="meta">{m.status === 'live' ? 'Live · ' : ''}{m.round}{m.label && m.label !== m.round ? ` · ${m.label}` : ''}</span>
+            <span className="match-sides">
+              <span className="match-side">{m.homeCode ?? '?'}</span><span className="meta" aria-label="versus">v</span><span className="match-side">{m.awayCode ?? '?'}</span>
+            </span>
+            <span className="meta">{kickOffText(m.kickOff)}</span>
+            {m.held && !m.mine && <span className="meta">Another phone is scoring this match.</span>}
+            <button type="button" className="ui-button ui-primary" onClick={() => navigate({ pathname: `/score/${m.matchId}`, hash })}>Score this match</button>
+          </li>
+        ))}
+      </ul>
     </>
   )
 }

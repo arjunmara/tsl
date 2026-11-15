@@ -89,19 +89,22 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
   // The wizard's end opens Teams (state.tab), and that becomes the remembered tab.
   const location = useLocation()
   const wanted = (location.state as { tab?: string } | null)?.tab
+  // A polite note from the screen just left (the console's "The clock keeps running."), shown once.
+  const asking = (location.state as { note?: string } | null)?.note
+  const [note] = useState(asking ?? '')
   const asked = TABS.find(([k]) => k === wanted)?.[0]
   const [chosen, setTab] = useState<Tab>(() => asked ?? storedTab(tournamentId))
   const tab = teamId ? 'teams' : chosen
   useEffect(() => {
-    if (!asked) return
+    if (!asked && !asking) return
     try {
-      localStorage.setItem(tabKey(tournamentId), asked)
+      if (asked) localStorage.setItem(tabKey(tournamentId), asked)
     } catch {
       // Only remembering the tab is lost.
     }
     // Used once: a reload keeps history.state, and must not override the tab picked since.
     navigate(location.pathname, { replace: true, state: null })
-  }, [asked, tournamentId, navigate, location.pathname])
+  }, [asked, asking, tournamentId, navigate, location.pathname])
   const ids = useId()
   useEffect(() => {
     let live = true
@@ -173,6 +176,7 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
         )
       ) : (
         <>
+          {note && <p role="status" aria-live="polite" className="body-strong">{note}</p>}
           <div role="tablist" aria-label="Tournament" className="tab-bar" onKeyDown={keys}>
             {TABS.map(([k, label]) => (
               <button key={k} type="button" role="tab" id={`${ids}-tab-${k}`} aria-selected={tab === k} aria-controls={`${ids}-panel`}

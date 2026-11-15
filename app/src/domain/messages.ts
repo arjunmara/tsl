@@ -173,6 +173,16 @@ export const messages = {
   label_invalid: 'Name this phone in 1 to 40 characters.',
   scorers_unknown: "Couldn't load the Scorers. Try loading them again.",
   scorer_unknown: "Couldn't ask for approval. Try the link again.",
+  scoring_elsewhere: 'Another phone is scoring this match.',
+  not_scoring_device: 'Another phone is scoring this match.',
+  lineup_invalid: "The line-ups aren't valid. Check the Players and the kit colours.",
+  match_started: 'The Match has kicked off, so the line-ups are fixed.',
+  match_finished: 'This Match is finished.',
+  sides_unknown: 'This Match has no Teams yet.',
+  take_offline: 'Opening a match needs a signal. Try opening the match again when you have one.',
+  console_unknown: "Couldn't open the match. Try opening it again.",
+  console_not_started: "The tournament hasn't started, so this match can't be scored yet.",
+  lineups_queued: "Line-ups saved on this phone. They send when there's a signal.",
 } as const
 
 /** The words for a number field outside its range. */

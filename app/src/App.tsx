@@ -19,6 +19,7 @@ import { Scorers } from './features/home/Scorers'
 import { Invite } from './features/auth/Invite'
 import { Register } from './features/register/Register'
 import { Score } from './features/score/Score'
+import { Console } from './features/console/Console'
 import { SaveStatusBar } from './features/save-status/SaveStatusBar'
 import { PrimaryButton } from './ui/Button'
 
@@ -79,12 +80,14 @@ export function App() {
           <Route path="/invite/:token" element={<Invite />} />
           <Route path="/register" element={<Register />} />
           <Route path="/score" element={<Score />} />
+          <Route path="/score/:matchId" element={<Console scorer />} />
           <Route element={<RequireSession />}>
             <Route path="/" element={<MyTournaments />} />
             <Route element={<RequireVerified />}>
               <Route path="/new" element={<NewTournament />} />
               <Route path="/t/:tournamentId/setup/:step" element={<SetupStep />} />
               <Route path="/t/:tournamentId/m/:matchId" element={<MatchDetail />} />
+              <Route path="/t/:tournamentId/score/:matchId" element={<Console />} />
               <Route path="/t/:tournamentId" element={<Home />} />
               <Route path="/t/:tournamentId/teams/:teamId" element={<Home />} />
               <Route path="/t/:tournamentId/settings" element={<Settings />} />

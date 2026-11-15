@@ -951,3 +951,97 @@
 .score-number {
   margin: 0;
 }
+
+/* Scoring console (Story 4.2): full screen, no App bar or Tab bar; a strip on top, then the pre-match step. */
+.console {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  min-height: 100dvh;
+  padding: var(--spacing-3) var(--spacing-4);
+  box-sizing: border-box;
+}
+.console-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+.console-title,
+.console-date {
+  margin: 0;
+}
+.console-title {
+  flex: 1;
+}
+.console-air {
+  margin: 0;
+  color: var(--live);
+}
+.prematch,
+.prematch-team {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.prematch-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0;
+}
+.kit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+.prematch-squad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prematch-player {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  min-height: 48px;
+}
+.prematch-shirt {
+  min-width: 2rem;
+  text-align: right;
+}
+.prematch-name {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.prematch-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  min-height: 48px;
+}
+.prematch-tick input {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.prematch-kit {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+.prematch-kit input {
+  width: 3rem;
+  height: 3rem;
+}
+.prematch-clash {
+  border: 2px solid var(--ink-muted);
+  border-radius: var(--rounded-md);
+  padding: var(--spacing-3);
+}
+.prematch-clash p {
+  margin: 0;
+}

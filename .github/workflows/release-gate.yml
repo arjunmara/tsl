@@ -98,3 +98,5 @@ jobs:
         run: npm run check:finish
       - name: Scorer link with number-matching approval (Story 4.1)
         run: npm run check:scorer
+      - name: Pre-match line-ups, kit colours and On-air Match (Story 4.2)
+        run: npm run check:console

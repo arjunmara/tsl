@@ -499,3 +499,17 @@ entered_at)`, which later scoring commands ask: true for an approved device, or 
 revoke plus `app.grace_window()`. `app.authorize` lets an anonymous user ask for approval; `app.actor_name` names a phone by its
 label in the Activity log. Needs anonymous sign-ins on, as for 0012. Steps: paste `0028_scorer_devices.sql` into the SQL Editor and
 run it. Check: `select app.scorer_status();` runs as any signed-in user (no row until a phone has asked).
+
+## Apply 0029_prematch.sql (Story 4.2)
+
+Apply after 0028 and before the app deploy with the scoring console (test first, then live). It adds `app.match.scoring_device` (the
+user, an Organiser or a Scorer phone, that holds scoring of a Match), the tables `app.match_lineup` (per Match and Team: starters,
+bench, kit colour of the day, home or away, version) and `app.live_state` (one row per Tournament: the On-air Match, scene override and
+Sponsor pop-up), both readable by the Tournament's Organisers only, the Season actions `take_scoring`, `confirm_lineups` and
+`show_on_stream` (started only), the commands of the same names, and the reads `app.console_match(match)` and
+`app.scorer_matches(season)` (and their helper `app.console_reads`), which answer only an Organiser of the Tournament or an approved
+Scorer phone of the Season (a pending phone, another Season's phone or a Registration link reads nothing). `app.authorize` lets an
+approved Scorer phone run the three commands for its own Season. `take_scoring` answers `scoring_elsewhere` for a Match another
+phone holds (hand-over is Story 4.8); `confirm_lineups` is for the holder before kick-off and answers `lineup_invalid` in words.
+Nothing here writes a score or a Match status. Steps: paste `0029_prematch.sql` into the SQL Editor and run it. Check:
+`select app.console_match('<match id>')` runs as an Organiser (a JSON document with both Teams).
