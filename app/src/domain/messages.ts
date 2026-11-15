@@ -69,6 +69,7 @@ export const messages = {
   invite_used: 'This invite has already been used. Ask for a new invite if you need one.',
   invite_cancelled: 'This invite was cancelled. Ask for a new invite if you need one.',
   invite_expired: 'This invite has expired. Ask for a new invite.',
+  activity_unknown: "Couldn't load the Activity log. Try loading it again.",
   organisers_unknown: "Couldn't load the organisers. Try loading them again.",
   team_code_taken: 'That Team code is already used in this Season. Choose another code.',
   code_invalid: 'A Team code is 2 to 5 letters or digits.',

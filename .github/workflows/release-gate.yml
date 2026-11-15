@@ -92,3 +92,5 @@ jobs:
         run: npm run check:start
       - name: Confirm before changes after start (Story 3.6)
         run: npm run check:confirm
+      - name: Browse the Activity log (Story 3.7)
+        run: npm run check:activity

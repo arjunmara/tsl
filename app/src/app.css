@@ -914,3 +914,16 @@
   flex-wrap: wrap;
   gap: var(--spacing-2);
 }
+
+/* Settings → Activity log (Story 3.7). A row with a Team or Match is a link; long names and emails wrap; old values are struck through in ink-muted. */
+.activity-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.activity .ink-muted {
+  color: var(--ink-muted);
+}

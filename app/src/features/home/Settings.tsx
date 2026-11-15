@@ -43,6 +43,10 @@ function SettingsList({ tournamentId }: { tournamentId: string }) {
           <h2 className="body-strong">Co-organisers</h2>
           <SecondaryButton label="Manage co-organisers" onClick={() => navigate(`/t/${tournamentId}/settings/co-organisers`)} />
         </li>
+        <li className="card">
+          <h2 className="body-strong">Activity log</h2>
+          <SecondaryButton label="Open the Activity log" onClick={() => navigate(`/t/${tournamentId}/settings/activity`)} />
+        </li>
       </ul>
     </main>
   )

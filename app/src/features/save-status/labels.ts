@@ -122,6 +122,7 @@ export const fieldLabels: Record<string, string> = {
   scan_name: 'Document scan',
   is_cutout: 'Background removed',
   kick_off: 'Kick-off',
+  ord: 'Place',
   ord_a: 'Place of the first Match',
   ord_b: 'Place of the second Match',
 }

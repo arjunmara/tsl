@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,actor_name}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -1316,7 +1316,7 @@ sv1=$(q "select version from app.staff where id='$SF1'")
 [ "$(sp_ $G1 911 $X $SF1 "$sv1, '$T5/$X/$SF1/$V2.webp', false")|$(q "select concat_ws('|', photo_path, is_cutout, version) from app.staff where id='$SF1'")" \
   = "ok|$T5/$X/$SF1/$V2.webp|f|$((sv1 + 1))" ] || fail "set_photo: Staff kept with its background"
 [ "$(q "select string_agg(table_name||':'||coalesce(after->>'photo_path', '-')||':'||(actor = '$G1'), ',' order by id) from app.activity_log where command_id in ('$(cmd 910)', '$(cmd 911)')")" \
-  = 'player:photo_path:true,staff:photo_path:true' ] || fail "set_photo: log rows, or the path logged by value"
+  = 'player:photo_path:changed:true,staff:photo_path:changed:true' ] || fail "set_photo: log rows, or the path logged by value"
 v1=$(pv $P1)
 for bad in "$P1|'$T5/$X/$P5/$V3.webp', true|photo_invalid" "$P1|'$T5/$X/$P1/$V3.png', true|photo_invalid" \
     "$P1|'$T5/$Y/$P1/$V3.webp', true|photo_invalid" "$P1|'$T5/$X/$P1/$V3.webp', null|photo_invalid" "$P1|null, true|photo_invalid" \
@@ -2201,6 +2201,40 @@ done
 [ "$(rules $A 2441 $S10 $(q "select version from app.season where id='$S10'") "rules => 'x'")|$(rules $A 2442 $S10 $(q "select version from app.season where id='$S10'") "description => 'y', photo_consent => 'z'")" \
   = 'season_started|season_started' ] || fail "description: rules or consent changed after start"
 [ "$(rules $B 2443 $S10 $(q "select version from app.season where id='$S10'") "description => 'Stolen'")" = not_authorized ] || fail "leak: description changed by another Tournament's Organiser"
+
+# --- Activity view (Story 3.7): who, Team, Match and Season of each log row; read-only; members only.
+av() { as $A "select $1 from app.activity_view where $2"; }
+[ "$(av "who||'|'||match_id||'|'||(season_id = '$S10')||'|'||coalesce(team_id::text, '-')" "command_id = '$(cmd 2431)' and table_name = 'match'")" = "a@x.test|$M1|true|-" ] \
+  || fail "activity view: kick-off row"
+[ "$(av "team_id||'|'||(after->>'date_of_birth')" "command_id = '$(cmd 2402)' and table_name = 'player'")" = "$Z|date_of_birth" ] \
+  || fail "activity view: Player row's Team, or its date of birth shown by value: $(av "table_name||':'||coalesce(team_id::text,'-')||':'||coalesce(after->>'date_of_birth','-')" "command_id = '$(cmd 2402)'")"
+[ "$(av "team_id" "command_id = '$(cmd 2418)' and table_name = 'player' and op = 'delete'")" = "$Z" ] || fail "activity view: removed Player's Team"
+[ "$(av "team_id||'|'||(season_id = (select season_id from app.team where id = '$Z'))" "command_id = '$(cmd 2402)' and table_name = 'squad_entry'")" = "$Z|true" ] \
+  || fail "activity view: Squad entry row"
+[ "$(av "team_ids::text" "command_id = '$(cmd 2431)' and table_name = 'match'")" = "$(q "select array_remove(array[home_team_id, away_team_id], null)::text from app.match where id='$M1'")" ] \
+  || fail "activity view: Match row's team_ids"
+# Personal fields: a shirt-number edit leaves the date of birth plain; a date-of-birth edit logs it as changed.
+q "set app.command_id = '$(cmd 2490)'; update app.player set name = name || '' where id = (select p.id from app.player p where p.date_of_birth is not null limit 1); update app.player set date_of_birth = date_of_birth + 1 where id = (select p.id from app.player p where p.date_of_birth is not null limit 1); reset app.command_id" >/dev/null
+[ "$(q "select string_agg(coalesce(after->>'date_of_birth', '-'), ',' order by id) from app.activity_log where command_id = '$(cmd 2490)' and table_name = 'player'")" = 'date_of_birth,date_of_birth:changed' ] \
+  || fail "personal field: unchanged not plain, or edit not marked changed"
+q "update app.match set kick_off = kick_off where id='$M1'" >/dev/null
+[ "$(av "count(*)" "who = 'System' and match_id = '$M1'")" = 1 ] || fail "activity view: a change with no actor is not System"
+[ "$(av "who" "actor = '$G1' limit 1")" = "$(q "select 'Team manager (' || t.code || ')' from app.registration_grant g join app.team t on t.id = g.team_id where g.id = '$G1'")" ] \
+  || fail "activity view: a Registration link is not named as its Team manager"
+[ "$(av "count(*)" "season_id is null and table_name = 'tournament'")" -ge 1 ] || fail "activity view: Tournament-wide rows have a Season"
+[ "$(as $A "select count(*) from app.activity_view")" = "$(as $A "select count(*) from app.activity_log")" ] || fail "activity view: rows differ from the log"
+for who in $B $G1; do
+  [ "$(as $who "select count(*) from app.activity_view where tournament_id = (select tournament_id from app.team where id = '$Z')")" = 0 ] || fail "leak: $who reads the Activity view"
+done
+for f in "select count(*) from app.activity_view" "select app.actor_name('$T5', '$A')"; do
+  out=$(as anon "$f" 2>&1 || true)
+  [[ $out == *"permission denied"* ]] || fail "anon: reads the Activity view: $out"
+done
+[ "$(as $B "select app.actor_name('$T5', '$A')")" = "" ] || fail "leak: another Tournament's Organiser looks up an email"
+for f in "insert into app.activity_view (id) values (1)" "update app.activity_view set who = 'x'" "delete from app.activity_view"; do
+  out=$(as $A "$f" 2>&1 || true)
+  [[ $out == *"permission denied"* || $out == *"cannot "* ]] || fail "Organiser writes the Activity view: $f: $out"
+done
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

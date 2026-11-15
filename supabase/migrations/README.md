@@ -465,3 +465,12 @@ after start (they answer `confirmation_required` and have no way to confirm). `s
 after start (Season action `edit_description`); rules and the photo-consent statement stay locked. The Activity log triggers already
 record before, after and actor. Steps: paste `0025_confirm_after_start.sql` into the SQL Editor and run it. Check:
 `select action, status, confirm from app.season_action where confirm;` (2 rows: `edit_squad` and `edit_fixtures`, started).
+
+## Apply 0026_activity_view.sql (Story 3.7)
+
+Apply before the app deploy with Settings → Activity log (test first, then live). It adds the read-only view `app.activity_view`
+(every `app.activity_log` row plus `who`, `team_id`, `match_id` and `season_id`) and the helper `app.actor_name(tournament, actor)`
+(an Organiser's sign-in email, "Team manager (CODE)" for a Registration link, "System" for no actor; null unless the caller is a
+member of the Tournament). The view is `security_invoker`, so the log's own RLS applies: members only. No log row can be written
+through it. Steps: paste `0026_activity_view.sql` into the SQL Editor and run it. Check:
+`select who, table_name from app.activity_view order by id desc limit 5;` runs as an Organiser.

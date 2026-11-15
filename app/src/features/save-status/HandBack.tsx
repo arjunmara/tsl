@@ -22,7 +22,7 @@ const WORDS: Record<string, string> = {
  * A field's value in words: dates in BS and AD, like every date the app shows; on/off for a switch; a list in order;
  * nothing set as "Not set".
  */
-const show = (k: string, v: unknown): string =>
+export const show = (k: string, v: unknown): string =>
   v == null || v === '' ? 'Not set' : typeof v === 'boolean' ? (v ? 'On' : 'Off')
     : Array.isArray(v) ? (v.length ? v.map((x) => show(k, x)).join(', ') : 'None')
       : typeof v !== 'string' ? JSON.stringify(v) : DATES.has(k) ? formatDate(v) || v : k === 'kick_off' ? when(v) : WORDS[v] ?? v
