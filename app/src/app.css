@@ -927,3 +927,27 @@
 .activity .ink-muted {
   color: var(--ink-muted);
 }
+
+/* Scorers (Story 4.1): the Organiser's number buttons are 64px tall, in display-lg; the Scorer page shows its number in display-xl. */
+.scorers section,
+.scorers .card,
+.score {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.scorers .body,
+.scorers .ui-input {
+  overflow-wrap: anywhere;
+}
+.scorer-numbers {
+  display: flex;
+  gap: var(--spacing-3);
+}
+.scorer-number {
+  flex: 1;
+  min-height: 64px;
+}
+.score-number {
+  margin: 0;
+}

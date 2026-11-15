@@ -166,6 +166,13 @@ export const messages = {
   scan_unreadable: "Couldn't read that picture. Take a photo of the document, or choose a JPEG, PNG or WebP picture.",
   document_number_required: 'Add the document number.',
   number_long: 'Use 40 characters or fewer.',
+  number_mismatch: "That number didn't match. Ask them to send a new request.",
+  request_expired: 'That request expired. Ask them to send a new request.',
+  request_closed: 'That request was already answered. Reload the page.',
+  device_missing: 'That request no longer exists. Reload the page.',
+  label_invalid: 'Name this phone in 1 to 40 characters.',
+  scorers_unknown: "Couldn't load the Scorers. Try loading them again.",
+  scorer_unknown: "Couldn't ask for approval. Try the link again.",
 } as const
 
 /** The words for a number field outside its range. */

@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -871,7 +871,7 @@ others=$(q "select string_agg(format('%s(%s)', p.proname, (select string_agg(for
     when a.t in ('text[]'::regtype, 'uuid[]'::regtype, 'jsonb'::regtype) then '''{}''' else '''x''' end), ', ' order by a.o)
     from unnest(p.proargnames, p.proargtypes::oid[]::regtype[]) with ordinality a(n, t, o))), E'\n' order by p.proname)
   from pg_proc p where p.pronamespace = 'app'::regnamespace and p.prorettype = 'jsonb'::regtype
-    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command,add_player,edit_player,remove_player,add_staff,edit_staff,remove_staff,submit_team,add_eligibility,edit_eligibility,set_photo}'::name[])")
+    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command,add_player,edit_player,remove_player,add_staff,edit_staff,remove_staff,submit_team,add_eligibility,edit_eligibility,set_photo,request_scorer_approval}'::name[])")
 [ "$(wc -l <<<"$others")" -ge 20 ] || fail "grant: too few commands listed: $others"
 refused_all() {
   while IFS= read -r f; do
@@ -2289,6 +2289,120 @@ for f in "insert into app.activity_view (id) values (1)" "update app.activity_vi
   out=$(as $A "$f" 2>&1 || true)
   [[ $out == *"permission denied"* || $out == *"cannot "* ]] || fail "Organiser writes the Activity view: $f: $out"
 done
+
+# --- Scorer link and number-matching approval (Story 4.1). A organises T14 (S17 in setup, S18 started); B organises T2. D1 to D4 are
+# anonymous phones. The server stores only the token's hash; the number of a request comes back to its phone, and the right number
+# approves it. A device reads nothing; the Organiser reads the devices of their Tournament.
+T14=11111111-0000-4000-8000-0000000000e1 S17=21111111-0000-4000-8000-0000000000e1 S18=21111111-0000-4000-8000-0000000000e2
+D1=f2111111-0000-4000-8000-000000000001 D2=f2111111-0000-4000-8000-000000000002 D3=f2111111-0000-4000-8000-000000000003
+D4=f2111111-0000-4000-8000-000000000004
+STK=ScorerTokenAbCdEfGhIjKlMnOpQrStUvWxYz012345 STK2=ScorerTokenZyXwVuTsRqPoNmLkJiHgFeDcBa9876543
+q "insert into auth.users (id, is_anonymous) values ('$D1', true), ('$D2', true), ('$D3', true), ('$D4', true)" >/dev/null
+[ "$(create $A 2700 $T14 $S17 'Scorer Cup' | grep -c '"ok": true')" = 1 ] || fail "scorer: fixture tournament"
+q "insert into app.season (id, tournament_id, number, status) values ('$S18', '$T14', 2, 'started')" >/dev/null
+sl() { tc "$1" "create_scorer_link('$(cmd "$2")', '$3', '$(hash "$4")')"; }
+rq() { local l=${4//\'/\'\'}; as "$1" "select app.request_scorer_approval('$(cmd "$2")', '$3', '$l')"; }
+rqc() { local l=${4//\'/\'\'}; as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.request_scorer_approval('$(cmd "$2")', '$3', '$l') r"; }
+dv() { q "select status from app.scorer_device where id='$1'"; }
+num() { q "select '$1'::jsonb->>'number'"; }
+did() { q "select '$1'::jsonb->>'device_id'"; }
+st() { as "$1" "select coalesce((select status||'|'||label from app.scorer_status() limit 1), 'none')"; }
+approve() { tc "$1" "approve_scorer_device('$(cmd "$2")', '$S17', '$3', $4)"; }
+# Fences: another Tournament's Organiser, a phone and anon can't make or end a link; nothing changes.
+[ "$(sl $B 2701 $S17 $STK)|$(sl $D1 2702 $S17 $STK)" = 'not_authorized|not_authorized' ] || fail "leak: link made by another Tournament or a phone"
+[ "$(tc $B "revoke_scorer_link('$(cmd 2703)', '$S17')")" = not_authorized ] || fail "leak: link revoked by another Tournament"
+for f in "create_scorer_link('$(cmd 2704)', '$S17', '$(hash $STK)')" "request_scorer_approval('$(cmd 2704)', '$STK', 'x')" "scorer_status()"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+[ "$(q "select count(*) from app.season where scorer_token_hash is not null")" = 0 ] || fail "scorer: a refused command made a link"
+# No link yet: a request is link_dead and writes no device; so is a bad token.
+[ "$(rqc $D1 2705 $STK "Bikash's phone")" = link_dead ] || fail "scorer: request without a link"
+# Create: only the hash is stored; a bad hash is refused; the S17 link works in a Season in setup.
+[ "$(tc $A "create_scorer_link('$(cmd 2706)', '$S17', 'nothex')")" = token_invalid ] || fail "scorer: bad hash accepted"
+[ "$(sl $A 2707 $S17 $STK)" = ok ] || fail "scorer: link not made"
+[ "$(q "select scorer_token_hash from app.season where id='$S17'")" = "$(hash $STK)" ] || fail "scorer: hash not stored"
+[ "$(q "select count(*) from app.season where scorer_token_hash = '$STK'")" = 0 ] || fail "scorer: token stored in the clear"
+[ "$(q "select count(*)||':'||bool_and(actor = '$A') from app.activity_log where command_id='$(cmd 2707)' and table_name = 'season' and op = 'update'")" = '1:true' ] \
+  || fail "scorer: link not logged"
+# Request: a number 10 to 99, pending for 10 minutes; a repeat answers alike; the phone reads only its own status.
+r1=$(rq $D1 2708 $STK "  Bikash's phone ")
+[ "$(q "select (r->>'ok')||(r->>'status')||((r->>'number')::int between 10 and 99)::text from (select '$r1'::jsonb r) x")" = truependingtrue ] || fail "scorer: request answer $r1"
+[ "$(rq $D1 2708 $STK "  Bikash's phone ")" = "$r1" ] || fail "scorer: repeat answered differently"
+DV1=$(did "$r1")
+[ "$(q "select count(*) from app.scorer_device where user_id='$D1'")|$(dv $DV1)|$(q "select label from app.scorer_device where id='$DV1'")" = "1|pending|Bikash's phone" ] || fail "scorer: device row"
+[ "$(q "select round(extract(epoch from expires_at - created_at))::int from app.scorer_device where id='$DV1'")" = 600 ] || fail "scorer: not 10 minutes"
+[ "$(q "select (number_hash = encode(sha256(convert_to(id::text || ':' || '$(num "$r1")', 'UTF8')), 'hex'))::text from app.scorer_device where id='$DV1'")" = true ] \
+  || fail "scorer: number hash"
+[ "$(st $D1)" = "pending|Bikash's phone" ] || fail "scorer: status of a pending phone: $(st $D1)"
+[ "$(st $D2)|$(st $A)" = 'none|none' ] || fail "scorer: status of another user"
+# A pending phone reads nothing: not its device row, not the Season, and the number is not in any table it can read.
+[ "$(as $D1 "select (select count(*) from app.scorer_device)||'/'||(select count(*) from app.season)||'/'||(select count(*) from app.activity_log)")" = 0/0/0 ] \
+  || fail "leak: a pending phone reads rows"
+[ "$(as $B "select count(*) from app.scorer_device")" = 0 ] || fail "leak: another Tournament reads devices"
+[ "$(as $A "select count(*) from app.scorer_device where status = 'pending'")" = 1 ] || fail "scorer: the Organiser does not read the device"
+# Label rules and bad links.
+[ "$(rqc $D2 2709 $STK '')|$(rqc $D2 2710 $STK "$(printf 'x%.0s' $(seq 41))")|$(rqc $D2 2711 $STK 'a'$'\t''b')" = 'label_invalid|label_invalid|label_invalid' ] || fail "scorer: bad labels accepted"
+[ "$(rqc $D2 2712 ${STK/S/T} 'Phone')|$(rqc $D2 2713 '' 'Phone')" = 'link_dead|link_dead' ] || fail "scorer: wrong token accepted"
+[ "$(rqc $A 2714 $STK 'Organiser phone')" = not_authorized ] || fail "scorer: an Organiser asked for approval"
+[ "$(q "select count(*) from app.scorer_device")" = 1 ] || fail "scorer: a refused request wrote a device"
+# Approve: fences, then a wrong number rejects (the phone must ask again), the right one approves.
+NUM1=$(num "$r1"); WRONG=$((NUM1 == 99 ? 98 : NUM1 + 1))
+[ "$(approve $B 2715 $DV1 $NUM1)|$(approve $D1 2716 $DV1 $NUM1)|$(dv $DV1)" = 'not_authorized|not_authorized|pending' ] || fail "leak: approval by another Tournament or the phone itself"
+[ "$(tc $B "revoke_scorer_device('$(cmd 2717)', '$S17', '$DV1')")" = not_authorized ] || fail "leak: device revoked by another Tournament"
+[ "$(approve $A 2718 $DV1 $WRONG)|$(dv $DV1)|$(st $D1)" = "number_mismatch|rejected|rejected|Bikash's phone" ] || fail "scorer: wrong number: $(approve $A 2719 $DV1 $WRONG) $(st $D1)"
+[ "$(approve $A 2719 $DV1 $NUM1)" = request_closed ] || fail "scorer: a rejected request was approved"
+# Ask again: a new row and a new request; the older pending one of the phone is rejected.
+r2=$(rq $D1 2720 $STK "Bikash's phone"); DV2=$(did "$r2")
+[ "$(q "select count(*) from app.scorer_device where user_id='$D1'")|$(dv $DV2)" = '2|pending' ] || fail "scorer: ask again"
+r3=$(rq $D1 2721 $STK "Bikash's phone"); DV3=$(did "$r3")
+[ "$(dv $DV2)|$(dv $DV3)" = 'rejected|pending' ] || fail "scorer: an older pending request stayed pending"
+NUM3=$(num "$r3")
+[ "$(approve $A 2722 $DV3 $NUM3)|$(dv $DV3)|$(st $D1)" = "ok|approved|approved|Bikash's phone" ] || fail "scorer: right number: $(st $D1)"
+[ "$(approve $A 2722 $DV3 $NUM3)" = ok ] || fail "scorer: approve repeat answered differently"
+# An approved phone still reads no table; scorer_allows is true for its Season only.
+[ "$(as $D1 "select (select count(*) from app.scorer_device)||'/'||(select count(*) from app.season)||'/'||(select count(*) from app.tournament)")" = 0/0/0 ] \
+  || fail "leak: an approved phone reads rows"
+[ "$(q "select app.scorer_allows('$D1', '$S17', now())::text||app.scorer_allows('$D1', '$S18', now())::text||app.scorer_allows('$D2', '$S17', now())::text||app.scorer_allows('$A', '$S17', now())::text")" = truefalsefalsefalse ] \
+  || fail "scorer_allows: approved device"
+# Asking again while approved changes nothing.
+[ "$(rq $D1 2723 $STK 'Other name' | grep -c approved)|$(q "select count(*) from app.scorer_device where user_id='$D1'")" = '1|3' ] || fail "scorer: an approved phone made a new request"
+# Expiry: approving a request past its 10 minutes is request_expired and changes nothing; the phone reads expired.
+r4=$(rq $D3 2724 $STK "Sita's phone"); DV4=$(did "$r4")
+q "update app.scorer_device set expires_at = now() - interval '1 second' where id='$DV4'" >/dev/null
+[ "$(approve $A 2725 $DV4 $(num "$r4"))|$(dv $DV4)|$(st $D3)" = "request_expired|pending|expired|Sita's phone" ] || fail "scorer: expired request: $(st $D3)"
+r5=$(rq $D3 2726 $STK "Sita's phone"); DV5=$(did "$r5")
+[ "$(dv $DV4)|$(dv $DV5)|$(st $D3)" = 'rejected|pending|pending|Sita'"'"'s phone' ] || fail "scorer: ask again after expiry"
+# Unknown or another Season's device; a device and a Season that don't belong together.
+[ "$(approve $A 2727 $(cmd 9) 10)" = device_missing ] || fail "scorer: unknown device approved"
+[ "$(tc $A "approve_scorer_device('$(cmd 2728)', '$S18', '$DV5', $(num "$r5"))")|$(dv $DV5)" = 'device_missing|pending' ] || fail "scorer: a device approved through another Season"
+# The Activity log names the phone by its label; personal fields are none; Organisers read it, B and the phone don't.
+[ "$(as $A "select who from app.activity_view where command_id = '$(cmd 2722)' and table_name = 'scorer_device' limit 1")" = 'a@x.test' ] || fail "scorer: the approval is not the Organiser's"
+[ "$(as $A "select who from app.activity_view where command_id = '$(cmd 2721)' and table_name = 'scorer_device' and op = 'insert'")" = "Bikash's phone" ] \
+  || fail "scorer: the request is not named by its label: $(as $A "select who from app.activity_view where command_id = '$(cmd 2721)' and table_name = 'scorer_device'")"
+[ "$(as $B "select count(*) from app.activity_view where table_name = 'scorer_device'")|$(as $D1 "select count(*) from app.activity_view")" = '0|0' ] || fail "leak: the Activity log shows devices"
+[ "$(as $B "select app.actor_name('$T14', '$D1')")" = "" ] || fail "leak: another Tournament's Organiser looks up a phone's name"
+# Revoke: the phone's next status says revoked; the grace window keeps changes entered before the revoke; a pending phone is rejected.
+[ "$(tc $A "revoke_scorer_device('$(cmd 2729)', '$S17', '$DV3')")|$(dv $DV3)|$(st $D1)" = "ok|revoked|revoked|Bikash's phone" ] || fail "scorer: revoke"
+[ "$(tc $A "revoke_scorer_device('$(cmd 2730)', '$S17', '$DV3')")|$(tc $A "revoke_scorer_device('$(cmd 2731)', '$S17', '$DV5')")|$(dv $DV5)" = 'ok|ok|rejected' ] || fail "scorer: revoke again or revoke a pending request"
+[ "$(q "select app.scorer_allows('$D1', '$S17', revoked_at - interval '1 minute')::text||app.scorer_allows('$D1', '$S17', revoked_at + app.grace_window() - interval '1 second')::text||app.scorer_allows('$D1', '$S17', revoked_at + app.grace_window())::text||app.scorer_allows('$D1', '$S17', revoked_at + interval '2 hours')::text from app.scorer_device where id='$DV3'")" = truetruefalsefalse ] \
+  || fail "scorer_allows: the grace window"
+[ "$(q "select app.scorer_allows('$D3', '$S17', now())::text||app.scorer_allows('$D3', '$S17', now() - interval '1 minute')::text")" = falsefalse ] || fail "scorer_allows: a pending or rejected phone"
+# A new link replaces the old: the old token no longer asks; phones already approved stay approved.
+[ "$(sl $A 2732 $S17 $STK2)|$(rqc $D4 2733 $STK 'Old link')|$(rqc $D4 2734 $STK2 'New link')" = 'ok|link_dead|ok' ] || fail "scorer: a new link did not replace the old one"
+# Revoke the link: nobody asks through it; revoking none is ok; a new link works again.
+[ "$(tc $A "revoke_scorer_link('$(cmd 2735)', '$S17')")|$(tc $A "revoke_scorer_link('$(cmd 2736)', '$S17')")|$(rqc $D4 2737 $STK2 'x')" = 'ok|ok|link_dead' ] || fail "scorer: revoke the link"
+[ "$(q "select count(*) from app.season where id='$S17' and scorer_token_hash is null")" = 1 ] || fail "scorer: the revoked link remains"
+# Any status but finished: a started Season (S18) works; a finished one is season_finished and its link answers link_dead.
+[ "$(sl $A 2738 $S18 $STK)|$(rqc $D2 2739 $STK 'Started phone')" = 'ok|ok' ] || fail "scorer: a started Season"
+q "update app.season set status = 'finished' where id='$S18'" >/dev/null
+[ "$(sl $A 2740 $S18 $STK2)|$(tc $A "revoke_scorer_link('$(cmd 2741)', '$S18')")|$(rqc $D4 2742 $STK 'Late phone')" = 'season_finished|season_finished|link_dead' ] || fail "scorer: a finished Season"
+# Isolation: a device of S18 is not allowed in S17, and an approved phone of one Tournament reads nothing of another.
+[ "$(q "select app.scorer_allows('$D2', '$S17', now())::text")" = false ] || fail "scorer_allows: another Season"
+[ "$(as $D1 "select count(*) from app.team")|$(as $D2 "select count(*) from app.activity_log")|$(as $D1 "select count(*) from app.tournament where id = '$T2'")" = '0|0|0' ] || fail "leak: a phone reads another Tournament"
+# The Registration link grant and the phone: a grant holder reads no device and can't use the scorer commands.
+[ "$(as $G1 "select count(*) from app.scorer_device")|$(tc $G1 "create_scorer_link('$(cmd 2743)', '$S17', '$(hash $STK)')")|$(approve $G1 2744 $DV3 10)" = '0|not_authorized|not_authorized' ] || fail "leak: a Registration link grant reaches devices"
+
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

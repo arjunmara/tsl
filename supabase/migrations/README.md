@@ -485,3 +485,17 @@ Match is finished. A finished Season has no allowed actions, so every Squad, Fix
 `season_finished`; reads are unchanged. The deletion job already deletes a finished Season's eligibility scans. Nothing unfinishes a
 Season. Steps: paste `0027_finish_season.sql` into the SQL Editor and run it. Check:
 `select app.finish_check('<season id>')` runs as an Organiser.
+
+## Apply 0028_scorer_devices.sql (Story 4.1)
+
+Apply after 0027 and before the app deploy with Settings → Scorers and the `/score` page (test first, then live). It adds
+`app.season.scorer_token_hash` (the one live Scorer link of a Season; only the token's SHA-256 is stored), the table
+`app.scorer_device` (one row per request from a phone: label, status pending, approved, rejected or revoked, a hash of the
+two-digit approval number, a 10-minute expiry; Organisers of the Tournament read it, nobody else), the Season action
+`manage_scorers` (setup, registration and started), the Organiser-only commands `create_scorer_link`, `revoke_scorer_link`,
+`approve_scorer_device` and `revoke_scorer_device`, the command `request_scorer_approval` (an anonymous phone through the live
+link), the read function `app.scorer_status()` (a phone's own requests, newest first) and the helper `app.scorer_allows(actor, season,
+entered_at)`, which later scoring commands ask: true for an approved device, or a revoked one for changes entered before the
+revoke plus `app.grace_window()`. `app.authorize` lets an anonymous user ask for approval; `app.actor_name` names a phone by its
+label in the Activity log. Needs anonymous sign-ins on, as for 0012. Steps: paste `0028_scorer_devices.sql` into the SQL Editor and
+run it. Check: `select app.scorer_status();` runs as any signed-in user (no row until a phone has asked).

@@ -40,6 +40,7 @@
     "check:activity": "node scripts/activity.check.mjs",
     "check:start": "node scripts/start.check.mjs",
     "check:finish": "node scripts/finish.check.mjs",
+    "check:scorer": "node scripts/scorer.check.mjs",
     "check:fixtures": "node scripts/fixtures.check.mjs && node scripts/fixtures.ui.check.mjs"
   },
   "dependencies": {

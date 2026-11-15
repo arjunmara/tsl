@@ -20,7 +20,7 @@ const when = (ts: string) => {
   return `${formatDate(z.date)} · ${z.time}`
 }
 const SUBJECTS: Record<string, string> = { eligibility_record: 'Document', photo_consent: 'Photo consent', season: 'Season', tournament: 'Tournament',
-  organiser_membership: 'Organiser', organiser_invite: 'Invite', registration_grant: 'Registration link', registration_link: 'Registration link', sponsor: 'Sponsor' }
+  organiser_membership: 'Organiser', organiser_invite: 'Invite', registration_grant: 'Registration link', registration_link: 'Registration link', scorer_device: 'Scorer phone', sponsor: 'Sponsor' }
 
 /** /t/:tournamentId/settings/activity: who changed what and when in this Season, newest first, in pages of 50. */
 export function Activity() {

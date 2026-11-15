@@ -15,8 +15,10 @@ import { MatchDetail } from './features/home/MatchDetail'
 import { Settings } from './features/home/Settings'
 import { Activity } from './features/home/Activity'
 import { CoOrganisers } from './features/home/CoOrganisers'
+import { Scorers } from './features/home/Scorers'
 import { Invite } from './features/auth/Invite'
 import { Register } from './features/register/Register'
+import { Score } from './features/score/Score'
 import { SaveStatusBar } from './features/save-status/SaveStatusBar'
 import { PrimaryButton } from './ui/Button'
 
@@ -53,7 +55,7 @@ const crashTest = import.meta.env.DEV || new URLSearchParams(location.search).ha
  * and the Registration link form (only while it's open).
  */
 function PageSaveStatus() {
-  return /^\/(t\/[^/]+(\/settings|\/teams\/[^/]+)?|register)\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
+  return /^\/(t\/[^/]+(\/settings|\/teams\/[^/]+)?|register|score)\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
 }
 
 function Crash(): ReactNode {
@@ -76,6 +78,7 @@ export function App() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/invite/:token" element={<Invite />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/score" element={<Score />} />
           <Route element={<RequireSession />}>
             <Route path="/" element={<MyTournaments />} />
             <Route element={<RequireVerified />}>
@@ -87,6 +90,7 @@ export function App() {
               <Route path="/t/:tournamentId/settings" element={<Settings />} />
               <Route path="/t/:tournamentId/settings/co-organisers" element={<CoOrganisers />} />
               <Route path="/t/:tournamentId/settings/activity" element={<Activity />} />
+              <Route path="/t/:tournamentId/settings/scorers" element={<Scorers />} />
               <Route path="/t/:tournamentId/settings/:section" element={<SettingsSection />} />
             </Route>
           </Route>

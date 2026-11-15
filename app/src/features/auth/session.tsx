@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Outlet } from 'react-router'
 import { onSession, type Session } from '../../domain/auth'
+import { messages } from '../../domain/messages'
+import { Problem } from './Screen'
 
 // undefined while the stored session is still being read.
 const SessionContext = createContext<Session | null | undefined>(undefined)
@@ -26,6 +28,8 @@ export function RequireSession() {
       </main>
     )
   }
+  // An anonymous session (a Scorer phone or Team manager) is no account: every member screen is unavailable to it, with nowhere to go.
+  if (session?.anonymous) return <main className="screen"><Problem text={messages.tournament_missing} /></main>
   return session ? <Outlet /> : <Navigate to="/sign-in" replace />
 }
 
