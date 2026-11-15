@@ -39,6 +39,7 @@
     "check:standings": "node scripts/standings.check.mjs",
     "check:activity": "node scripts/activity.check.mjs",
     "check:start": "node scripts/start.check.mjs",
+    "check:finish": "node scripts/finish.check.mjs",
     "check:fixtures": "node scripts/fixtures.check.mjs && node scripts/fixtures.ui.check.mjs"
   },
   "dependencies": {

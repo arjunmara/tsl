@@ -474,3 +474,14 @@ Apply before the app deploy with Settings → Activity log (test first, then liv
 member of the Tournament). The view is `security_invoker`, so the log's own RLS applies: members only. No log row can be written
 through it. Steps: paste `0026_activity_view.sql` into the SQL Editor and run it. Check:
 `select who, table_name from app.activity_view order by id desc limit 5;` runs as an Organiser.
+
+## Apply 0027_finish_season.sql (Story 3.8)
+
+Apply after 0026 and before the app deploy with "Finish season" on the Matches tab (test first, then live). It adds the Season
+action `finish_season` (started only), the read function `app.finish_check(season)` (Organisers of the Tournament only: `ready` and
+the reason in words) and the Organiser-only command `finish_season`, which re-checks under a lock and moves the Season from started to
+finished (`finish_blocked` with the same reason when not ready). Ready means the Season is started, has at least one Match and every
+Match is finished. A finished Season has no allowed actions, so every Squad, Fixture, shootout and setup command answers
+`season_finished`; reads are unchanged. The deletion job already deletes a finished Season's eligibility scans. Nothing unfinishes a
+Season. Steps: paste `0027_finish_season.sql` into the SQL Editor and run it. Check:
+`select app.finish_check('<season id>')` runs as an Organiser.

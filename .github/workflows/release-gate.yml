@@ -94,3 +94,5 @@ jobs:
         run: npm run check:confirm
       - name: Browse the Activity log (Story 3.7)
         run: npm run check:activity
+      - name: Finish the Season (Story 3.8)
+        run: npm run check:finish

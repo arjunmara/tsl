@@ -57,6 +57,7 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   set_kick_off: () => 'Set a kick-off time',
   publish_fixtures: () => 'Publish the Fixtures',
   start_season: () => 'Start the tournament',
+  finish_season: () => 'Finish the season',
   record_tiebreak_shootout: () => 'Record a shootout winner',
   reopen_registration_link: () => "Reopen a Team's link",
   set_photo: (a) => (a.is_cutout === false ? 'Save a photo with its background' : 'Save a cut-out photo'),

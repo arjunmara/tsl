@@ -171,11 +171,11 @@ function overlayAnswers(base: SeasonAnswers, queued: OutboxEntry[]): SeasonAnswe
 const lastRead = new Map<string, Base>()
 
 function LoadStep(props: { tournamentId: string; step: number }) {
-  const [started, setStarted] = useState(false)
+  const [started, setStarted] = useState<false | 'started' | 'finished'>(false)
   return <SeasonStarted.Provider value={started}><LoadStepBody {...props} onStarted={setStarted} /></SeasonStarted.Provider>
 }
 
-function LoadStepBody({ tournamentId, step, onStarted }: { tournamentId: string; step: number; onStarted: (started: boolean) => void }) {
+function LoadStepBody({ tournamentId, step, onStarted }: { tournamentId: string; step: number; onStarted: (started: false | 'started' | 'finished') => void }) {
   const settings = useContext(SettingsMode)
   const [loaded, setLoaded] = useState<Loaded | 'missing' | null>(null)
   const [problem, setProblem] = useState<{ step: number; text: string } | null>(null)
@@ -227,7 +227,7 @@ function LoadStepBody({ tournamentId, step, onStarted }: { tournamentId: string;
       }
       const t = r.tournament
       if (!t || !t.season) return setLoaded('missing')
-      onStarted(t.season.status === 'started')
+      onStarted(t.season.status === 'started' || t.season.status === 'finished' ? t.season.status : false)
       let sponsors: Sponsor[] = []
       if (step === 7) {
         const sp = await seasonSponsors(t.season.id)

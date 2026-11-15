@@ -8,6 +8,7 @@ import { Problem } from '../auth/Screen'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { overlay, Unavailable, UUID } from '../setup/Setup'
 import { Fixtures } from './Fixtures'
+import { FinishCard } from './FinishCard'
 import { StartCard } from './StartCard'
 import { statusLabel } from '../tournaments/MyTournaments'
 import { TeamPage } from './TeamPage'
@@ -188,6 +189,9 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
               <>
                 {h.season.status === 'registration' && (
                   <StartCard tournamentId={tournamentId} seasonId={h.season.id} number={h.season.number} onStarted={() => setAttempt((n) => n + 1)} />
+                )}
+                {h.season.status === 'started' && (
+                  <FinishCard tournamentId={tournamentId} seasonId={h.season.id} number={h.season.number} onFinished={() => setAttempt((n) => n + 1)} />
                 )}
                 <Fixtures tournamentId={tournamentId} head={h} fallback={matchesText[h.season.status]} />
               </>

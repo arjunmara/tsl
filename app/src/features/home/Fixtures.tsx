@@ -230,6 +230,7 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
   return (
     <div className="fixtures">
       {published && <StatusPill state="done" label="Published" />}
+      {h.season.status === 'finished' && <p className="meta">{messages.season_finished}</p>}
       {action}
       <p role="status" aria-live="polite" className="body-strong">{notice}</p>
       <Problem text={problem} />

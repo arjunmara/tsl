@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,actor_name}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -2124,6 +2124,60 @@ q "update app.season set structure = 'league', status = 'registration', fixtures
    insert into app.team (id, tournament_id, season_id, name, code, status) values ('$(yt 21)', '$T10', '$S14', 'L1', 'L1', 'approved'), ('$(yt 22)', '$T10', '$S14', 'L2', 'L2', 'approved')" >/dev/null
 [ "$(as $A "select app.start_check('$S14')->>'reason'")" = 'Ready to start: 2 Teams approved.' ] || fail "start_check: League text"
 [ "$(tc $A "start_season('$(cmd 2321)', '$S14')")" = ok ] || fail "start: League"
+
+# --- Finish the season (Story 3.8). S13 (T9) is started; A organises it, B and G1 do not.
+fm() { printf '77111111-0000-4000-8000-%012d' "$1"; }
+fs() { tc "$1" "finish_season('$(cmd "$2")', '$S13')"; }
+fc() { as "$1" "select app.finish_check('$S13')->>'$2'"; }
+fblocked() { # $1 command number, $2 expected reason
+  local r; r=$(as $A "select app.finish_season('$(cmd "$1")', '$S13')")
+  [ "$(q "select (r->>'code')||'|'||(r->>'message') from (select \$j\$$r\$j\$::jsonb r) x")" = "finish_blocked|$2" ] || fail "finish: $2 / $r"
+  [ "$(fc $A reason)|$(fc $A ready)|$(st9)" = "$2|false|started" ] || fail "finish_check: $2 / $(fc $A reason)"
+}
+for who in $B $G1; do
+  [ "$(fs $who 2600)" = not_authorized ] || fail "leak: $who finished the Season"
+  redo 2600
+done
+[ "$(as $B "select app.finish_check('$S13') is null")|$(as $A "select app.finish_check('$S13') is null")" = 't|f' ] || fail "leak: another Tournament reads finish_check"
+for f in "finish_season('$(cmd 2601)', '$S13')" "finish_check('$S13')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+# Wrong status: registration is refused with the Season's own code.
+[ "$(fs $A 2602)" = finish_blocked ] || fail "finish: no Matches"
+fblocked 2603 "Can't finish yet: there are no Matches."
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status, hg, ag) values
+  ('$(fm 1)', '$T9', '$S13', 'group', 'Group', 1, '$(yt 1)', '$(yt 2)', 'finished', 1, 0),
+  ('$(fm 2)', '$T9', '$S13', 'group', 'Group', 2, '$(yt 3)', '$(yt 4)', 'scheduled', null, null),
+  ('$(fm 3)', '$T9', '$S13', 'group', 'Group', 3, '$(yt 1)', '$(yt 3)', 'scheduled', null, null),
+  ('$(fm 4)', '$T9', '$S13', 'group', 'Group', 4, '$(yt 2)', '$(yt 4)', 'scheduled', null, null)" >/dev/null
+fblocked 2604 "Can't finish yet: 3 Matches aren't finished."
+q "update app.match set status = 'finished', hg = 2, ag = 2 where id in ('$(fm 2)', '$(fm 3)')" >/dev/null
+fblocked 2605 "Can't finish yet: 1 Match isn't finished."
+q "update app.match set status = 'finished', hg = 0, ag = 3 where id = '$(fm 4)'" >/dev/null
+[ "$(fc $A reason)|$(fc $A ready)" = "Ready to finish: every Match is finished.|true" ] || fail "finish_check: ready $(fc $A reason)"
+# An unverified scan of the Season (a finished Season's scans go).
+q "insert into storage.objects (bucket_id, name) values ('eligibility-scans', '$T9/fin.webp');
+   insert into app.eligibility_record (id, tournament_id, player_id, season_id, document_type, document_number, scan_path, scan_name)
+     values ('b1111111-0000-4000-8000-0000000000f1', '$T9', '$Q2', '$S13', 'emis', '5', '$T9/fin.webp', 'fin.jpg')" >/dev/null
+[ "$(svc "select count(*) from app.scans_to_delete() n where n = '$T9/fin.webp'")" = 0 ] || fail "finish: scan listed while started"
+[ "$(st9)" = started ] || fail "finish: a refusal moved the Season"
+r1=$(as $A "select app.finish_season('$(cmd 2606)', '$S13')")
+[ "$(q "select (r->>'ok')||(r->>'code' is null)::text from (select '$r1'::jsonb r) x")" = truetrue ] && [ "$(st9)" = finished ] || fail "finish: $r1"
+[ "$(as $A "select app.finish_season('$(cmd 2606)', '$S13')")" = "$r1" ] || fail "finish: repeat answered differently"
+[ "$(q "select count(*)||':'||bool_and(actor = '$A')||':'||bool_and(after->>'status' = 'finished' and before->>'status' = 'started') from app.activity_log where command_id='$(cmd 2606)' and table_name = 'season' and op = 'update'")" = '1:true:true' ] \
+  || fail "finish: log row"
+[ "$(fs $A 2607)" = season_finished ] || fail "finish: twice"
+[ "$(svc "select count(*) from app.scans_to_delete() n where n = '$T9/fin.webp'")" = 1 ] || fail "finish: the scan is not listed for deletion"
+# Locked for good, confirmed or not.
+[ "$(tc $A "set_kick_off('$(cmd 2608)', '$S13', '$(fm 1)', 1, now(), true)")|$(tc $A "set_kick_off('$(cmd 2609)', '$S13', '$(fm 1)', 1, now())")" = 'season_finished|season_finished' ] || fail "finish: kick-off still editable"
+[ "$(tc $A "edit_player('$(cmd 2610)', '$(yt 1)', '$(sid 2610)', 1, 'x', null, null, null, null, true)")|$(tc $A "add_player('$(cmd 2611)', '$(yt 1)', '$(sid 2611)', 'x', 1, '$grown', true, null, true)")" = 'season_finished|season_finished' ] || fail "finish: Squad still editable"
+[ "$(tc $A "record_tiebreak_shootout('$(cmd 2612)', '$S13', '$(sid 2612)', '$(yt 1)', '$(yt 2)')")|$(tc $A "set_lineup_rules('$(cmd 2613)', '$S13', 1, 5, 5)")" = 'season_finished|season_finished' ] || fail "finish: shootout or setup still editable"
+out=$(q "update app.season set status = 'started' where id='$S13'" 2>&1 || true)
+[[ $out == *"cannot change from finished to started"* ]] || fail "finish: unfinished: $out"
+# Wrong status: a Season in setup.
+S15=21111111-0000-4000-8000-0000000000db T11=11111111-0000-4000-8000-0000000000db
+[ "$(create $A 2616 $T11 $S15 'Setup Finish')" != "" ] && [ "$(tc $A "finish_season('$(cmd 2614)', '$S15')")" = season_setup ] || fail "finish: allowed outside started"
 
 # --- Confirm before changes after start (Story 3.6, FR-16). A organises T5 (S6 started, Team Z) and T1 (S9 started) and S10's
 # Fixtures M1, M2 (started above). Every Squad and Fixture command needs confirmed => true once the Season has started; a

@@ -174,6 +174,7 @@ export function ClosedTeam({ form }: { form: RegistrationForm }) {
   return (
     <>
       <TeamCard form={form} />
+      {form.seasonStatus === 'finished' && <p className="meta">{messages.season_finished}</p>}
       <ClosedSquad form={form} />
     </>
   )

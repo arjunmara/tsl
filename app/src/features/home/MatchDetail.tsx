@@ -23,7 +23,7 @@ export function MatchDetail() {
 function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string }) {
   const navigate = useNavigate()
   const [seasonId, setSeasonId] = useState<string | null>(null)
-  const [season, setSeason] = useState<{ editable: boolean; started: boolean; starts: string; ends: string }>({ editable: false, started: false, starts: '', ends: '' })
+  const [season, setSeason] = useState<{ editable: boolean; started: boolean; finished: boolean; starts: string; ends: string }>({ editable: false, started: false, finished: false, starts: '', ends: '' })
   const pending = useOutbox().entries.length
   const [notice, setNotice] = useState('')
   const [match, setMatch] = useState<Match | 'missing' | 'offline' | 'unknown' | null>(null)
@@ -34,7 +34,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
       if (!live) return
       if (typeof h === 'string') return setMatch(h === 'missing' ? 'missing' : h)
       setSeasonId(h.season.id)
-      setSeason({ editable: h.season.status === 'registration' || h.season.status === 'started', started: h.season.status === 'started', starts: h.season.answers.starts_on, ends: h.season.answers.ends_on })
+      setSeason({ editable: h.season.status === 'registration' || h.season.status === 'started', started: h.season.status === 'started', finished: h.season.status === 'finished', starts: h.season.answers.starts_on, ends: h.season.answers.ends_on })
       const r = await seasonMatches(h.season.id)
       const queued = await queuedFor(tournamentId)
       if (live) setMatch('code' in r ? r.code : overlayMatches(r.matches, queued, h.season.id).find((m) => m.id === matchId) ?? 'missing')
@@ -72,6 +72,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
             <p className="body">{kickOffText(match.kickOff)}</p>
           </div>
         )}
+        {typeof match === 'object' && match && season.finished && <p className="meta">{messages.season_finished}</p>}
         {typeof match === 'object' && match && season.editable && seasonId && (
           <KickOffForm key={match.version} notice={notice} setNotice={setNotice} tournamentId={tournamentId} seasonId={seasonId} match={match} starts={season.starts} ends={season.ends}
             started={season.started} name={`${sideText(match.homeTeamId, match.homeSrc, byId)} v ${sideText(match.awayTeamId, match.awaySrc, byId)}`} />
