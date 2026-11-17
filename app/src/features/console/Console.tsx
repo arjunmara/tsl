@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { serverNow } from '../../domain/clock'
-import { send } from '../../domain/commands'
-import { readConsole, takeScoring, type Console as ConsoleData } from '../../domain/console'
+import { dropQueuedClock, forgetRefused, send } from '../../domain/commands'
+import { clockCommand, dividerText, periodButtons, readConsole, stepClock, takeScoring, type ClockOp, type Console as ConsoleData } from '../../domain/console'
 import { formatDate, inZone } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
-import { PrimaryButton, SecondaryButton } from '../../ui/Button'
+import { DestructiveButton, PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { Problem } from '../auth/Screen'
 import { Unavailable, UUID } from '../setup/Setup'
+import { useWakeLock } from './Clock'
 import { PreMatch, startDraft, type Drafts } from './PreMatch'
+import { Scoreboard } from './Scoreboard'
 
 const LEFT = 'The clock keeps running.'
 
@@ -35,6 +37,9 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [today] = useState(() => inZone(serverNow()).date)
+  // The Match's version as this phone expects the server to have it: each clock command raises it by one, queued or not.
+  const version = useRef(0)
+  useWakeLock()
 
   useEffect(() => {
     let live = true
@@ -55,6 +60,7 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
           setProblem(t.code === 'offline' ? messages.take_offline : messageFor(t.code))
         }
       }
+      version.current = r.match.version
       setDrafts(Object.fromEntries(r.teams.map((t) => [t.teamId, startDraft(t)])))
       setConfirmed(r.teams.length === 2 && r.teams.every((t) => t.lineup))
       setC(r)
@@ -63,6 +69,16 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
       live = false
     }
   }, [matchId, attempt])
+
+  // A phone that does not hold scoring follows the Match: the clock, the score and the Event log come from the server every 5 s.
+  const following = typeof c === 'object' && c !== null && !c.holder && c.match.status !== 'finished'
+  useEffect(() => {
+    if (!following) return
+    const t = setInterval(() => void readConsole(matchId).then((r) => {
+      if (typeof r === 'object' && 'match' in r) setC((x) => (x && typeof x === 'object' ? { ...x, match: r.match, clock: r.clock, score: r.score, events: r.events, onAir: r.onAir } : x))
+    }).catch(() => {}), 5000)
+    return () => clearInterval(t)
+  }, [following, matchId])
 
   const leave = () => navigate(scorer ? { pathname: '/score', hash } : `/t/${tournamentId}`, { state: { tab: 'matches', note: LEFT } })
 
@@ -82,6 +98,9 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   const [home, away] = ordered
   const ready = c.teams.length === 2 && drafts && home && away
   const readOnly = !c.holder || c.match.status !== 'scheduled'
+  const kits = Object.fromEntries(ordered.map((t) => [t.teamId, drafts?.[t.teamId]?.kit ?? t.registeredKit ?? '']))
+  const running = c.match.seasonStatus === 'started' && c.match.status !== 'finished'
+  const buttons = periodButtons(c.clock, c.rules)
   const day = c.match.kickOff ? inZone(c.match.kickOff).date : today
   const onAir = c.onAir
   const scope = c.match.seasonId
@@ -100,6 +119,31 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
       setNotice(r.ok ? '' : messages.lineups_queued)
     } else {
       setProblem(r.code === 'lineup_invalid' && r.message ? r.message : messageFor(r.code))
+    }
+  }
+
+  // A clock command: the clock changes on this phone at once (offline too), then the command goes through the outbox with the time of the tap.
+  async function clockStep(op: ClockOp, ms?: number) {
+    if (!c || typeof c === 'string') return
+    const at = serverNow()
+    const step = stepClock(c.clock, op, at, c.rules, ms)
+    if (!step) return
+    const expected = version.current++
+    setProblem(null)
+    setNotice('')
+    setC((x) => x && typeof x === 'object' ? { ...x, clock: step.clock, match: { ...x.match, status: step.status ?? x.match.status },
+      events: step.event ? [{ id: crypto.randomUUID(), kind: step.event, period: step.clock.period, minute: Math.floor(step.clock.elapsedMs / 60000), enteredAt: at.toISOString(),
+        home: x.score.home, away: x.score.away }, ...x.events] : x.events } : x)
+    const r = await send(clockCommand[op], { season_id: scope, match_id: matchId, expected_version: expected, at: at.toISOString(), ...(op === 'set' ? { elapsed_ms: ms } : {}) }, { scope })
+    if (r.ok) return
+    if (r.code === 'queued') return setNotice(messages.clock_queued)
+    if (r.commandId) void forgetRefused(r.commandId)
+    await dropQueuedClock(matchId)
+    setProblem(messageFor(r.code))
+    const again = await readConsole(matchId)
+    if (typeof again === 'object' && 'match' in again) {
+      version.current = again.match.version
+      setC(again)
     }
   }
 
@@ -129,7 +173,32 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
       {c.match.status === 'finished' && <p className="body">This Match is finished.</p>}
       {c.match.seasonStatus !== 'started' && <p className="body">{messages.console_not_started}</p>}
       {c.teams.length < 2 && <p className="body">This Match has no Teams yet.</p>}
-      {ready && drafts && (
+      {ready && home && away && (
+        <>
+          <Scoreboard c={c} home={home} away={away} kits={kits} canCorrect={c.holder && running} onCorrect={(ms) => void clockStep('set', ms)} />
+          {c.holder && running && (
+            <div className="clock-controls">
+              {c.clock.interval ? null : c.clock.running
+                ? <button type="button" className="ui-button ui-primary clock-pause" onClick={() => void clockStep('pause')}><span className="clock-pause-icon" aria-hidden="true" />Pause clock</button>
+                : c.clock.period === 0 && !confirmed
+                  ? null
+                  : <PrimaryButton label={c.clock.period === 0 ? 'Start clock' : 'Resume clock'} onClick={() => void clockStep('start')} />}
+              {buttons.map((b) => b.op === 'end'
+                ? <DestructiveButton key={b.label} label={b.label} sheetTitle={`End the match at ${c.score.home}–${c.score.away}?`} before="Live" after="Finished"
+                    actionLabel="End the match" note="This is logged." onConfirm={() => void clockStep('end')} />
+                : <SecondaryButton key={b.label} label={b.label} onClick={() => void clockStep('next')} />)}
+            </div>
+          )}
+          <section aria-labelledby="event-log">
+            <h2 id="event-log" className="body-strong">Event log</h2>
+            <ul className="event-log">
+              {c.events.map((e) => ({ e, text: dividerText(e, c.rules) })).filter((x) => x.text).map(({ e, text }) => <li key={e.id} className="body">{text}</li>)}
+            </ul>
+            {!c.events.some((e) => dividerText(e, c.rules)) && <p className="meta">Nothing has happened yet.</p>}
+          </section>
+        </>
+      )}
+      {ready && drafts && c.match.status === 'scheduled' && (
         <PreMatch c={c} teams={ordered} drafts={drafts} setDrafts={(d) => (setConfirmed(false), setDrafts(d))} readOnly={readOnly} confirmed={confirmed} busy={busy}
           onSwap={() => (setConfirmed(false), setSwapped((s) => !s))} onConfirm={() => void confirm()} />
       )}

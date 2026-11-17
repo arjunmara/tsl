@@ -146,6 +146,11 @@ export async function discard(seq: number, reason: string) {
   kick()
 }
 
+/** Drops this user's still-queued clock commands for one Match (after one was refused, the rest would only fail too). */
+export const dropQueuedClock = (matchId: string) =>
+  db.entries.filter((e) => e.state === 'pending' && e.args.match_id === matchId
+    && ['start_clock', 'pause_clock', 'next_period', 'set_clock', 'end_match'].includes(e.name)).delete()
+
 /** Removes a refused (failed or conflict) entry whose refusal the caller has already shown (e.g. on the form that sent it). */
 export const forgetRefused = (commandId: string) =>
   db.entries.filter((e) => e.commandId === commandId && e.state !== 'pending').delete()

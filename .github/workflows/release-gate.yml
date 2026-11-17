@@ -100,3 +100,5 @@ jobs:
         run: npm run check:scorer
       - name: Pre-match line-ups, kit colours and On-air Match (Story 4.2)
         run: npm run check:console
+      - name: One Match clock and periods (Story 4.3)
+        run: npm run check:clock

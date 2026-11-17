@@ -54,8 +54,9 @@ function consoleFor(who, id) {
   const ids = lu ? lu.map((l) => l.team_id) : [m.home_team_id, m.away_team_id]
   const teams = ids.map((t, i) => ({ team_id: t, name: byId(t).name, code: byId(t).code, registered_kit: byId(t).kit, side: i === 0 ? 'home' : 'away', squad: squad(byId(t)),
     lineup: lu ? { starters: lu[i].starters, bench: lu[i].bench, kit_colour: lu[i].kit_colour, version: 1 } : null }))
-  return { match: { id, season_id: S, tournament_id: T, stage: m.stage, round: m.round, label: m.label, kick_off: m.kick_off, status: m.status, season_status: 'started' },
-    rules: { starters: 5, max_bench: 9 }, holder: mock.holders[id] === who, held: !!mock.holders[id], on_air: mock.onAir === id, teams }
+  return { match: { id, season_id: S, tournament_id: T, stage: m.stage, round: m.round, label: m.label, kick_off: m.kick_off, status: m.status, season_status: 'started', version: 1 },
+    rules: { starters: 5, max_bench: 9, periods: 2, extra_time_periods: 0 },
+    clock: { running: false, anchor_at: null, elapsed_ms: 0, period: 0, interval: false }, score: { home: 0, away: 0 }, events: [], holder: mock.holders[id] === who, held: !!mock.holders[id], on_air: mock.onAir === id, teams }
 }
 
 async function ctx(who) {

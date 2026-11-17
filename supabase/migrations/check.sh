@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -2523,6 +2523,118 @@ q "update app.scorer_device set status = 'revoked', revoked_at = now() - interva
 q "update app.season set status = 'finished' where id='$S19'" >/dev/null
 [ "$(ts $A 2852 $M2)|$(sos $A 2853 $M2)|$(cl $A 2854 $M2 "$H" "$AW")" = 'season_finished|season_finished|season_finished' ] || fail "prematch: a finished Season"
 
+
+# --- Match clock and periods (Story 4.3). S20 of T15 is started with 2 periods and extra time (2 periods, knockout Matches only).
+# X4, X5 play N1 (group, no extra time) and N2 (knockout, extra time); X4 v X6 is N3 (no line-ups). D9 is an approved phone of S20,
+# D10 is pending in S20; D7 (S17) and G1 stay outside.
+S20=21111111-0000-4000-8000-0000000000f2
+X4=41111111-0000-4000-8000-000000000004 X5=41111111-0000-4000-8000-000000000005 X6=41111111-0000-4000-8000-000000000006
+N1=51111111-0000-4000-8000-0000000000a1 N2=51111111-0000-4000-8000-0000000000a2 N3=51111111-0000-4000-8000-0000000000a3
+D9=f2111111-0000-4000-8000-000000000009 D10=f2111111-0000-4000-8000-00000000000a
+q "insert into auth.users (id, is_anonymous) values ('$D9', true), ('$D10', true)" >/dev/null
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench, periods, extra_time, extra_time_periods)
+   values ('$S20', '$T15', 3, 'started', 2, 2, 2, true, 2)" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$X4', '$T15', '$S20', 'Four FC', 'FOU', '#ff0000', 'approved'), ('$X5', '$T15', '$S20', 'Five FC', 'FIV', '#0000ff', 'approved'),
+  ('$X6', '$T15', '$S20', 'Six FC', 'SIX', null, 'approved')" >/dev/null
+for t in 4 5; do for n in 1 2; do
+  q "insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl $t $n)', '$T15', 'Player $t-$n', '2000-01-01');
+     insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '$(eval echo \$X$t)', '$(pl $t $n)', $n)" >/dev/null
+done; done
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status) values
+  ('$N1', '$T15', '$S20', 'group', 'Group A', 1, '$X4', '$X5', 'scheduled'), ('$N2', '$T15', '$S20', 'knockout', 'Final', 2, '$X4', '$X5', 'scheduled'),
+  ('$N3', '$T15', '$S20', 'group', 'Group A', 3, '$X4', '$X6', 'scheduled')" >/dev/null
+q "insert into app.scorer_device (tournament_id, season_id, user_id, label, status, number_hash, expires_at) values
+  ('$T15', '$S20', '$D9', 'Clock phone', 'approved', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S20', '$D10', 'Waiting phone', 'pending', repeat('0', 64), now() + interval '1 hour')" >/dev/null
+mver() { q "select version from app.match where id='$1'"; }
+# ck <user> <command> <n> <match> [extra args]: a clock command at the Match's current version.
+ck() { tc "$1" "$2('$(cmd "$3")', '$S20', '$4', $(mver "$4")${5:+, $5})"; }
+st() { q "select status||':'||coalesce(clock->>'period', '-')||':'||coalesce(clock->>'running', '-')||':'||coalesce(clock->>'interval', '-') from app.match where id='$1'"; }
+evs() { q "select coalesce(string_agg(kind||period, ',' order by created_at, entered_at), 'none') from app.match_event where match_id='$1'"; }
+ts20() { tc "$1" "take_scoring('$(cmd "$2")', '$S20', '$3')"; }
+# Isolation: a pending phone, another Season's phone, a Registration link and another Tournament's Organiser run and read nothing.
+for who in $D10 $D7 $G1 $B; do
+  [ "$(ck $who start_clock 2900 $N1)|$(ck $who pause_clock 2901 $N1)|$(ck $who next_period 2902 $N1)|$(ck $who set_clock 2903 $N1 1000)|$(ck $who end_match 2904 $N1)" \
+    = 'not_authorized|not_authorized|not_authorized|not_authorized|not_authorized' ] || fail "leak: $who ran a clock command"
+  [ "$(cm $who $N1)" = none ] || fail "leak: $who reads the clock"
+  for n in 2900 2901 2902 2903 2904; do redo $n; done
+done
+[ "$(st $N1)|$(evs $N1)" = 'scheduled:-:-:-|none' ] || fail "clock: a refused command wrote"
+for f in "start_clock('$(cmd 2905)', '$S20', '$N1', 1)" "pause_clock('$(cmd 2905)', '$S20', '$N1', 1)" "next_period('$(cmd 2905)', '$S20', '$N1', 1)" \
+  "set_clock('$(cmd 2905)', '$S20', '$N1', 1, 1000)" "end_match('$(cmd 2905)', '$S20', '$N1', 1)" "match_score('$N1')" "clock_step('$D9', 'start', '$(cmd 2905)', '$S20', '$N1', 1, now(), null)"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+# The helpers are not callable by an approved phone either.
+for f in "match_score('$N1')" "clock_step('$D9', 'start', '$(cmd 2905)', '$S20', '$N1', 1, now(), null)"; do
+  out=$(as $D9 "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "phone: can execute $f: $out"
+done
+# Not the holder; no line-ups yet.
+[ "$(ck $D9 start_clock 2906 $N1)" = not_scoring_device ] || fail "clock: a phone that holds nothing started the clock"
+[ "$(ts20 $D9 2907 $N1)|$(ts20 $D9 2908 $N3)|$(ck $D9 start_clock 2909 $N3)|$(ck $A start_clock 2910 $N1)" = 'ok|ok|lineups_missing|not_scoring_device' ] || fail "clock: line-ups or holder"
+[ "$(st $N3)|$(st $N1)" = 'scheduled:-:-:-|scheduled:-:-:-' ] || fail "clock: lineups_missing changed the Match"
+LA=$(lu 4 '1 2' '' '#ff0000') LB=$(lu 5 '1 2' '' '#0000ff')
+[ "$(tc $D9 "confirm_lineups('$(cmd 2911)', '$S20', '$N1', '$LA'::jsonb, '$LB'::jsonb)")" = ok ] || fail "clock: confirm line-ups"
+# Start: a stale version is a conflict that writes nothing; the first start puts the Match live in period 1 with a divider.
+[ "$(tc $D9 "start_clock('$(cmd 2912)', '$S20', '$N1', 99)")" = version_conflict ] || fail "start_clock: a stale version"
+[ "$(st $N1)" = 'scheduled:-:-:-' ] || fail "start_clock: a stale version wrote"
+[ "$(tc $D9 "start_clock('$(cmd 2960)', '$S20', '$N1', $(mver $N1), now() - interval '1 day')")|$(q "select (clock->>'anchor_at')::timestamptz >= now() - app.grace_window() - interval '1 minute' from app.match where id='$N1'")" = 'ok|t' ] || fail "start_clock: a stale at started the clock hours in"
+q "update app.match set clock = null, status = 'scheduled', version = version + 1 where id='$N1'; delete from app.match_event where match_id='$N1'" >/dev/null
+[ "$(ck $D9 start_clock 2913 $N1)|$(st $N1)|$(evs $N1)" = 'ok|live:1:true:false|period_start1' ] || fail "start_clock: first start"
+[ "$(q "select hg is null and ag is null from app.match where id='$N1'")" = t ] || fail "start_clock: a score was written"
+[ "$(tc $D9 "start_clock('$(cmd 2913)', '$S20', '$N1', 1)")|$(evs $N1)" = 'ok|period_start1' ] || fail "start_clock: the same command twice"
+[ "$(ck $D9 start_clock 2914 $N1)|$(ck $D9 set_clock 2915 $N1 -5)|$(ck $D9 set_clock 2916 $N1 30000000)" = 'clock_invalid|clock_invalid|clock_invalid' ] || fail "clock: start while running, or a clock out of range"
+# The clock reads elapsed_ms plus the time since anchor_at: pause 125 s later keeps about 125 s; the time of the change is clamped.
+q "update app.match set clock = jsonb_set(clock, '{anchor_at}', to_jsonb(now() - interval '125 seconds')) where id='$N1'" >/dev/null
+[ "$(ck $D9 pause_clock 2917 $N1)|$(q "select ((clock->>'elapsed_ms')::int between 125000 and 130000)||':'||(clock->>'running') from app.match where id='$N1'")" = 'ok|true:false' ] || fail "pause_clock: elapsed"
+[ "$(ck $D9 pause_clock 2918 $N1)" = clock_invalid ] || fail "pause_clock: already paused"
+E1=$(q "select clock->>'elapsed_ms' from app.match where id='$N1'")
+# at before the last change counts as the last change (no time passes); at in the future counts as now.
+[ "$(tc $D9 "start_clock('$(cmd 2919)', '$S20', '$N1', $(mver $N1), now() - interval '1 day')")|$(tc $D9 "pause_clock('$(cmd 2920)', '$S20', '$N1', $(mver $N1), now() - interval '2 days')")|$(q "select clock->>'elapsed_ms' from app.match where id='$N1'")" = "ok|ok|$E1" ] \
+  || fail "clock: an at before the last change moved the clock"
+[ "$(tc $D9 "start_clock('$(cmd 2921)', '$S20', '$N1', $(mver $N1), now() + interval '1 hour')")|$(q "select (clock->>'anchor_at')::timestamptz <= now() from app.match where id='$N1'")" = 'ok|t' ] || fail "clock: an at in the future"
+# Correct the clock: 14:00 now; the Match, the event and the Activity log say so; the clock keeps running.
+[ "$(ck $D9 set_clock 2922 $N1 840000)|$(q "select (clock->>'elapsed_ms')||':'||(clock->>'running') from app.match where id='$N1'")" = 'ok|840000:true' ] || fail "set_clock"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 2922)' and table_name = 'match' and op = 'update'")|$(q "select count(*) from app.match_event where id='$(cmd 2922)' and kind='clock_set' and minute=14")" = '1|1' ] || fail "set_clock: not logged"
+# Periods: 2 periods, a group Match has no extra time. Interval, 2nd period, then only End the match.
+[ "$(ck $D9 next_period 2923 $N1)|$(st $N1)" = 'ok|live:1:false:true' ] || fail "next_period: into the interval"
+[ "$(ck $D9 start_clock 2924 $N1)|$(ck $D9 pause_clock 2925 $N1)" = 'clock_invalid|clock_invalid' ] || fail "clock: running an interval"
+[ "$(ck $D9 next_period 2926 $N1)|$(st $N1)|$(q "select clock->>'elapsed_ms' from app.match where id='$N1'")" = 'ok|live:2:true:false|0' ] || fail "next_period: 2nd half"
+[ "$(ck $D9 next_period 2927 $N1)|$(evs $N1)" = 'clock_invalid|period_start1,clock_set1,period_end1,period_start2' ] || fail "next_period: a group Match has no extra time: $(evs $N1)"
+[ "$(q "select string_agg(score_home||'-'||score_away, ',') from app.match_event where match_id='$N1' and kind like 'period%'")" = '0-0,0-0,0-0' ] || fail "next_period: dividers carry the score"
+# End the match: finished, the score from match_score, nothing typed; then every clock command is match_finished.
+[ "$(ck $D9 end_match 2928 $N1)|$(st $N1)|$(q "select hg||'-'||ag from app.match where id='$N1'")|$(evs $N1 | grep -o 'match_end2')" = 'ok|finished:2:false:false|0-0|match_end2' ] || fail "end_match"
+[ "$(ck $D9 start_clock 2929 $N1)|$(ck $D9 next_period 2930 $N1)|$(ck $D9 end_match 2931 $N1)|$(ck $D9 set_clock 2932 $N1 1000)" = 'match_finished|match_finished|match_finished|match_finished' ] || fail "clock: a finished Match"
+# Extra time: a knockout Match from the last regular period; extra-time periods follow the same pattern; no step after the last one.
+[ "$(ts20 $D9 2940 $N2)|$(tc $D9 "confirm_lineups('$(cmd 2941)', '$S20', '$N2', '$LA'::jsonb, '$LB'::jsonb)")|$(ck $D9 start_clock 2942 $N2)" = 'ok|ok|ok' ] || fail "extra time: start"
+seq=
+for n in 2943 2944 2945 2946 2947 2948; do seq+="$(ck $D9 next_period $n $N2)|$(st $N2); "; done
+[ "$seq" = 'ok|live:1:false:true; ok|live:2:true:false; ok|live:3:true:false; ok|live:3:false:true; ok|live:4:true:false; clock_invalid|live:4:true:false; ' ] || fail "extra time: $seq"
+[ "$(ck $D9 end_match 2949 $N2)|$(st $N2)|$(evs $N2)" = 'ok|finished:4:false:false|period_start1,period_end1,period_start2,period_start3,period_end3,period_start4,match_end4' ] \
+  || fail "extra time: end $(evs $N2) $(st $N2)"
+# The console: clock, score, rules and the events newest first, the same for the phone and the Organiser; no personal fields.
+[ "$(as $D9 "select (j->'rules'->>'periods')||'|'||(j->'rules'->>'extra_time_periods')||'|'||(j->'clock'->>'period')||'|'||(j->'score'->>'home')||'|'||jsonb_array_length(j->'events')||'|'||(j->'events'->0->>'kind')||'|'||(j->'events'->-1->>'kind') from (select app.console_match('$N2') j) x")" \
+  = '2|2|4|0|7|match_end|period_start' ] || fail "console_match: N2"
+[ "$(as $A "select (j->'rules'->>'extra_time_periods')||'|'||(j->'match'->>'version')||'|'||(j->'clock'->>'elapsed_ms') from (select app.console_match('$N1') j) x")" = "0|$(mver $N1)|$(q "select clock->>'elapsed_ms' from app.match where id='$N1'")" ] || fail "console_match: N1 group Match"
+[ "$(as $A "select app.console_match('$N3')->'clock'->>'period'")|$(as $A "select jsonb_array_length(app.console_match('$N3')->'events')")" = '0|0' ] || fail "console_match: an unstarted Match"
+# Reads and writes: Organisers read the events of their Tournament only; a phone and another Tournament's Organiser read none; nobody writes.
+[ "$(as $A "select count(*) from app.match_event")|$(as $B "select count(*) from app.match_event")|$(as $D9 "select count(*) from app.match_event")|$(as $G1 "select count(*) from app.match_event")" = '12|0|0|0' ] || fail "leak: match_event read"
+for stmt in "insert into app.match_event (id, tournament_id, season_id, match_id, kind, period, minute, entered_at) values (gen_random_uuid(), '$T15', '$S20', '$N3', 'period_start', 1, 0, now())" \
+  "update app.match_event set minute = 0" "delete from app.match_event" "update app.match set clock = null" "update app.match set hg = 9, ag = 9"; do
+  out=$(as $D9 "$stmt" 2>&1 || true)
+  [[ $out == *"permission denied"* ]] || fail "a phone wrote directly: $stmt: $out"
+  out=$(as $A "$stmt" 2>&1 || true)
+  [[ $out == *"permission denied"* ]] || fail "an Organiser wrote directly: $stmt: $out"
+done
+# Only the Match's own commands wrote hg and ag; the other Match has no score.
+[ "$(q "select string_agg(coalesce(hg::text, '-'), ',' order by ord) from app.match where season_id='$S20'")" = '0,0,-' ] || fail "clock: scores"
+# A revoked phone and a finished Season: refused.
+q "update app.scorer_device set status = 'revoked', revoked_at = now() - interval '2 hours' where user_id = '$D9'" >/dev/null
+[ "$(ck $D9 start_clock 2950 $N3)|$(cm $D9 $N3)" = 'not_authorized|none' ] || fail "clock: a revoked phone still works"
+q "update app.season set status = 'finished' where id='$S20'" >/dev/null
+[ "$(ck $A start_clock 2951 $N3)|$(ck $A end_match 2952 $N3)" = 'season_finished|season_finished' ] || fail "clock: a finished Season"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

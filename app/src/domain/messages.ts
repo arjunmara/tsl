@@ -182,6 +182,9 @@ export const messages = {
   take_offline: 'Opening a match needs a signal. Try opening the match again when you have one.',
   console_unknown: "Couldn't open the match. Try opening it again.",
   console_not_started: "The tournament hasn't started, so this match can't be scored yet.",
+  lineups_missing: 'Confirm both line-ups before starting the clock.',
+  clock_invalid: "The clock can't do that now. Check the clock, then try again.",
+  clock_queued: "Saved on this phone. It sends when there's a signal.",
   lineups_queued: "Line-ups saved on this phone. They send when there's a signal.",
 } as const
 

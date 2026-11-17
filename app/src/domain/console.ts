@@ -6,9 +6,18 @@ import { supabase } from './supabase'
 export type SquadPlayer = { playerId: string; name: string; shirt: number }
 export type Lineup = { starters: string[]; bench: string[]; kitColour: string; version: number }
 export type ConsoleTeam = { teamId: string; name: string; code: string; registeredKit: string | null; side: 'home' | 'away'; squad: SquadPlayer[]; lineup: Lineup | null }
+/** The Match clock (Story 4.3): elapsedMs plus, while running, the time since anchorAt. period 0: not started; interval: between periods. */
+export type ClockState = { running: boolean; anchorAt: string | null; elapsedMs: number; period: number; interval: boolean }
+/** A Period divider (or clock correction) of the Event log; home and away: the score then. */
+export type MatchEvent = { id: string; kind: 'period_start' | 'period_end' | 'match_end' | 'clock_set'; period: number; minute: number; enteredAt: string; home: number | null; away: number | null }
 export type Console = {
-  match: { id: string; seasonId: string; tournamentId: string; stage: string; round: string; label: string | null; kickOff: string | null; status: string; seasonStatus: string }
-  rules: { starters: number; maxBench: number }
+  match: { id: string; seasonId: string; tournamentId: string; stage: string; round: string; label: string | null; kickOff: string | null; status: string; seasonStatus: string; version: number }
+  /** periods: regular periods; extraTimePeriods: 0 unless this is a knockout Match with extra time on. */
+  rules: { starters: number; maxBench: number; periods: number; extraTimePeriods: number }
+  clock: ClockState
+  score: { home: number; away: number }
+  /** Newest first. */
+  events: MatchEvent[]
   /** This device holds scoring; held: some device does; onAir: this is the Tournament's On-air Match. */
   holder: boolean; held: boolean; onAir: boolean
   /** Home first. */
@@ -16,8 +25,11 @@ export type Console = {
 }
 
 type Row = {
-  match: { id: string; season_id: string; tournament_id: string; stage: string; round: string; label: string | null; kick_off: string | null; status: string; season_status: string }
-  rules: { starters: number; max_bench: number }
+  match: { id: string; season_id: string; tournament_id: string; stage: string; round: string; label: string | null; kick_off: string | null; status: string; season_status: string; version: number }
+  rules: { starters: number; max_bench: number; periods: number; extra_time_periods: number }
+  clock: { running: boolean; anchor_at: string | null; elapsed_ms: number; period: number; interval: boolean }
+  score: { home: number; away: number }
+  events: { id: string; kind: MatchEvent['kind']; period: number; minute: number; entered_at: string; home: number | null; away: number | null }[]
   holder: boolean; held: boolean; on_air: boolean
   teams: { team_id: string; name: string; code: string; registered_kit: string | null; side: 'home' | 'away'; squad: { player_id: string; name: string; shirt: number }[]
     lineup: { starters: string[]; bench: string[]; kit_colour: string; version: number } | null }[]
@@ -32,8 +44,11 @@ export async function readConsole(matchId: string): Promise<Console | 'none' | {
     const r = data as Row
     return {
       match: { id: r.match.id, seasonId: r.match.season_id, tournamentId: r.match.tournament_id, stage: r.match.stage, round: r.match.round, label: r.match.label,
-        kickOff: r.match.kick_off, status: r.match.status, seasonStatus: r.match.season_status },
-      rules: { starters: r.rules.starters, maxBench: r.rules.max_bench },
+        kickOff: r.match.kick_off, status: r.match.status, seasonStatus: r.match.season_status, version: r.match.version },
+      rules: { starters: r.rules.starters, maxBench: r.rules.max_bench, periods: r.rules.periods, extraTimePeriods: r.rules.extra_time_periods },
+      clock: { running: r.clock.running, anchorAt: r.clock.anchor_at, elapsedMs: r.clock.elapsed_ms, period: r.clock.period, interval: r.clock.interval },
+      score: r.score,
+      events: r.events.map((e) => ({ id: e.id, kind: e.kind, period: e.period, minute: e.minute, enteredAt: e.entered_at, home: e.home, away: e.away })),
       holder: r.holder, held: r.held, onAir: r.on_air,
       teams: r.teams.map((t) => ({ teamId: t.team_id, name: t.name, code: t.code, registeredKit: t.registered_kit, side: t.side,
         squad: t.squad.map((p) => ({ playerId: p.player_id, name: p.name, shirt: p.shirt })),
@@ -65,5 +80,70 @@ export async function scorerMatches(seasonId: string): Promise<ScorerMatch[] | {
 export function lineupReason(starters: number, bench: number, rules: Console['rules']): string | null {
   if (starters !== rules.starters) return `Line-up needs ${rules.starters} ${rules.starters === 1 ? 'starter' : 'starters'}. You've picked ${starters}.`
   if (bench > rules.maxBench) return `Bench can hold up to ${rules.maxBench}. You've picked ${bench}.`
+  return null
+}
+
+// The Match clock (Story 4.3). Every phone shows the same time: elapsedMs plus, while running, the server-corrected time since anchorAt.
+
+/** The clock's time in milliseconds at `now`. */
+export const elapsedAt = (c: ClockState, now: Date): number =>
+  c.elapsedMs + (c.running && c.anchorAt ? Math.max(0, now.getTime() - Date.parse(c.anchorAt)) : 0)
+
+/** "12:40"; past an hour the minutes keep counting ("105:00"). */
+export const formatClock = (ms: number): string => {
+  const t = Math.floor(Math.max(0, ms) / 1000)
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
+}
+
+/** "14:05" or "105:00" as milliseconds; null when it isn't a time. */
+export function parseClock(text: string): number | null {
+  const m = /^(\d{1,3}):([0-5]\d)$/.exec(text.trim())
+  return m && Number(m[1]) <= 360 && (Number(m[1]) < 360 || m[2] === '00') ? (Number(m[1]) * 60 + Number(m[2])) * 1000 : null
+}
+
+/** "1st half" and "2nd half" for two periods, else "period 3"; then "extra time", "extra time 2". */
+export function periodName(n: number, rules: Console['rules']): string {
+  if (n > rules.periods) return n === rules.periods + 1 ? 'extra time' : `extra time ${n - rules.periods}`
+  return rules.periods === 2 ? ['1st half', '2nd half'][n - 1]! : `period ${n}`
+}
+
+export type ClockOp = 'start' | 'pause' | 'next' | 'set' | 'end'
+export const clockCommand: Record<ClockOp, string> = { start: 'start_clock', pause: 'pause_clock', next: 'next_period', set: 'set_clock', end: 'end_match' }
+
+/** The period button(s) now: what each does and the command it sends, as the server decides it. None before kick-off. */
+export function periodButtons(c: ClockState, rules: Console['rules']): { label: string; op: 'next' | 'end' }[] {
+  const last = rules.periods + rules.extraTimePeriods
+  if (c.period === 0) return []
+  if (c.interval) return [{ label: `Start ${periodName(c.period + 1, rules)}`, op: 'next' }]
+  if (c.period === rules.periods && rules.extraTimePeriods > 0) return [{ label: 'Start extra time', op: 'next' }, { label: 'End the match', op: 'end' }]
+  if (c.period >= last) return [{ label: 'End the match', op: 'end' }]
+  return [{ label: c.period === 1 && rules.periods === 2 ? 'Start half-time' : 'Start interval', op: 'next' }]
+}
+
+/** What a clock command does to the clock and the Match status on this phone, mirroring the server; null when the server would refuse it. */
+export function stepClock(c: ClockState, op: ClockOp, at: Date, rules: Console['rules'], ms?: number): { clock: ClockState; status?: string; event?: MatchEvent['kind'] } | null {
+  const stamp = at.toISOString()
+  const el = elapsedAt(c, at)
+  const to = (p: Partial<ClockState>): ClockState => ({ ...c, anchorAt: stamp, ...p })
+  if (op === 'start') {
+    if (c.running || c.interval) return null
+    return c.period === 0 ? { clock: to({ running: true, elapsedMs: 0, period: 1 }), status: 'live', event: 'period_start' } : { clock: to({ running: true }) }
+  }
+  if (op === 'pause') return c.running ? { clock: to({ running: false, elapsedMs: el }) } : null
+  if (c.period === 0) return null
+  if (op === 'set') return ms == null || ms < 0 ? null : { clock: to({ elapsedMs: ms }), event: 'clock_set' }
+  if (op === 'end') return { clock: to({ running: false, elapsedMs: el }), status: 'finished', event: 'match_end' }
+  const btn = periodButtons(c, rules)[0]
+  if (!btn || btn.op !== 'next') return null
+  if (c.interval || (c.period === rules.periods && rules.extraTimePeriods > 0)) return { clock: to({ running: true, elapsedMs: 0, period: c.period + 1, interval: false }), event: 'period_start' }
+  return { clock: to({ running: false, elapsedMs: el, interval: true }), event: 'period_end' }
+}
+
+/** A divider in words: "2nd half started · 2 – 3". Null for events the log doesn't show. */
+export function dividerText(e: MatchEvent, rules: Console['rules']): string | null {
+  const score = ` · ${e.home ?? 0} – ${e.away ?? 0}`
+  if (e.kind === 'period_start') return `${periodName(e.period, rules).replace(/^./, (x) => x.toUpperCase())} started${score}`
+  if (e.kind === 'period_end') return `${e.period === 1 && rules.periods === 2 ? 'Half-time' : 'Interval'} started${score}`
+  if (e.kind === 'match_end') return `Match ended${score}`
   return null
 }

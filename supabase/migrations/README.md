@@ -513,3 +513,18 @@ approved Scorer phone run the three commands for its own Season. `take_scoring` 
 phone holds (hand-over is Story 4.8); `confirm_lineups` is for the holder before kick-off and answers `lineup_invalid` in words.
 Nothing here writes a score or a Match status. Steps: paste `0029_prematch.sql` into the SQL Editor and run it. Check:
 `select app.console_match('<match id>')` runs as an Organiser (a JSON document with both Teams).
+
+## Apply 0030_match_clock.sql (Story 4.3)
+
+Apply after 0029 and before the app deploy with the Match clock (test first, then live). It adds `app.match.clock` (`running`,
+`anchor_at`, `elapsed_ms`, `period`, `interval`: every phone shows `elapsed_ms` plus, while running, the time since `anchor_at`), the
+append-only table `app.match_event` (client id, kind, period, minute, entered_at, the score then, version; this story writes only the kinds
+`period_start`, `period_end`, `match_end` and `clock_set`; Organisers read it, a Scorer phone reads through `app.console_match`), the Season
+actions `start_clock`, `pause_clock`, `next_period`, `set_clock` and `end_match` (started only), the commands of the same names, and the
+helper `app.match_score(match)` (0-0 until Story 4.4 adds goals). Every command is for the holder of scoring only
+(`not_scoring_device`), carries the Match's expected `version` and the time of the change (`at`, clamped to between the last change and
+now()). The first `start_clock` needs both line-ups (`lineups_missing`), puts the Match live and starts period 1. `end_match` sets the
+Match finished with `hg` and `ag` from `app.match_score`; no command takes a typed score. `app.console_match` gains the Match version,
+the period rules, the clock, the score and the events. `app.authorize` lets an approved Scorer phone run the five commands for its own
+Season. Steps: paste `0030_match_clock.sql` into the SQL Editor and run it. Check: `select app.console_match('<match id>')` runs as an
+Organiser and shows `clock` and `events`.
