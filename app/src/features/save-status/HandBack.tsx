@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { discard, resend, sendMine, type OutboxEntry } from '../../domain/commands'
+import { playerNames } from '../../domain/console'
 import { formatDate, inZone } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
 import { DOCUMENT_TYPES, photoBucket, scanBucket } from '../../domain/registration'
@@ -23,7 +24,8 @@ const WORDS: Record<string, string> = {
  * nothing set as "Not set".
  */
 export const show = (k: string, v: unknown): string =>
-  v == null || v === '' ? 'Not set' : typeof v === 'boolean' ? (v ? 'On' : 'Off')
+  typeof v === 'string' && (k === 'player_id' || k === 'assist_id') && playerNames.has(v) ? playerNames.get(v)!
+  : v == null || v === '' ? 'Not set' : typeof v === 'boolean' ? (v ? 'On' : 'Off')
     : Array.isArray(v) ? (v.length ? v.map((x) => show(k, x)).join(', ') : 'None')
       : typeof v !== 'string' ? JSON.stringify(v) : DATES.has(k) ? formatDate(v) || v : k === 'kick_off' ? when(v) : WORDS[v] ?? v
 

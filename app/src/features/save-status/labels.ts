@@ -71,6 +71,10 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   next_period: () => 'Start the next period',
   set_clock: () => 'Correct the Match clock',
   end_match: () => 'End the Match',
+  record_goal: () => 'Record a goal',
+  add_assist: () => 'Add an assist to a goal',
+  edit_event: () => 'Change a goal',
+  delete_event: () => 'Delete a goal',
   record_tiebreak_shootout: () => 'Record a shootout winner',
   reopen_registration_link: () => "Reopen a Team's link",
   set_photo: (a) => (a.is_cutout === false ? 'Save a photo with its background' : 'Save a cut-out photo'),
@@ -86,6 +90,10 @@ export const labelFor = (name: string, args: Args) => commandLabels[name]?.(args
 
 /** Words for a command's fields in the hand-back sheet's "Your change" / "Their version" columns; else the field name. */
 export const fieldLabels: Record<string, string> = {
+  player_id: 'Scorer',
+  assist_id: 'Assist',
+  minute: 'Minute',
+  own_goal: 'Own goal',
   team_id: 'Team',
   name: 'Name',
   brand_primary: 'Main colour',

@@ -4,7 +4,7 @@ import { appVersion } from './env'
 import { supabase } from './supabase'
 
 // Features write only through send(): it queues on the device and replays in order (src/outbox).
-export { discard, dropQueuedClock, forgetRefused, resend, send, sendMine, useOutbox, whenEmpty, type Conflict, type Entry as OutboxEntry, type Upload } from '../outbox'
+export { discard, dropQueuedClock, dropQueuedGoal, forgetRefused, myQueued, noteVersion, resend, send, sendMine, useOutbox, whenEmpty, type Conflict, type Entry as OutboxEntry, type Upload } from '../outbox'
 
 /**
  * What every command returns. code is null on success. A refused edit of a versioned row returns

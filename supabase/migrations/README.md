@@ -528,3 +528,19 @@ Match finished with `hg` and `ag` from `app.match_score`; no command takes a typ
 the period rules, the clock, the score and the events. `app.authorize` lets an approved Scorer phone run the five commands for its own
 Season. Steps: paste `0030_match_clock.sql` into the SQL Editor and run it. Check: `select app.console_match('<match id>')` runs as an
 Organiser and shows `clock` and `events`.
+
+## Apply 0031_goals.sql (Story 4.4)
+
+Apply after 0030 and before the app deploy with goals in the console (test first, then live). It adds the kind `goal` to `app.match_event`
+and its columns `team_id` (the Team the goal counts for; an own goal is recorded for the Team that gets it), `player_id` (none: own goal or
+unknown scorer), `assist_id`, `own_goal` and `deleted_at` (a delete is soft: the row stays, every read skips it). `app.match.hg` and `ag`
+are now derived by a trigger on `app.match_event` from the undeleted goals, in the Match's own sides, and the trigger does not change
+`app.match.version` (so a goal never makes the holder's next clock command a `version_conflict`); `app.match_score` reads the same, and
+`end_match` finishes the Match with that score. New Season actions and commands (started only, holder of scoring only, live Match only):
+`record_goal` (a new row; the command id is the event id; `period`, `minute` and `at` come from the phone), `add_assist`, `edit_event`
+(Player or minute) and `delete_event`, the last three with the goal's expected `version` (+1 per change; a stale one is a
+`version_conflict` the hand-back shows). Answers: `match_not_live`, `not_scoring_device`, `team_invalid`, `player_invalid`, `goal_invalid`,
+`event_missing`. `app.authorize` lets an approved Scorer phone run the four commands for its own Season. `app.console_match` gains the goal
+fields on events, the score and divider scores in the line-up's home and away order, and `period_minutes` and `extra_time_minutes` in the
+rules. Steps: paste `0031_goals.sql` into the SQL Editor and run it. Check: `select app.console_match('<match id>')` runs as an Organiser
+and shows `events` with `team_id`.

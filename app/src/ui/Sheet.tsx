@@ -9,18 +9,25 @@ export type SheetProps = {
   /** id of the element describing the sheet, if any. */
   describedBy?: string
   onClose: () => void
+  /** Tapping the backdrop closes the sheet too. */
+  dismissOutside?: boolean
   /** The sheet's body; close() closes it, returns focus to the opener and calls onClose once. */
   children: (sheet: SheetControls) => ReactNode
 }
 
 // Bottom sheet on the native <dialog>: showModal() gives the backdrop, the inert page and Escape.
 // On open, focus goes to the element marked data-autofocus, else the heading.
-export function Sheet({ open, title, describedBy, onClose, children }: SheetProps) {
+export function Sheet({ open, title, describedBy, dismissOutside, onClose, children }: SheetProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const opener = useRef<HTMLElement | null>(null)
   // True from showModal() until finish(): onClose fires exactly once per open.
   const shown = useRef(false)
+  const downOutside = useRef(false)
+  const outside = (e: React.MouseEvent<HTMLDialogElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom
+  }
   const titleId = useId()
   // Latest onClose for the native close event without re-binding it.
   const closeRef = useRef(onClose)
@@ -110,6 +117,13 @@ export function Sheet({ open, title, describedBy, onClose, children }: SheetProp
     <dialog ref={dialog} className="ui-sheet" aria-labelledby={titleId}
       aria-describedby={describedBy}
       onKeyDown={trap}
+      onPointerDown={(e) => void (downOutside.current = !!dismissOutside && e.target === e.currentTarget && outside(e))}
+      onClick={(e) => {
+        // Closes only when the press and the release were both on the backdrop (it lands on the dialog itself, outside its box).
+        const went = downOutside.current
+        downOutside.current = false
+        if (went && e.target === e.currentTarget && outside(e)) finish()
+      }}
       onCancel={(e) => {
         e.preventDefault()
         finish()

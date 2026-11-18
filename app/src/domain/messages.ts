@@ -185,6 +185,11 @@ export const messages = {
   lineups_missing: 'Confirm both line-ups before starting the clock.',
   clock_invalid: "The clock can't do that now. Check the clock, then try again.",
   clock_queued: "Saved on this phone. It sends when there's a signal.",
+  match_not_live: "This Match isn't live, so goals can't be changed.",
+  team_invalid: "That Team isn't playing this Match. Open the match again.",
+  player_invalid: "That Player isn't in this Team's Squad. Pick the Player again.",
+  goal_invalid: "That goal's time isn't valid. Check the minute.",
+  event_missing: 'That goal was already removed.',
   lineups_queued: "Line-ups saved on this phone. They send when there's a signal.",
 } as const
 

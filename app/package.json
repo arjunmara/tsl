@@ -43,6 +43,7 @@
     "check:scorer": "node scripts/scorer.check.mjs",
     "check:console": "node scripts/console.check.mjs",
     "check:clock": "node scripts/clock.check.mjs",
+    "check:goals": "node scripts/goals.check.mjs",
     "check:fixtures": "node scripts/fixtures.check.mjs && node scripts/fixtures.ui.check.mjs"
   },
   "dependencies": {

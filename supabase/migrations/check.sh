@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -2635,6 +2635,122 @@ q "update app.scorer_device set status = 'revoked', revoked_at = now() - interva
 [ "$(ck $D9 start_clock 2950 $N3)|$(cm $D9 $N3)" = 'not_authorized|none' ] || fail "clock: a revoked phone still works"
 q "update app.season set status = 'finished' where id='$S20'" >/dev/null
 [ "$(ck $A start_clock 2951 $N3)|$(ck $A end_match 2952 $N3)" = 'season_finished|season_finished' ] || fail "clock: a finished Season"
+
+# --- Goals (Story 4.4). S21 of T15: X7 v X8 in W1 (live, line-ups as listed), W2 (live, line-ups swapped), W3 (scheduled). D11 is an approved phone of
+# S21, D12 is pending; D7 (S17), D9 (S20, revoked), G1 and Organiser B stay outside. A is an Organiser of T15 who does not hold scoring.
+S21=21111111-0000-4000-8000-0000000000f3
+X7=42111111-0000-4000-8000-000000000007 X8=42111111-0000-4000-8000-000000000008
+W1=52111111-0000-4000-8000-0000000000b1 W2=52111111-0000-4000-8000-0000000000b2 W3=52111111-0000-4000-8000-0000000000b3
+D11=f3111111-0000-4000-8000-00000000000b D12=f3111111-0000-4000-8000-00000000000c
+q "insert into auth.users (id, is_anonymous) values ('$D11', true), ('$D12', true)" >/dev/null
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench, periods) values ('$S21', '$T15', 4, 'started', 2, 2, 2)" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$X7', '$T15', '$S21', 'Seven FC', 'SEV', '#ff0000', 'approved'), ('$X8', '$T15', '$S21', 'Eight FC', 'EIG', '#0000ff', 'approved')" >/dev/null
+for t in 7 8; do for n in 1 2 3; do
+  q "insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl $t $n)', '$T15', 'Player $t-$n', '2000-01-01');
+     insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '$(eval echo \$X$t)', '$(pl $t $n)', $n)" >/dev/null
+done; done
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status) values
+  ('$W1', '$T15', '$S21', 'group', 'Group A', 1, '$X7', '$X8', 'scheduled'), ('$W2', '$T15', '$S21', 'group', 'Group A', 2, '$X7', '$X8', 'scheduled'),
+  ('$W3', '$T15', '$S21', 'group', 'Group A', 3, '$X7', '$X8', 'scheduled')" >/dev/null
+q "insert into app.scorer_device (tournament_id, season_id, user_id, label, status, number_hash, expires_at) values
+  ('$T15', '$S21', '$D11', 'Goal phone', 'approved', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S21', '$D12', 'Waiting phone', 'pending', repeat('0', 64), now() + interval '1 hour')" >/dev/null
+# gl <user> <n> <match> <team> <player|null> [own] [minute]: record_goal in period 1. gx <user> <command> <n> <goal n> [args]: a goal command at the goal's version.
+gl() { local p=$5; [ "$p" = null ] || p="'$p'"; tc "$1" "record_goal('$(cmd "$2")', '$S21', '$3', '$4', $p, ${6:-false}, 1, ${7:-3})"; }
+gver() { q "select version from app.match_event where id='$(cmd "$1")'"; }
+gx() { tc "$1" "$2('$(cmd "$3")', '$S21', '$(cmd "$4")', $(gver "$4")${5:+, $5})"; }
+gscore() { q "select coalesce(hg::text, '-')||'-'||coalesce(ag::text, '-') from app.match where id='$1'"; }
+gcount() { q "select count(*) from app.match_event where match_id='$1' and kind='goal'"; }
+gck() { tc "$1" "$2('$(cmd "$3")', '$S21', '$4', $(mver "$4"))"; }
+for who in $D12 $D7 $D9 $G1 $B; do
+  [ "$(gl $who 3100 $W1 $X7 $(pl 7 1))|$(tc $who "add_assist('$(cmd 3101)', '$S21', '$(cmd 3100)', 1, '$(pl 7 2)')")|$(tc $who "edit_event('$(cmd 3102)', '$S21', '$(cmd 3100)', 1, null, false, 5)")|$(tc $who "delete_event('$(cmd 3103)', '$S21', '$(cmd 3100)', 1)")" \
+    = 'not_authorized|not_authorized|not_authorized|not_authorized' ] || fail "leak: $who ran a goal command"
+  [ "$(cm $who $W1)" = none ] || fail "leak: $who reads the goals"
+  for n in 3100 3101 3102 3103; do redo $n; done
+done
+[ "$(gcount $W1)|$(gscore $W1)" = '0|---' ] || fail "goals: a refused command wrote: $(gcount $W1)|$(gscore $W1)"
+for f in "record_goal('$(cmd 3104)', '$S21', '$W1', '$X7', null, false, 1, 3)" "add_assist('$(cmd 3104)', '$S21', '$(cmd 3100)', 1, null)" \
+  "edit_event('$(cmd 3104)', '$S21', '$(cmd 3100)', 1, null, false, 5)" "delete_event('$(cmd 3104)', '$S21', '$(cmd 3100)', 1)" "match_score('$W1')" "match_goal_score()" \
+  "goal_step('$D11', 'record', '$(cmd 3104)', '$S21', '$W1', null, null, '$X7', null, false, 1, 3, now())"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+# The helpers are not callable by an approved phone either.
+for f in "match_score('$W1')" "match_goal_score()" "goal_step('$D11', 'record', '$(cmd 3104)', '$S21', '$W1', null, null, '$X7', null, false, 1, 3, now())"; do
+  out=$(as $D11 "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "phone: can execute $f: $out"
+done
+# Not live, not the holder.
+[ "$(gl $D11 3105 $W1 $X7 $(pl 7 1))|$(gl $A 3106 $W1 $X7 $(pl 7 1))" = 'not_scoring_device|not_scoring_device' ] || fail "goals: a phone that holds nothing scored"
+[ "$(tc $D11 "take_scoring('$(cmd 3107)', '$S21', '$W1')")|$(tc $D11 "take_scoring('$(cmd 3108)', '$S21', '$W2')")|$(tc $D11 "take_scoring('$(cmd 3109)', '$S21', '$W3')")" = 'ok|ok|ok' ] || fail "goals: take scoring"
+[ "$(gl $D11 3110 $W3 $X7 $(pl 7 1))|$(gl $A 3111 $W3 $X7 $(pl 7 1))" = 'match_not_live|not_scoring_device' ] || fail "goals: a Match that is not live"
+LA=$(lu 7 '1 2' '' '#ff0000') LB=$(lu 8 '1 2' '' '#0000ff')
+[ "$(tc $D11 "confirm_lineups('$(cmd 3112)', '$S21', '$W1', '$LA'::jsonb, '$LB'::jsonb)")|$(tc $D11 "confirm_lineups('$(cmd 3113)', '$S21', '$W2', '$LB'::jsonb, '$LA'::jsonb)")|$(gck $D11 start_clock $((3114)) $W1)|$(gck $D11 start_clock 3115 $W2)" = 'ok|ok|ok|ok' ] \
+  || fail "goals: put the Matches live"
+M0=$(mver $W1)
+# Goal: the score follows from the goal rows, the Match version stays, and the goal is logged.
+[ "$(gl $D11 3120 $W1 $X7 $(pl 7 1) false 3)|$(gscore $W1)|$(mver $W1)" = "ok|1-0|$M0" ] || fail "record_goal: score or version"
+[ "$(q "select kind||period||':'||minute||':'||own_goal||':'||version||':'||coalesce(deleted_at::text, 'live') from app.match_event where id='$(cmd 3120)'")" = 'goal1:3:false:1:live' ] || fail "record_goal: row"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 3120)' and table_name = 'match_event' and op = 'insert'")|$(q "select count(*) from app.activity_log where command_id='$(cmd 3120)' and table_name = 'match' and op = 'update'")" = '1|1' ] || fail "record_goal: not logged"
+[ "$(tc $D11 "record_goal('$(cmd 3120)', '$S21', '$W1', '$X7', '$(pl 7 1)', false, 1, 3)")|$(gcount $W1)|$(gscore $W1)" = 'ok|1|1-0' ] || fail "record_goal: the same command twice"
+# Own goal for X8 and an unknown scorer for X7.
+[ "$(gl $D11 3121 $W1 $X8 null true 7)|$(gscore $W1)|$(gl $D11 3122 $W1 $X7 null false 9)|$(gscore $W1)" = 'ok|1-1|ok|2-1' ] || fail "record_goal: own goal or unknown scorer"
+[ "$(q "select own_goal||':'||coalesce(player_id::text, 'none') from app.match_event where id='$(cmd 3121)'")" = 'true:none' ] || fail "record_goal: own goal row: $(q "select own_goal||':'||coalesce(player_id::text, 'none') from app.match_event where id='$(cmd 3121)'")"
+# Refused goals write nothing.
+[ "$(gl $D11 3123 $W1 $X4 null)|$(gl $D11 3124 $W1 $X7 $(pl 8 1))|$(gl $D11 3125 $W1 $X7 $(pl 7 1) true)|$(tc $D11 "record_goal('$(cmd 3126)', '$S21', '$W1', '$X7', null, false, 0, 3)")|$(tc $D11 "record_goal('$(cmd 3127)', '$S21', '$W1', '$X7', null, false, 1, -1)")" \
+  = 'team_invalid|player_invalid|player_invalid|goal_invalid|goal_invalid' ] || fail "record_goal: invalid goals"
+[ "$(gcount $W1)|$(gscore $W1)" = '3|2-1' ] || fail "record_goal: a refused goal wrote"
+# The holder's next clock command still matches the Match version after goals.
+[ "$(gck $D11 pause_clock 3128 $W1)" = ok ] || fail "goals: a goal broke the next clock command"
+# Assist: a stale version is a conflict with the goal's current fields; the scorer and an own goal take none.
+[ "$(tc $D11 "add_assist('$(cmd 3130)', '$S21', '$(cmd 3120)', 9, '$(pl 7 2)')")|$(gver 3120)" = 'version_conflict|1' ] || fail "add_assist: a stale version"
+[ "$(as $D11 "select (r->'conflict'->>'current_version')||':'||(r->'conflict'->'current'->>'minute') from app.add_assist('$(cmd 3131)', '$S21', '$(cmd 3120)', 9, '$(pl 7 2)') r")" = '1:3' ] || fail "add_assist: conflict payload"
+[ "$(gx $D11 add_assist 3132 3120 "'$(pl 7 1)'")|$(gx $D11 add_assist 3133 3121 "'$(pl 8 1)'")|$(gx $D11 add_assist 3134 3120 "'$(pl 8 2)'")" = 'player_invalid|player_invalid|player_invalid' ] || fail "add_assist: invalid assist"
+[ "$(gx $D11 add_assist 3135 3120 "'$(pl 7 2)'")|$(gver 3120)|$(q "select assist_id from app.match_event where id='$(cmd 3120)'")" = "ok|2|$(pl 7 2)" ] || fail "add_assist"
+# Edit: the scorer and the minute; the version goes up; an assist equal to the new scorer is cleared.
+[ "$(gx $D11 edit_event 3136 3120 "'$(pl 7 3)', false, 26")|$(gver 3120)|$(q "select minute||':'||player_id from app.match_event where id='$(cmd 3120)'")|$(q "select assist_id from app.match_event where id='$(cmd 3120)'")" = "ok|3|26:$(pl 7 3)|$(pl 7 2)" ] || fail "edit_event"
+[ "$(gx $D11 edit_event 3137 3120 "'$(pl 7 2)', false")|$(q "select coalesce(assist_id::text, 'none')||':'||minute from app.match_event where id='$(cmd 3120)'")|$(gx $D11 edit_event 3138 3120 "'$(pl 8 1)', false")" = 'ok|none:26|player_invalid' ] || fail "edit_event: assist or Squad"
+[ "$(tc $D11 "edit_event('$(cmd 3139)', '$S21', '$(cmd 3120)', 1, null, false, 5)")|$(gscore $W1)" = 'version_conflict|2-1' ] || fail "edit_event: a stale version"
+# Editing a goal into an own goal clears its assist.
+[ "$(gx $D11 add_assist 3144 3120 "'$(pl 7 1)'")|$(gx $D11 edit_event 3145 3120 "null, true")|$(q "select own_goal||':'||coalesce(assist_id::text, 'none') from app.match_event where id='$(cmd 3120)'")" = 'ok|ok|true:none' ] || fail "edit_event: an own goal kept its assist"
+# Delete: a soft delete; the score follows; the row stays; a second delete finds nothing.
+[ "$(gx $D11 delete_event 3140 3122)|$(gscore $W1)|$(gcount $W1)|$(q "select count(*) from app.match_event where id='$(cmd 3122)' and deleted_at is not null")" = 'ok|1-1|3|1' ] || fail "delete_event"
+[ "$(gx $D11 delete_event 3141 3122)|$(gx $D11 edit_event 3142 3122 "null, false, 4")|$(gx $D11 add_assist 3143 3122 null)" = 'event_missing|event_missing|event_missing' ] || fail "delete_event: a deleted goal"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 3140)' and table_name = 'match_event' and op = 'update'")" = 1 ] || fail "delete_event: not logged"
+# The console: goals newest first without the deleted one, the Match version, minutes in the rules.
+[ "$(as $D11 "select jsonb_array_length(j->'events')||'|'||(j->'score'->>'home')||'-'||(j->'score'->>'away')||'|'||(j->'rules'->>'period_minutes') from (select app.console_match('$W1') j) x")" = '3|1-1|20' ] || fail "console_match: goals"
+[ "$(as $D11 "select (j->'events'->0->>'kind')||'|'||(j->'events'->0->>'team_id') from (select app.console_match('$W1') j) x")" = "goal|$X8" ] || fail "console_match: goal fields"
+# The score trigger on its own: a goal row written directly moves hg and ag but not the version.
+q "insert into app.match_event (id, tournament_id, season_id, match_id, kind, period, minute, entered_at, team_id) values ('$(cmd 3150)', '$T15', '$S21', '$W1', 'goal', 1, 1, now(), '$X8')" >/dev/null
+[ "$(gscore $W1)|$(mver $W1)" = "1-2|$(mver $W1)" ] || fail "score trigger: insert"
+q "update app.match_event set deleted_at = now() where id='$(cmd 3150)'" >/dev/null
+[ "$(gscore $W1)" = 1-1 ] || fail "score trigger: delete"
+[ "$(q "select (select count(*) from app.match_score('$W1'))::text || (select hg::text||ag::text from app.match_score('$W1'))")" = '111' ] || fail "match_score"
+# Swapped sides: the line-up has X8 at home, the Match's own sides stay (home_team_id X7); the console shows the score in line-up order.
+[ "$(gl $D11 3160 $W2 $X8 $(pl 8 1))|$(gscore $W2)" = 'ok|0-1' ] || fail "swapped sides: hg and ag follow the Match's own sides"
+[ "$(as $D11 "select (j->'score'->>'home')||'-'||(j->'score'->>'away')||'|'||(j->'teams'->0->>'team_id') from (select app.console_match('$W2') j) x")" = "1-0|$X8" ] || fail "swapped sides: console order"
+# End the match after 1-0 on its own sides: finished with hg and ag from the goals; then every goal command is match_not_live.
+[ "$(gck $D11 end_match 3161 $W2)|$(q "select status||':'||hg||'-'||ag from app.match where id='$W2'")" = 'ok|finished:0-1' ] || fail "end_match: derived score"
+[ "$(gl $D11 3162 $W2 $X7 null)|$(gx $D11 delete_event 3163 3160)|$(gx $D11 edit_event 3164 3160 "null, false, 4")|$(gx $D11 add_assist 3165 3160 null)" = 'match_not_live|match_not_live|match_not_live|match_not_live' ] \
+  || fail "goals: a finished Match"
+# Reads and writes: Organisers read the events of their Tournament only; nobody writes directly.
+[ "$(as $A "select count(*) from app.match_event where match_id in ('$W1', '$W2')")|$(as $B "select count(*) from app.match_event")|$(as $D11 "select count(*) from app.match_event")|$(as $G1 "select count(*) from app.match_event")" = '8|0|0|0' ] || fail "leak: goal rows read"
+for stmt in "update app.match_event set deleted_at = now()" "update app.match_event set team_id = null" "delete from app.match_event" "update app.match set hg = 9, ag = 9"; do
+  for who in $D11 $A; do
+    out=$(as $who "$stmt" 2>&1 || true)
+    [[ $out == *"permission denied"* ]] || fail "$who wrote directly: $stmt: $out"
+  done
+done
+[ "$(gscore $W1)|$(gscore $W2)" = '1-1|0-1' ] || fail "goals: scores"
+# A finished Season: refused.
+q "update app.scorer_device set status = 'revoked', revoked_at = now() - interval '2 hours' where user_id = '$D11'" >/dev/null
+[ "$(gl $D11 3170 $W1 $X7 null)|$(cm $D11 $W1)" = 'not_authorized|none' ] || fail "goals: a revoked phone still works"
+# A goal entered on the phone before the revoke, replayed inside the grace window, is accepted.
+ts=$(q "select (now() - interval '3 hours')::text")
+[ "$(as $D11 "set local request.headers to '{\"x-entered-at\":\"$ts\"}'; select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.record_goal('$(cmd 3172)', '$S21', '$W1', '$X7', null, false, 1, 5, '$ts'::timestamptz) r")|$(gcount $W1)" = 'ok|5' ] || fail "goals: a goal entered before the revoke"
+q "update app.season set status = 'finished' where id='$S21'" >/dev/null
+[ "$(gl $A 3171 $W1 $X7 null)" = season_finished ] || fail "goals: a finished Season"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

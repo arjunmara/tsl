@@ -42,9 +42,9 @@ export function configure(config: Config) {
 let storing: Promise<unknown> = Promise.resolve()
 
 export async function send(
-  name: string, args: Record<string, unknown>, opts: { scope: string; confirmed?: true; upload?: Upload; versionOf?: string },
+  name: string, args: Record<string, unknown>, opts: { scope: string; confirmed?: true; upload?: Upload; versionOf?: string; commandId?: string },
 ): Promise<Result & { commandId?: string }> {
-  const commandId = crypto.randomUUID()
+  const commandId = opts.commandId ?? crypto.randomUUID()
   const stored = storing.then(async (): Promise<number | Result> => {
     await isConfigured
     const config = getConfig()!
@@ -150,6 +150,17 @@ export async function discard(seq: number, reason: string) {
 export const dropQueuedClock = (matchId: string) =>
   db.entries.filter((e) => e.state === 'pending' && e.args.match_id === matchId
     && ['start_clock', 'pause_clock', 'next_period', 'set_clock', 'end_match'].includes(e.name)).delete()
+
+/**
+ * Drops a goal's record_goal and its chained changes still waiting to send. True when the insert was still queued (the goal never reached the
+ * server, so there is nothing to delete there).
+ */
+export async function dropQueuedGoal(eventId: string): Promise<boolean> {
+  await storing
+  const mine = (await db.entries.toArray()).filter((e) => e.state === 'pending' && (e.commandId === eventId || e.args.event_id === eventId))
+  await db.entries.bulkDelete(mine.map((e) => e.seq))
+  return mine.some((e) => e.commandId === eventId)
+}
 
 /** Removes a refused (failed or conflict) entry whose refusal the caller has already shown (e.g. on the form that sent it). */
 export const forgetRefused = (commandId: string) =>

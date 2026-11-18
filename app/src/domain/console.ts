@@ -9,11 +9,15 @@ export type ConsoleTeam = { teamId: string; name: string; code: string; register
 /** The Match clock (Story 4.3): elapsedMs plus, while running, the time since anchorAt. period 0: not started; interval: between periods. */
 export type ClockState = { running: boolean; anchorAt: string | null; elapsedMs: number; period: number; interval: boolean }
 /** A Period divider (or clock correction) of the Event log; home and away: the score then. */
-export type MatchEvent = { id: string; kind: 'period_start' | 'period_end' | 'match_end' | 'clock_set'; period: number; minute: number; enteredAt: string; home: number | null; away: number | null }
+export type MatchEvent = {
+  id: string; kind: 'period_start' | 'period_end' | 'match_end' | 'clock_set' | 'goal'; period: number; minute: number; enteredAt: string; home: number | null; away: number | null
+  /** Goals (Story 4.4): the Team it counts for, the scorer (none: own goal or unknown scorer), the assist, and the goal's version for edits. */
+  teamId?: string | null; playerId?: string | null; assistId?: string | null; ownGoal?: boolean; version?: number
+}
 export type Console = {
   match: { id: string; seasonId: string; tournamentId: string; stage: string; round: string; label: string | null; kickOff: string | null; status: string; seasonStatus: string; version: number }
   /** periods: regular periods; extraTimePeriods: 0 unless this is a knockout Match with extra time on. */
-  rules: { starters: number; maxBench: number; periods: number; extraTimePeriods: number }
+  rules: { starters: number; maxBench: number; periods: number; extraTimePeriods: number; periodMinutes: number; extraTimeMinutes: number }
   clock: ClockState
   score: { home: number; away: number }
   /** Newest first. */
@@ -26,10 +30,11 @@ export type Console = {
 
 type Row = {
   match: { id: string; season_id: string; tournament_id: string; stage: string; round: string; label: string | null; kick_off: string | null; status: string; season_status: string; version: number }
-  rules: { starters: number; max_bench: number; periods: number; extra_time_periods: number }
+  rules: { starters: number; max_bench: number; periods: number; extra_time_periods: number; period_minutes?: number; extra_time_minutes?: number }
   clock: { running: boolean; anchor_at: string | null; elapsed_ms: number; period: number; interval: boolean }
   score: { home: number; away: number }
-  events: { id: string; kind: MatchEvent['kind']; period: number; minute: number; entered_at: string; home: number | null; away: number | null }[]
+  events: { id: string; kind: MatchEvent['kind']; period: number; minute: number; entered_at: string; home: number | null; away: number | null
+    team_id?: string | null; player_id?: string | null; assist_id?: string | null; own_goal?: boolean; version?: number }[]
   holder: boolean; held: boolean; on_air: boolean
   teams: { team_id: string; name: string; code: string; registered_kit: string | null; side: 'home' | 'away'; squad: { player_id: string; name: string; shirt: number }[]
     lineup: { starters: string[]; bench: string[]; kit_colour: string; version: number } | null }[]
@@ -45,10 +50,12 @@ export async function readConsole(matchId: string): Promise<Console | 'none' | {
     return {
       match: { id: r.match.id, seasonId: r.match.season_id, tournamentId: r.match.tournament_id, stage: r.match.stage, round: r.match.round, label: r.match.label,
         kickOff: r.match.kick_off, status: r.match.status, seasonStatus: r.match.season_status, version: r.match.version },
-      rules: { starters: r.rules.starters, maxBench: r.rules.max_bench, periods: r.rules.periods, extraTimePeriods: r.rules.extra_time_periods },
+      rules: { starters: r.rules.starters, maxBench: r.rules.max_bench, periods: r.rules.periods, extraTimePeriods: r.rules.extra_time_periods,
+        periodMinutes: r.rules.period_minutes ?? 20, extraTimeMinutes: r.rules.extra_time_minutes ?? 5 },
       clock: { running: r.clock.running, anchorAt: r.clock.anchor_at, elapsedMs: r.clock.elapsed_ms, period: r.clock.period, interval: r.clock.interval },
       score: r.score,
-      events: r.events.map((e) => ({ id: e.id, kind: e.kind, period: e.period, minute: e.minute, enteredAt: e.entered_at, home: e.home, away: e.away })),
+      events: r.events.map((e) => ({ id: e.id, kind: e.kind, period: e.period, minute: e.minute, enteredAt: e.entered_at, home: e.home, away: e.away,
+        teamId: e.team_id, playerId: e.player_id, assistId: e.assist_id, ownGoal: e.own_goal, version: e.version })),
       holder: r.holder, held: r.held, onAir: r.on_air,
       teams: r.teams.map((t) => ({ teamId: t.team_id, name: t.name, code: t.code, registeredKit: t.registered_kit, side: t.side,
         squad: t.squad.map((p) => ({ playerId: p.player_id, name: p.name, shirt: p.shirt })),
@@ -147,3 +154,25 @@ export function dividerText(e: MatchEvent, rules: Console['rules']): string | nu
   if (e.kind === 'match_end') return `Match ended${score}`
   return null
 }
+
+// Goals (Story 4.4). The score is never typed or stored on the phone: it is the undeleted goal events per Team.
+
+/** Player names by id, filled when a console opens, for the hand-back's words. */
+export const playerNames = new Map<string, string>()
+
+/** The goals a Team has (an own goal counts for the Team it was recorded for). */
+export const goalsOf = (events: MatchEvent[], teamId: string): number => events.filter((e) => e.kind === 'goal' && e.teamId === teamId).length
+
+/** The minute of a goal: the minutes of the earlier periods, plus the whole minutes elapsed in this one, plus 1. */
+export function goalMinute(c: ClockState, rules: Console['rules'], at: Date): number {
+  let earlier = 0
+  for (let p = 1; p < c.period; p++) earlier += p <= rules.periods ? rules.periodMinutes : rules.extraTimeMinutes
+  return earlier + Math.floor(elapsedAt(c, at) / 60000) + 1
+}
+
+/** Who scored, in words: the Player's name, "Own goal" or "Unknown scorer". */
+export const scorerName = (e: MatchEvent, team: ConsoleTeam | undefined): string =>
+  e.ownGoal ? 'Own goal' : e.playerId ? team?.squad.find((p) => p.playerId === e.playerId)?.name ?? 'Unknown scorer' : 'Unknown scorer'
+
+/** A Team's starters for the picker, from the line-up picks (on-pitch changes come with substitutions). */
+export const starters = (t: ConsoleTeam, picks: Record<string, 'start' | 'bench'>): SquadPlayer[] => t.squad.filter((p) => picks[p.playerId] === 'start')
