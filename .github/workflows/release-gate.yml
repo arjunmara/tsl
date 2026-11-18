@@ -104,3 +104,5 @@ jobs:
         run: npm run check:clock
       - name: Record goals with an 8-second Undo (Story 4.4)
         run: npm run check:goals
+      - name: Cards, fouls, substitutions, timeouts and power play (Story 4.5)
+        run: npm run check:events

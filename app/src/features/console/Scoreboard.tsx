@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { elapsedAt, formatClock, parseClock, periodName, type Console, type ConsoleTeam } from '../../domain/console'
+import { useEffect, useState } from 'react'
+import { elapsedAt, formatClock, foulsIn, parseClock, periodName, powerPlays, type Console, type ConsoleTeam } from '../../domain/console'
 import { serverNow } from '../../domain/clock'
 import { ConfirmSheet } from '../../ui/ConfirmSheet'
 import { KitDot } from '../../ui/KitDot'
@@ -12,6 +12,20 @@ export function periodLabel(c: Console): string {
   if (c.clock.period === 0) return 'Not started'
   if (c.clock.interval) return c.clock.period === 1 && c.rules.periods === 2 ? 'Half-time' : 'Interval'
   return periodName(c.clock.period, c.rules).replace(/^./, (x) => x.toUpperCase())
+}
+
+/** "Power play FSW 1:42" for each red card's opponent, counting down with the Match clock. Not a live region: nothing announces it. */
+function PowerPlay({ c }: { c: Console }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!c.clock.running) return
+    const t = setInterval(() => tick((n) => n + 1), 250)
+    return () => clearInterval(t)
+  }, [c.clock.running])
+  return powerPlays(c, elapsedAt(c.clock, serverNow())).map((p, i) => {
+    const s = Math.ceil(p.leftMs / 1000)
+    return <p key={i} className="body-strong scoreboard-power" data-testid="power-play">Power play {c.teams.find((t) => t.teamId === p.teamId)?.code} {Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')}</p>
+  })
 }
 
 /**
@@ -30,6 +44,8 @@ export function Scoreboard({ c, home, away, kits, canCorrect, onCorrect }: {
     <div className="scoreboard-team">
       <span className="kit-chip"><KitDot colour={kits[t.teamId] ?? null} /><span className="body-strong">{t.code}</span></span>
       <span className="meta">{t.name}</span>
+      {!!c.rules.foulWarning && <span className={foulsIn(c, t.teamId) >= c.rules.foulWarning ? 'body-strong scoreboard-limit' : 'meta'}>
+        Fouls {foulsIn(c, t.teamId)}{foulsIn(c, t.teamId) >= c.rules.foulWarning ? ' · Limit' : ''}</span>}
     </div>
   )
   return (
@@ -40,6 +56,7 @@ export function Scoreboard({ c, home, away, kits, canCorrect, onCorrect }: {
         {side(away)}
       </div>
       <p className="scoreboard-time"><Clock clock={c.clock} /> <span className="body-strong scoreboard-period">{periodLabel(c)}</span></p>
+      <PowerPlay c={c} />
       {canCorrect && c.clock.period > 0 && (
         <div className="scoreboard-menu">
           <SecondaryButton label="Open scoreboard menu" onClick={() => setMenu((m) => !m)} />

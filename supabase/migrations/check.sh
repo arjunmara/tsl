@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -2751,6 +2751,150 @@ ts=$(q "select (now() - interval '3 hours')::text")
 [ "$(as $D11 "set local request.headers to '{\"x-entered-at\":\"$ts\"}'; select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.record_goal('$(cmd 3172)', '$S21', '$W1', '$X7', null, false, 1, 5, '$ts'::timestamptz) r")|$(gcount $W1)" = 'ok|5' ] || fail "goals: a goal entered before the revoke"
 q "update app.season set status = 'finished' where id='$S21'" >/dev/null
 [ "$(gl $A 3171 $W1 $X7 null)" = season_finished ] || fail "goals: a finished Season"
+
+# --- Cards, fouls, subs, timeouts and missed penalties (Story 4.5). S22 of T15 (futsal settings: foul_warning 5, one timeout, rolling subs, 2-minute power
+# play): X9 v X10 in EM1 (live, line-ups: starters 1 2, bench 3 4) and EM3 (scheduled). S23 (limited: 2 substitutions, no fouls or timeouts): X11 v X12 in EM2.
+# D13 is an approved phone of S22, D14 is pending, D15 is an approved phone of S23; D7 (S17), D9 (S20, revoked), G1 and Organiser B stay outside.
+S22=21111111-0000-4000-8000-0000000000f4 S23=21111111-0000-4000-8000-0000000000f5
+X9=43111111-0000-4000-8000-000000000009 X10=43111111-0000-4000-8000-000000000010 X11=44111111-0000-4000-8000-000000000011 X12=44111111-0000-4000-8000-000000000012
+EM1=53111111-0000-4000-8000-0000000000c1 EM2=53111111-0000-4000-8000-0000000000c2 EM3=53111111-0000-4000-8000-0000000000c3
+D13=f4111111-0000-4000-8000-00000000000d D14=f4111111-0000-4000-8000-00000000000e D15=f5111111-0000-4000-8000-00000000000f
+q "insert into auth.users (id, is_anonymous) values ('$D13', true), ('$D14', true), ('$D15', true)" >/dev/null
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench, periods, period_minutes, substitutions, foul_warning, timeouts_per_period, power_play_minutes)
+   values ('$S22', '$T15', 5, 'started', 2, 2, 2, 20, 'rolling', 5, 1, 2)" >/dev/null
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench, periods, period_minutes, substitutions, max_substitutions)
+   values ('$S23', '$T15', 6, 'started', 2, 2, 2, 45, 'limited', 2)" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$X9', '$T15', '$S22', 'Nine FC', 'NIN', '#ff0000', 'approved'), ('$X10', '$T15', '$S22', 'Ten FC', 'TEN', '#0000ff', 'approved'),
+  ('$X11', '$T15', '$S23', 'Eleven FC', 'ELE', '#ff0000', 'approved'), ('$X12', '$T15', '$S23', 'Twelve FC', 'TWE', '#0000ff', 'approved')" >/dev/null
+for t in 9 10 11 12; do for n in 1 2 3 4; do
+  q "insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl $t $n)', '$T15', 'Player $t-$n', '2000-01-01');
+     insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '$(eval echo \$X$t)', '$(pl $t $n)', $n)" >/dev/null
+done; done
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status) values
+  ('$EM1', '$T15', '$S22', 'group', 'Group A', 1, '$X9', '$X10', 'scheduled'), ('$EM3', '$T15', '$S22', 'group', 'Group A', 2, '$X9', '$X10', 'scheduled'),
+  ('$EM2', '$T15', '$S23', 'group', 'Group A', 1, '$X11', '$X12', 'scheduled')" >/dev/null
+q "insert into app.scorer_device (tournament_id, season_id, user_id, label, status, number_hash, expires_at) values
+  ('$T15', '$S22', '$D13', 'Event phone', 'approved', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S22', '$D14', 'Waiting phone', 'pending', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S23', '$D15', 'Limited phone', 'approved', repeat('0', 64), now() + interval '1 hour')" >/dev/null
+nq() { [ "$1" = null ] && echo null || echo "'$1'"; }
+# ev <user> <n> <season> <match> <kind> <team> <player|null> <on|null> <card|null> [period] [minute] [clock_ms]: record_event, period 1 minute 3 by default.
+ev() { tc "$1" "record_event('$(cmd "$2")', '$3', '$4', '$5', '$6', $(nq $7), $(nq $8), $(nq $9), ${10:-1}, ${11:-3}, ${12:-180000})"; }
+evm() { as "$1" "select r->>'message' from app.record_event('$(cmd "$2")', '$3', '$4', '$5', '$6', $(nq $7), $(nq $8), $(nq $9), ${10:-1}, ${11:-3}, ${12:-180000}) r"; }
+# ex <user> <command> <n> <event n> <season> [args]: edit_event, delete_event or add_assist on an event at its current version.
+ex() { tc "$1" "$2('$(cmd "$3")', '$5', '$(cmd "$4")', $(gver "$4")${6:+, $6})"; }
+ecount() { q "select count(*) from app.match_event where match_id='$1' and kind='$2' and deleted_at is null"; }
+pitch() { q "select (select count(*) from unnest(app.on_pitch('$1', '$2')) p where p = any ('{$3}'::uuid[]))||'/'||cardinality(app.on_pitch('$1', '$2'))"; }
+# Isolation: a pending phone, another Season's phone, a Registration link and another Tournament's Organiser run and read nothing.
+for who in $D14 $D7 $D9 $G1 $B; do
+  [ "$(ev $who 3200 $S22 $EM1 foul $X9 null null null)|$(ev $who 3201 $S22 $EM1 card $X9 $(pl 9 1) null red)" = 'not_authorized|not_authorized' ] || fail "leak: $who ran record_event"
+  [ "$(cm $who $EM1)" = none ] || fail "leak: $who reads the events"
+  for n in 3200 3201; do redo $n; done
+done
+# A phone of another Season (D15 of S23) cannot name S22's Match through its own Season either: the Match must belong to the Season.
+[ "$(ev $D15 3202 $S23 $EM1 foul $X9 null null null)" = 'not_scoring_device' ] || [ "$(ev $D15 3202 $S23 $EM1 foul $X9 null null null)" = 'match_missing' ] || fail "leak: a phone of another Season recorded in this Match"
+[ "$(ecount $EM1 foul)" = 0 ] || fail "events: a refused command wrote"
+for f in "record_event('$(cmd 3203)', '$S22', '$EM1', 'foul', '$X9', null, null, null, 1, 3, 1000)" "on_pitch('$EM1', '$X9')" \
+  "event_step('$D13', '$(cmd 3203)', '$S22', '$EM1', 'foul', '$X9', null, null, null, 1, 3, 1000, now())"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+for f in "on_pitch('$EM1', '$X9')" "event_step('$D13', '$(cmd 3203)', '$S22', '$EM1', 'foul', '$X9', null, null, null, 1, 3, 1000, now())"; do
+  out=$(as $D13 "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "phone: can execute $f: $out"
+done
+# Not holder, not live.
+[ "$(ev $D13 3204 $S22 $EM1 foul $X9 null null null)|$(ev $A 3205 $S22 $EM1 foul $X9 null null null)" = 'not_scoring_device|not_scoring_device' ] || fail "events: a phone that holds nothing recorded"
+[ "$(tc $D13 "take_scoring('$(cmd 3206)', '$S22', '$EM1')")|$(tc $D13 "take_scoring('$(cmd 3207)', '$S22', '$EM3')")|$(tc $D15 "take_scoring('$(cmd 3208)', '$S23', '$EM2')")" = 'ok|ok|ok' ] || fail "events: take scoring"
+[ "$(ev $D13 3209 $S22 $EM3 foul $X9 null null null)" = match_not_live ] || fail "events: a Match that is not live"
+LA=$(lu 9 '1 2' '3 4' '#ff0000') LB=$(lu 10 '1 2' '3 4' '#0000ff') LC=$(lu 11 '1 2' '3 4' '#ff0000') LD=$(lu 12 '1 2' '3 4' '#0000ff')
+[ "$(tc $D13 "confirm_lineups('$(cmd 3210)', '$S22', '$EM1', '$LA'::jsonb, '$LB'::jsonb)")|$(tc $D15 "confirm_lineups('$(cmd 3211)', '$S23', '$EM2', '$LC'::jsonb, '$LD'::jsonb)")" = 'ok|ok' ] \
+  || fail "events: confirm line-ups"
+[ "$(tc $D13 "start_clock('$(cmd 3212)', '$S22', '$EM1', $(mver $EM1))")|$(tc $D15 "start_clock('$(cmd 3213)', '$S23', '$EM2', $(mver $EM2))")" = 'ok|ok' ] || fail "events: put the Matches live"
+M0=$(mver $EM1)
+# A goal first: the score is 1-0 and no event of these kinds moves it or the Match version.
+[ "$(tc $D13 "record_goal('$(cmd 3214)', '$S22', '$EM1', '$X9', '$(pl 9 1)', false, 1, 2)")|$(gscore $EM1)" = 'ok|1-0' ] || fail "events: the first goal"
+# Card.
+[ "$(ev $D13 3220 $S22 $EM1 card $X9 $(pl 9 1) null yellow 1 4 240000)|$(ev $D13 3221 $S22 $EM1 card $X10 $(pl 10 3) null red 1 5 300000)|$(gscore $EM1)|$(mver $EM1)" = "ok|ok|1-0|$M0" ] || fail "record_event: card, score or version"
+[ "$(q "select kind||':'||card||':'||clock_ms||':'||minute||':'||period||':'||version||':'||coalesce(player_on_id::text, '-') from app.match_event where id='$(cmd 3221)'")" = 'card:red:300000:5:1:1:-' ] || fail "record_event: card row"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 3220)' and table_name = 'match_event' and op = 'insert'")" = 1 ] || fail "record_event: not logged"
+[ "$(ev $D13 3220 $S22 $EM1 card $X9 $(pl 9 1) null yellow 1 4 240000)|$(ecount $EM1 card)" = 'ok|2' ] || fail "record_event: the same command twice"
+[ "$(ev $D13 3222 $S22 $EM1 card $X9 $(pl 9 1) null blue)|$(ev $D13 3223 $S22 $EM1 card $X9 null null red)|$(ev $D13 3224 $S22 $EM1 card $X9 $(pl 10 1) null red)|$(ev $D13 3225 $S22 $EM1 card $X11 $(pl 9 1) null red)" \
+  = 'event_invalid|player_invalid|player_invalid|team_invalid' ] || fail "record_event: invalid cards"
+[ "$(ev $D13 3226 $S22 $EM1 card $X9 $(pl 9 1) null red 0)|$(ev $D13 3227 $S22 $EM1 card $X9 $(pl 9 1) null red 1 -1)|$(ev $D13 3228 $S22 $EM1 card $X9 $(pl 9 1) null red 1 3 -5)|$(ev $D13 3229 $S22 $EM1 bogus $X9 null null null)" \
+  = 'event_invalid|event_invalid|event_invalid|event_invalid' ] || fail "record_event: invalid time or kind"
+[ "$(ev $D13 3230 $S22 $EM1 card $X9 $(pl 9 1) $(pl 9 2) red)" = player_invalid ] || fail "record_event: a card with a player coming on"
+# Foul: needs the Season's foul_warning; a limited Season without it refuses.
+[ "$(ev $D13 3231 $S22 $EM1 foul $X9 null null null)|$(ev $D15 3232 $S23 $EM2 foul $X11 null null null)|$(ev $D15 3233 $S23 $EM2 timeout $X11 null null null)" = 'ok|event_not_allowed|event_not_allowed' ] \
+  || fail "record_event: foul and timeout need the Season's settings"
+[ "$(q "select kind||':'||coalesce(player_id::text, '-')||':'||coalesce(card, '-') from app.match_event where id='$(cmd 3231)'")" = 'foul:-:-' ] || fail "record_event: foul row"
+# A period after the Match clock's own is refused; the clock is then moved on so the later periods can be tested.
+[ "$(ev $D13 3299 $S22 $EM1 foul $X9 null null null 2)" = event_invalid ] || fail "record_event: a period the clock has not reached"
+q "update app.match set clock = jsonb_set(clock, '{period}', '3') where id='$EM1'" >/dev/null
+# Timeout: one per Team per regular period, none in extra time; the second is refused with the reason.
+[ "$(ev $D13 3235 $S22 $EM1 timeout $X9 null null null)|$(evm $D13 3236 $S22 $EM1 timeout $X9 null null null)|$(ev $D13 3237 $S22 $EM1 timeout $X10 null null null)" = 'ok|NIN has used its timeout this half.|ok' ] \
+  || fail "record_event: timeouts"
+[ "$(ev $D13 3238 $S22 $EM1 timeout $X9 null null null)|$(ev $D13 3239 $S22 $EM1 timeout $X9 null null null 2 25 60000)|$(evm $D13 3240 $S22 $EM1 timeout $X9 null null null 3 45 60000)|$(ev $D13 3241 $S22 $EM1 timeout $X9 null null null 3 45 60000)" \
+  = 'timeout_used|ok|No timeouts in extra time.|timeout_used' ] || fail "record_event: timeouts per period or in extra time"
+[ "$(ex $D13 delete_event 3242 3235 $S22)|$(ev $D13 3243 $S22 $EM1 timeout $X9 null null null)" = 'ok|ok' ] || fail "record_event: a deleted timeout is free again"
+# Sub: Player 9-1 off, 9-3 on; on the pitch is derived.
+[ "$(pitch $EM1 $X9 "$(pl 9 1),$(pl 9 2)")" = '2/2' ] || fail "on_pitch: starters"
+[ "$(ev $D13 3250 $S22 $EM1 sub $X9 $(pl 9 1) $(pl 9 3) null)|$(pitch $EM1 $X9 "$(pl 9 2),$(pl 9 3)")|$(pitch $EM1 $X9 "$(pl 9 1)")" = 'ok|2/2|0/2' ] || fail "record_event: sub or on_pitch"
+[ "$(q "select player_id||':'||player_on_id from app.match_event where id='$(cmd 3250)'")" = "$(pl 9 1):$(pl 9 3)" ] || fail "record_event: sub row"
+[ "$(ev $D13 3251 $S22 $EM1 sub $X9 $(pl 9 1) $(pl 9 4) null)|$(ev $D13 3252 $S22 $EM1 sub $X9 $(pl 9 2) $(pl 9 3) null)|$(ev $D13 3253 $S22 $EM1 sub $X9 $(pl 9 2) $(pl 10 4) null)|$(ev $D13 3254 $S22 $EM1 sub $X9 $(pl 9 2) null null)|$(ev $D13 3255 $S22 $EM1 sub $X9 $(pl 9 2) $(pl 9 2) null)" \
+  = 'not_on_pitch|not_on_bench|player_invalid|player_invalid|not_on_bench' ] || fail "record_event: invalid subs"
+# Rolling: a subbed-off Player may come back.
+[ "$(ev $D13 3256 $S22 $EM1 sub $X9 $(pl 9 2) $(pl 9 1) null)|$(pitch $EM1 $X9 "$(pl 9 1),$(pl 9 3)")" = 'ok|2/2' ] || fail "record_event: a subbed-off Player coming back"
+# Deleting the last sub puts 9-2 back on the pitch.
+[ "$(ex $D13 delete_event 3257 3256 $S22)|$(pitch $EM1 $X9 "$(pl 9 2),$(pl 9 3)")" = 'ok|2/2' ] || fail "delete_event: a sub is re-derived"
+[ "$(ecount $EM1 sub)" = 1 ] || fail "events: sub count"
+# A sub a later sub depends on can't be deleted or edited to a Player who is already off; a red-carded Player can't come on.
+[ "$(ev $D13 3258 $S22 $EM1 sub $X9 $(pl 9 3) $(pl 9 4) null)|$(ex $D13 delete_event 3300 3250 $S22)|$(ex $D13 edit_event 3301 3258 $S22 "'$(pl 9 1)', false")" = 'ok|not_on_pitch|not_on_pitch' ] || fail "delete_event or edit_event: a sub a later sub depends on"
+[ "$(ex $D13 delete_event 3302 3258 $S22)|$(pitch $EM1 $X9 "$(pl 9 2),$(pl 9 3)")|$(ecount $EM1 sub)" = 'ok|2/2|1' ] || fail "delete_event: the last sub"
+# Limited (2 substitutions, no coming back).
+[ "$(ev $D15 3260 $S23 $EM2 sub $X11 $(pl 11 1) $(pl 11 3) null)|$(ev $D15 3261 $S23 $EM2 sub $X11 $(pl 11 2) $(pl 11 1) null)|$(ev $D15 3262 $S23 $EM2 sub $X11 $(pl 11 2) $(pl 11 4) null)" = 'ok|not_on_bench|ok' ] \
+  || fail "record_event: limited subs"
+[ "$(evm $D15 3263 $S23 $EM2 sub $X11 $(pl 11 3) $(pl 11 1) null)|$(ev $D15 3264 $S23 $EM2 sub $X12 $(pl 12 1) $(pl 12 3) null)" = 'ELE has used all 2 substitutions.|ok' ] || fail "record_event: subs_used"
+[ "$(ev $D15 3265 $S23 $EM2 sub $X11 $(pl 11 3) $(pl 11 1) null)" = subs_used ] || fail "record_event: subs_used code"
+# Missed penalty: logged, no score change.
+[ "$(ev $D13 3270 $S22 $EM1 missed_penalty $X10 $(pl 10 1) null null 1 8 480000)|$(ev $D13 3271 $S22 $EM1 missed_penalty $X10 null null null)|$(gscore $EM1)" = 'ok|player_invalid|1-0' ] || fail "record_event: missed penalty"
+[ "$(ev $D13 3303 $S22 $EM1 sub $X10 $(pl 10 1) $(pl 10 3) null)|$(ev $D13 3304 $S22 $EM1 card $X10 $(pl 10 2) null red)|$(pitch $EM1 $X10 "$(pl 10 1)")" = 'not_on_bench|ok|1/1' ] || fail "record_event: a red-carded Player"
+[ "$(ex $D13 delete_event 3305 3304 $S22)|$(pitch $EM1 $X10 "$(pl 10 1),$(pl 10 2)")" = 'ok|2/2' ] || fail "delete_event: a red card is re-derived"
+# Edit: another Player (a Squad member), a stale version, the minute only for a foul, no assist.
+[ "$(ex $D13 edit_event 3280 3221 $S22 "'$(pl 10 4)', false, 6")|$(gver 3221)|$(q "select player_id||':'||minute||':'||card from app.match_event where id='$(cmd 3221)'")" = "ok|2|$(pl 10 4):6:red" ] || fail "edit_event: a card"
+[ "$(ex $D13 edit_event 3281 3221 $S22 "'$(pl 9 1)', false")|$(ex $D13 edit_event 3282 3221 $S22 "null, false")|$(tc $D13 "edit_event('$(cmd 3283)', '$S22', '$(cmd 3221)', 1, '$(pl 10 1)', false, 6)")" = 'player_invalid|player_invalid|version_conflict' ] \
+  || fail "edit_event: invalid or stale"
+[ "$(ex $D13 edit_event 3284 3231 $S22 "'$(pl 9 1)', false, 9")|$(q "select coalesce(player_id::text, '-')||':'||minute from app.match_event where id='$(cmd 3231)'")" = 'ok|-:9' ] || fail "edit_event: a foul takes the minute only"
+[ "$(ex $D13 edit_event 3285 3250 $S22 "'$(pl 9 3)', false, 7")|$(ex $D13 add_assist 3286 3220 $S22 "'$(pl 9 2)'")|$(ex $D13 edit_event 3287 3250 $S22 "'$(pl 9 2)', false, 7")" = 'player_invalid|event_not_allowed|ok' ] || fail "edit_event: a sub, an assist on a card"
+[ "$(ex $D13 delete_event 3288 3220 $S22)|$(ecount $EM1 card)|$(ex $D13 delete_event 3289 3220 $S22)|$(ex $D13 edit_event 3290 3220 $S22 "'$(pl 9 1)', false")" = 'ok|1|event_missing|event_missing' ] || fail "delete_event: a card"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 3288)' and table_name = 'match_event' and op = 'update'")|$(gscore $EM1)" = '1|1-0' ] || fail "delete_event: not logged or score moved"
+# Isolation again, now that events exist: the same phones cannot edit or delete them.
+for who in $D14 $D7 $D9 $G1 $B; do
+  [ "$(tc $who "edit_event('$(cmd 3291)', '$S22', '$(cmd 3221)', $(gver 3221), null, false, 9)")|$(tc $who "delete_event('$(cmd 3292)', '$S22', '$(cmd 3221)', $(gver 3221))")" = 'not_authorized|not_authorized' ] || fail "leak: $who changed an event"
+  redo 3291; redo 3292
+done
+[ "$(q "select version||':'||coalesce(deleted_at::text, 'live') from app.match_event where id='$(cmd 3221)'")" = '2:live' ] || fail "leak: an event changed"
+# The console: the Season's settings and the event fields; deleted events are skipped.
+[ "$(as $D13 "select (j->'rules'->>'foul_warning')||'|'||(j->'rules'->>'timeouts_per_period')||'|'||(j->'rules'->>'substitutions')||'|'||(j->'rules'->>'power_play_minutes') from (select app.console_match('$EM1') j) x")" = '5|1|rolling|2' ] || fail "console_match: settings"
+[ "$(as $D15 "select (j->'rules'->>'substitutions')||'|'||(j->'rules'->>'max_substitutions')||'|'||coalesce(j->'rules'->>'foul_warning', '-') from (select app.console_match('$EM2') j) x")" = 'limited|2|-' ] || fail "console_match: limited settings"
+[ "$(as $D13 "select (e->>'card')||'|'||(e->>'clock_ms')||'|'||(e->>'player_id') from (select jsonb_array_elements(app.console_match('$EM1')->'events') e) x where e->>'id' = '$(cmd 3221)'")" = "red|300000|$(pl 10 4)" ] || fail "console_match: card fields"
+[ "$(as $D13 "select (e->>'player_on_id') from (select jsonb_array_elements(app.console_match('$EM1')->'events') e) x where e->>'id' = '$(cmd 3250)'")" = "$(pl 9 3)" ] || fail "console_match: sub fields"
+[ "$(as $D13 "select count(*) from (select jsonb_array_elements(app.console_match('$EM1')->'events') e) x where e->>'id' = '$(cmd 3220)'")" = 0 ] || fail "console_match: a deleted event"
+# Reads and writes: nobody writes directly.
+for stmt in "update app.match_event set card = 'red'" "update app.match_event set deleted_at = now()" "delete from app.match_event" "insert into app.match_event (id, tournament_id, season_id, match_id, kind, period, minute, entered_at) select gen_random_uuid(), tournament_id, season_id, id, 'foul', 1, 1, now() from app.match"; do
+  for who in $D13 $A; do
+    out=$(as $who "$stmt" 2>&1 || true)
+    [[ $out == *"permission denied"* ]] || fail "$who wrote directly: $stmt: $out"
+  done
+done
+# A finished Match refuses every event command; a revoked phone is refused; a finished Season too.
+[ "$(tc $D13 "end_match('$(cmd 3293)', '$S22', '$EM1', $(mver $EM1))")|$(q "select status||':'||hg||'-'||ag from app.match where id='$EM1'")" = 'ok|finished:1-0' ] || fail "events: end the Match"
+[ "$(ev $D13 3294 $S22 $EM1 foul $X9 null null null)|$(ex $D13 delete_event 3295 3221 $S22)|$(ex $D13 edit_event 3296 3221 $S22 "'$(pl 10 1)', false")" = 'match_not_live|match_not_live|match_not_live' ] || fail "events: a finished Match"
+q "update app.scorer_device set status = 'revoked', revoked_at = now() - interval '2 hours' where user_id = '$D15'" >/dev/null
+[ "$(ev $D15 3297 $S23 $EM2 foul $X11 null null null)|$(cm $D15 $EM2)" = 'not_authorized|none' ] || fail "events: a revoked phone still works"
+q "update app.season set status = 'finished' where id='$S22'" >/dev/null
+[ "$(ev $A 3298 $S22 $EM1 foul $X9 null null null)" = season_finished ] || fail "events: a finished Season"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

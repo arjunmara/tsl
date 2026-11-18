@@ -1193,3 +1193,30 @@
   flex: 1;
   min-width: 0;
 }
+
+/* Cards, fouls, substitutions, timeouts and power play (Story 4.5). */
+.event-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--spacing-2);
+}
+.event-button {
+  min-height: 4rem;
+}
+.period-row {
+  margin-top: 1.5rem;
+}
+.period-row .ui-button {
+  width: 100%;
+}
+.scoreboard-limit {
+  color: var(--live);
+}
+.scoreboard-power {
+  margin: 0;
+  text-align: center;
+  color: var(--action-ink);
+}
+.picker-extra {
+  flex: 1;
+}

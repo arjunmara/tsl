@@ -544,3 +544,20 @@ are now derived by a trigger on `app.match_event` from the undeleted goals, in t
 fields on events, the score and divider scores in the line-up's home and away order, and `period_minutes` and `extra_time_minutes` in the
 rules. Steps: paste `0031_goals.sql` into the SQL Editor and run it. Check: `select app.console_match('<match id>')` runs as an Organiser
 and shows `events` with `team_id`.
+
+## Apply 0032_match_events.sql (Story 4.5)
+
+Apply after 0031 and before the app deploy with events in the console (test first, then live). It adds the kinds `card`, `foul`, `sub`,
+`timeout` and `missed_penalty` to `app.match_event` and the columns `card` (`yellow` or `red`), `player_on_id` (a substitution: `player_id` goes
+off, `player_on_id` comes on) and `clock_ms` (the Match clock's elapsed milliseconds in the period). These events never change the score: the
+trigger and `app.match_score` count only goals. New command `record_event` (started Seasons only, holder of scoring only, live Match only; the
+command id is the event id; `period`, `minute`, `clock_ms` and `at` come from the phone) with the answers `not_scoring_device`,
+`match_not_live`, `team_invalid`, `player_invalid`, `event_invalid`, `event_not_allowed` (a foul without the Season's `foul_warning`, a timeout
+without `timeouts_per_period`), `timeout_used` (one per Team per regular period, none in extra time; the message names the Team),
+`subs_used` (a limited Season stops at `max_substitutions` per Team), `not_on_pitch` (the Player going off) and `not_on_bench` (the Player coming
+on: on the bench or, when rolling, subbed off earlier). `app.on_pitch(match, team)` derives the Players on the pitch from the starters and the
+undeleted subs. `edit_event` (Player and minute; a foul or timeout takes the minute only) and `delete_event` now also take these kinds;
+`add_assist` still takes goals only (`event_not_allowed`). `app.authorize` lets an approved Scorer phone run `record_event` for its own Season.
+`app.console_match` gains `foul_warning`, `timeouts_per_period`, `substitutions`, `max_substitutions` and `power_play_minutes` in `rules`, and
+`card`, `player_on_id` and `clock_ms` on events. Steps: paste `0032_match_events.sql` into the SQL Editor and run it. Check:
+`select app.console_match('<match id>')` runs as an Organiser and shows the new `rules` keys.

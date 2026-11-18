@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { serverNow } from '../../domain/clock'
 import { dropQueuedClock, dropQueuedGoal, forgetRefused, myQueued, noteVersion, send, useOutbox } from '../../domain/commands'
-import { clockCommand, goalMinute, playerNames, goalsOf, periodButtons, readConsole, scorerName, starters, stepClock, takeScoring, type ClockOp, type Console as ConsoleData, type ConsoleTeam, type MatchEvent } from '../../domain/console'
+import { benchFor, clockCommand, elapsedAt, eventText, goalMinute, playerNames, goalsOf, periodButtons, pitchOf, readConsole, scorerName, stepClock, subChangeReason, subsReason, takeScoring, timeoutReason, type ClockOp, type Console as ConsoleData, type ConsoleTeam, type EventKind, type MatchEvent } from '../../domain/console'
 import { formatDate, inZone } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '../../ui/Button'
@@ -10,9 +10,10 @@ import { ConfirmSheet } from '../../ui/ConfirmSheet'
 import { Problem } from '../auth/Screen'
 import { Unavailable, UUID } from '../setup/Setup'
 import { useWakeLock } from './Clock'
-import { EditGoal, EventLog } from './EventLog'
+import { EditEvent, EditGoal, EventLog } from './EventLog'
+import { EventButtons } from './EventButtons'
 import { GoalButtons } from './GoalButtons'
-import { Picker } from './Picker'
+import { Picker, type PickGroup } from './Picker'
 import { PreMatch, startDraft, type Drafts } from './PreMatch'
 import { Scoreboard } from './Scoreboard'
 import { UndoToast } from './UndoToast'
@@ -44,7 +45,8 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   const [today] = useState(() => inZone(serverNow()).date)
   // The Match's version as this phone expects the server to have it: each clock command raises it by one, queued or not.
   const version = useRef(0)
-  const [picker, setPicker] = useState<{ team: string } | { assist: string } | null>(null)
+  // The open picker: a goal's scorer, a goal's assist, or the steps of an event (card colour, Player off, ...).
+  const [picker, setPicker] = useState<{ team: string } | { assist: string } | { ev: EventKind; card?: 'yellow' | 'red'; off?: string } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [ask, setAsk] = useState<{ title: string; before: string; after: string; action: string; destructive?: boolean; run: () => void } | null>(null)
@@ -122,7 +124,9 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   const waiting = new Set(entries.filter((e) => e.state === 'pending').flatMap((e) => [e.commandId, String(e.args.event_id ?? '')]))
   const live = c.holder && c.match.status === 'live' && running
   const teamOf = (id: string | null | undefined) => c.teams.find((t) => t.teamId === id)
-  const squadOf = (t: ConsoleTeam | undefined) => (t && drafts ? starters(t, drafts[t.teamId]?.picks ?? {}) : [])
+  const picksOf = (t: ConsoleTeam) => drafts?.[t.teamId]?.picks ?? {}
+  // On the pitch now: the starters with each sub applied (the goal picker, the assist picker and Edit goal use it).
+  const squadOf = (t: ConsoleTeam | undefined) => (t && drafts ? pitchOf(t, picksOf(t), c.events).on : [])
 
   async function confirm() {
     if (!ready || !drafts || busy || !home || !away) return
@@ -168,7 +172,7 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
 
   // A goal command's answer: queued stays on this phone; a conflict goes to the hand-back; any other refusal is said once. Then the goals are read
   // again, keeping the ones (and the changes) still waiting in the outbox.
-  async function settle(r: { ok: boolean; code: string | null; commandId?: string }) {
+  async function settle(r: { ok: boolean; code: string | null; commandId?: string; message?: string | null }) {
     if (r.ok) return
     if (r.code === 'queued') return setNotice(messages.clock_queued)
     if (r.code !== 'version_conflict') {
@@ -176,7 +180,8 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
         void forgetRefused(r.commandId)
         void dropQueuedGoal(r.commandId)
       }
-      setProblem(messageFor(r.code))
+      // The limits name the Team in the server's own words.
+      setProblem((r.code === 'timeout_used' || r.code === 'subs_used') && r.message ? r.message : messageFor(r.code))
     }
     const again = await readConsole(matchId)
     if (typeof again !== 'object' || !('match' in again)) return
@@ -211,6 +216,43 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
       minute: e.minute, at: e.enteredAt }, { scope: matchId, commandId: id }).then(settle)
   }
 
+  // Records a card, foul, sub, timeout or missed penalty at once (offline too); same outbox scope as goals and the clock.
+  function record(kind: EventKind, t: ConsoleTeam, player: string | null, on: string | null, card: 'yellow' | 'red' | null) {
+    if (!c || typeof c === 'string') return
+    const at = serverNow()
+    const id = crypto.randomUUID()
+    const e: MatchEvent = { id, kind, period: c.clock.period, minute: goalMinute(c.clock, c.rules, at), enteredAt: at.toISOString(), home: null, away: null,
+      teamId: t.teamId, playerId: player, playerOnId: on, card, clockMs: Math.floor(elapsedAt(c.clock, at)), version: 1 }
+    setProblem(null)
+    setNotice('')
+    setC({ ...c, events: [e, ...c.events] })
+    setToast(id)
+    void noteVersion(id, 1)
+    void send('record_event', { season_id: scope, match_id: matchId, kind, team_id: t.teamId, player_id: player, player_on_id: on, card, period: e.period, minute: e.minute,
+      clock_ms: e.clockMs, at: e.enteredAt }, { scope: matchId, commandId: id }).then(settle)
+  }
+  // The picker's steps for an event: card colour, then Player; Team; Player off, then Player coming on; Player.
+  function stepOf(f: { ev: EventKind; card?: 'yellow' | 'red'; off?: string }): { title: string; groups?: PickGroup[]; extras?: { label: string; value: string; reason?: string }[]; pick: (who: string) => boolean } | null {
+    if (!c || typeof c === 'string' || !home || !away) return null
+    const pair = [home, away]
+    const everyone = (t: ConsoleTeam): PickGroup => {
+      const p = pitchOf(t, picksOf(t), c.events)
+      return { heading: t.name, players: [...p.on, ...p.bench.map((b) => ({ ...b, note: 'Bench' }))] }
+    }
+    const owner = (id: string) => c.teams.find((t) => t.squad.some((p) => p.playerId === id))
+    const teams = (verb: string, reason?: (t: ConsoleTeam) => string | null) => pair.map((t) => ({ label: `${verb} for ${t.name}`, value: t.teamId, reason: reason?.(t) ?? undefined }))
+    const byTeam = (id: string) => c.teams.find((t) => t.teamId === id)
+    if (f.ev === 'card' && !f.card) return { title: 'Which card?', extras: [{ label: 'Give yellow card', value: 'yellow' }, { label: 'Give red card', value: 'red' }], pick: (v) => (setPicker({ ev: 'card', card: v as 'yellow' | 'red' }), true) }
+    if (f.ev === 'card') return { title: `Who got the ${f.card} card?`, groups: pair.map(everyone), pick: (id) => (owner(id) && record('card', owner(id)!, id, null, f.card!), false) }
+    if (f.ev === 'foul') return { title: 'Which Team fouled?', extras: teams('Record foul'), pick: (id) => (byTeam(id) && record('foul', byTeam(id)!, null, null, null), false) }
+    if (f.ev === 'timeout') return { title: 'Which Team takes the timeout?', extras: teams('Record timeout', (t) => timeoutReason(c, t)), pick: (id) => (byTeam(id) && record('timeout', byTeam(id)!, null, null, null), false) }
+    if (f.ev === 'missed_penalty') return { title: 'Who missed the penalty?', groups: pair.map(everyone), pick: (id) => (owner(id) && record('missed_penalty', owner(id)!, id, null, null), false) }
+    if (!f.off) return { title: 'Who goes off?', groups: pair.map((t) => ({ heading: t.name, players: pitchOf(t, picksOf(t), c.events).on, reason: subsReason(c, t) ?? undefined })),
+      pick: (id) => (setPicker({ ev: 'sub', off: id }), true) }
+    const t = owner(f.off)
+    const bench = t ? benchFor(c, t, picksOf(t)) : []
+    return { title: `Who comes on for ${t?.squad.find((p) => p.playerId === f.off)?.name}?`, groups: t ? [{ heading: t.name, players: bench, reason: bench.length ? undefined : `No one on the ${t.code} bench can come on.` }] : [], pick: (id) => (t && record('sub', t, f.off!, id, null), false) }
+  }
   // A change to a goal: applied here at once, then sent in the goal's own chain (a held conflict stops only that goal's later changes).
   function change(id: string, name: string, args: Record<string, unknown>, apply: (events: MatchEvent[]) => MatchEvent[]) {
     setProblem(null)
@@ -223,14 +265,18 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
     if (!c || typeof c === 'string' || !home || !away) return
     const rest = c.events.filter((x) => x.id !== id)
     setC((x) => (x && typeof x === 'object' ? { ...x, events: x.events.filter((y) => y.id !== id) } : x))
-    setAnnounce(`Goal removed. ${home.code} ${goalsOf(rest, home.teamId)}, ${away.code} ${goalsOf(rest, away.teamId)}.`)
+    if (c.events.find((x) => x.id === id)?.kind === 'goal') setAnnounce(`Goal removed. ${home.code} ${goalsOf(rest, home.teamId)}, ${away.code} ${goalsOf(rest, away.teamId)}.`)
     setToast(null)
     if (await dropQueuedGoal(id)) return
     void send('delete_event', { season_id: scope, event_id: id }, { scope: id, versionOf: id }).then(settle)
   }
   const patch = (id: string, p: Partial<MatchEvent>) => (events: MatchEvent[]) => events.map((x) => (x.id === id ? { ...x, ...p } : x))
   const toastEvent = c.events.find((x) => x.id === toast)
-  const editEvent = c.events.find((x) => x.id === editing)
+  const toastText = toastEvent && (toastEvent.kind === 'goal' ? `Goal · ${scorerName(toastEvent, teamOf(toastEvent.teamId))} ${toastEvent.minute}′ · ${teamOf(toastEvent.teamId)?.code ?? ''}`
+    : `${eventText(toastEvent, teamOf(toastEvent.teamId))} ${toastEvent.minute}′`)
+  const editEvent = c.events.find((x) => x.id === editing && x.kind === 'goal')
+  const editOther = c.events.find((x) => x.id === editing && x.kind !== 'goal')
+  const flow = picker && 'ev' in picker ? stepOf(picker) : null
   const pickTeam = picker && 'team' in picker ? teamOf(picker.team) : undefined
   const assistEvent = picker && 'assist' in picker ? c.events.find((x) => x.id === picker.assist) : undefined
   const assistTeam = teamOf(assistEvent?.teamId)
@@ -265,6 +311,7 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
         <>
           <Scoreboard c={view} home={home} away={away} kits={kits} canCorrect={c.holder && running} onCorrect={(ms) => void clockStep('set', ms)} />
           {live && <GoalButtons home={home} away={away} kits={kits} onGoal={(t) => setPicker({ team: t.teamId })} />}
+          {live && <EventButtons rules={c.rules} onPick={(ev) => setPicker({ ev })} />}
           {c.holder && running && (
             <div className="clock-controls">
               {c.clock.interval ? null : c.clock.running
@@ -272,10 +319,10 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
                 : c.clock.period === 0 && !confirmed
                   ? null
                   : <PrimaryButton label={c.clock.period === 0 ? 'Start clock' : 'Resume clock'} onClick={() => void clockStep('start')} />}
-              {buttons.map((b) => b.op === 'end'
+              <div className="period-row">{buttons.map((b) => b.op === 'end'
                 ? <DestructiveButton key={b.label} label={b.label} sheetTitle={`End the match at ${view.score.home}–${view.score.away}?`} before="Live" after="Finished"
                     actionLabel="End the match" note="This is logged." onConfirm={() => void clockStep('end')} />
-                : <SecondaryButton key={b.label} label={b.label} onClick={() => void clockStep('next')} />)}
+                : <SecondaryButton key={b.label} label={b.label} onClick={() => void clockStep('next')} />)}</div>
             </div>
           )}
           <EventLog c={c} waiting={waiting} onEdit={live ? (e) => setEditing(e.id) : null} />
@@ -286,10 +333,11 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
           onSwap={() => (setConfirmed(false), setSwapped((s) => !s))} onConfirm={() => void confirm()} />
       )}
       <p className="ui-visually-hidden" role="status" aria-live="polite">{announce}</p>
-      {toastEvent && live && <UndoToast key={toastEvent.id} text={`Goal · ${scorerName(toastEvent, teamOf(toastEvent.teamId))} ${toastEvent.minute}′ · ${teamOf(toastEvent.teamId)?.code ?? ''}`}
+      {toastEvent && live && <UndoToast key={toastEvent.id} label={toastEvent.kind === 'goal' ? 'Goal recorded' : 'Event recorded'} text={toastText ?? ''}
         onUndo={() => void takeAway(toastEvent.id)}
-        onAddAssist={toastEvent.ownGoal ? null : () => (setToast(null), setPicker({ assist: toastEvent.id }))} onExpire={() => setToast(null)} />}
-      <Picker title={pickTeam ? `Who scored for ${pickTeam.name}?` : assistTeam ? `Who assisted for ${assistTeam.name}?` : null}
+        onAddAssist={toastEvent.kind !== 'goal' || toastEvent.ownGoal ? null : () => (setToast(null), setPicker({ assist: toastEvent.id }))} onExpire={() => setToast(null)} />}
+      {flow && <Picker title={flow.title} groups={flow.groups} extras={flow.extras} onPick={flow.pick} onClose={() => setPicker(null)} />}
+      <Picker title={flow ? null : pickTeam ? `Who scored for ${pickTeam.name}?` : assistTeam ? `Who assisted for ${assistTeam.name}?` : null}
         players={pickTeam ? squadOf(pickTeam) : squadOf(assistTeam).filter((p) => p.playerId !== assistEvent?.playerId)}
         extras={pickTeam ? [{ label: 'Own goal', value: 'own' }, { label: 'Unknown scorer', value: 'unknown' }] : undefined}
         onPick={(who) => (pickTeam ? goal(pickTeam, who) : assistEvent && change(assistEvent.id, 'add_assist', { assist_id: who }, patch(assistEvent.id, { assistId: who })))}
@@ -298,8 +346,29 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
           if (assistTeam) document.querySelector<HTMLElement>(`button[aria-label="GOAL ${assistTeam.code}"]`)?.focus()
           setPicker(null)
         }} />
+      {editOther && (
+        <EditEvent key={editOther.id} event={editOther} team={teamOf(editOther.teamId)} players={teamOf(editOther.teamId)?.squad ?? []} onClose={() => setEditing(null)}
+          onSave={(who, minute) => {
+            const t = teamOf(editOther.teamId)
+            const player = who ?? editOther.playerId ?? null
+            if (player === (editOther.playerId ?? null) && minute === editOther.minute) return
+            const blocked = t && editOther.kind === 'sub' && subChangeReason(t, picksOf(t), c.events, editOther.id, 'edit', player)
+            if (blocked) return setProblem(blocked)
+            const old = eventText(editOther, t)
+            const now = eventText({ ...editOther, playerId: player }, t)
+            setAsk({ title: `Change "${old}" at ${editOther.minute}′ to "${now}" at ${minute}′?`, before: `${old} ${editOther.minute}′`, after: `${now} ${minute}′`, action: 'Save event',
+              run: () => change(editOther.id, 'edit_event', { player_id: player, own_goal: false, minute }, patch(editOther.id, { playerId: player, minute })) })
+          }}
+          onDelete={() => {
+            const t = teamOf(editOther.teamId)
+            const blocked = t && editOther.kind === 'sub' && subChangeReason(t, picksOf(t), c.events, editOther.id, 'delete', null)
+            if (blocked) return setProblem(blocked)
+            const text = eventText(editOther, t)
+            setAsk({ title: `Delete "${text}" at ${editOther.minute}′?`, before: `${text} ${editOther.minute}′`, after: 'Deleted', action: 'Delete event', destructive: true, run: () => void takeAway(editOther.id) })
+          }} />
+      )}
       {editEvent && (
-        <EditGoal key={editEvent.id} event={editEvent} team={teamOf(editEvent.teamId)} players={squadOf(teamOf(editEvent.teamId))}
+        <EditGoal key={editEvent.id} event={editEvent} team={teamOf(editEvent.teamId)} players={teamOf(editEvent.teamId)?.squad ?? []}
           onClose={() => setEditing(null)} onAssist={() => setPicker({ assist: editEvent.id })}
           onSave={(who, minute) => {
             const t = teamOf(editEvent.teamId)

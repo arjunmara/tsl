@@ -190,6 +190,12 @@ export const messages = {
   player_invalid: "That Player isn't in this Team's Squad. Pick the Player again.",
   goal_invalid: "That goal's time isn't valid. Check the minute.",
   event_missing: 'That goal was already removed.',
+  event_invalid: "That event's time isn't valid. Check the minute.",
+  event_not_allowed: "This Format doesn't record that.",
+  timeout_used: 'That Team has used its timeout.',
+  subs_used: 'That Team has used all its substitutions.',
+  not_on_pitch: "That Player isn't on the pitch. Pick the Player again.",
+  not_on_bench: "That Player isn't on the bench. Pick the Player again.",
   lineups_queued: "Line-ups saved on this phone. They send when there's a signal.",
 } as const
 
