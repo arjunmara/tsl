@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -3027,6 +3027,83 @@ for stmt in "update app.match set mom_player_id = null" "update app.match set ho
   done
 done
 for who in $D17 $D7 $G1 $B; do [ "$(cm $who $RGM)" = none ] || fail "leak: $who reads the result"; done
+# --- Offline replay and the holder grace (Story 4.7). S25 of T15: X17 v X18 (RP1: the whole command set, each sent twice with one command id), RP2 (typed result),
+# RP3 (grace rows). D18 holds scoring, D19 held it before, D20 is a phone that gets revoked; all three are approved phones of S25.
+S25=21111111-0000-4000-8000-0000000000f7
+X17=47111111-0000-4000-8000-000000000017 X18=47111111-0000-4000-8000-000000000018
+RP1=57111111-0000-4000-8000-0000000000d1 RP2=57111111-0000-4000-8000-0000000000d2 RP3=57111111-0000-4000-8000-0000000000d3
+D18=f7111111-0000-4000-8000-000000000018 D19=f7111111-0000-4000-8000-000000000019 D20=f7111111-0000-4000-8000-000000000020
+q "insert into auth.users (id, is_anonymous) values ('$D18', true), ('$D19', true), ('$D20', true)" >/dev/null
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench, periods, period_minutes, extra_time) values ('$S25', '$T15', 8, 'started', 2, 2, 2, 20, false)" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$X17', '$T15', '$S25', 'Seventeen FC', 'SVT', '#ff0000', 'approved'), ('$X18', '$T15', '$S25', 'Eighteen FC', 'EGT', '#0000ff', 'approved')" >/dev/null
+for t in 17 18; do for n in 1 2 3 4; do
+  q "insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl $t $n)', '$T15', 'Player $t-$n', '2000-01-01');
+     insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '$(eval echo \$X$t)', '$(pl $t $n)', $n)" >/dev/null
+done; done
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status) values
+  ('$RP1', '$T15', '$S25', 'group', 'Group A', 1, '$X17', '$X18', 'scheduled'), ('$RP2', '$T15', '$S25', 'group', 'Group A', 2, '$X17', '$X18', 'scheduled'),
+  ('$RP3', '$T15', '$S25', 'group', 'Group A', 3, '$X17', '$X18', 'scheduled')" >/dev/null
+q "insert into app.scorer_device (tournament_id, season_id, user_id, label, status, number_hash, expires_at) select '$T15', '$S25', u, 'Phone', 'approved', repeat('0', 64), now() + interval '1 hour'
+   from unnest(array['$D18', '$D19', '$D20']::uuid[]) u" >/dev/null
+LP=$(lu 17 '1 2' '3 4' '#ff0000') LQ=$(lu 18 '1 2' '3 4' '#0000ff')
+for m in $RP1 $RP3; do
+  [ "$(tc $D18 "take_scoring('$(cmd $((3500 + ${m: -1})))', '$S25', '$m')")|$(tc $D18 "confirm_lineups('$(cmd $((3510 + ${m: -1})))', '$S25', '$m', '$LP'::jsonb, '$LQ'::jsonb)")" = 'ok|ok' ] || fail "replay: set up $m"
+done
+# fp <match>: the Match's version, its events with their versions and the Activity log; a replay must leave all of it as it was.
+fp() { q "select m.version||':'||(select count(*)||'/'||coalesce(sum(version), 0) from app.match_event where match_id = m.id)||':'||(select count(*) from app.activity_log) from app.match m where m.id = '$1'"; }
+# tw <user> <match> <call>: the same call twice with the same command id; both answer ok, the second changes nothing.
+tw() { local r1 r2 f; r1=$(tc "$1" "$3"); f=$(fp "$2"); r2=$(tc "$1" "$3"); [ "$r1|$r2|$f" = "ok|ok|$(fp "$2")" ] || fail "twice: $3: $r1|$r2"; }
+G1E=$(cmd 3520) CE=$(cmd 3521)
+tw $D18 $RP1 "start_clock('$(cmd 3519)', '$S25', '$RP1', $(mver $RP1))"
+tw $D18 $RP1 "record_goal('$G1E', '$S25', '$RP1', '$X17', '$(pl 17 1)', false, 1, 3)"
+tw $D18 $RP1 "record_event('$CE', '$S25', '$RP1', 'card', '$X17', '$(pl 17 2)', null, 'yellow', 1, 4, 240000)"
+tw $D18 $RP1 "add_assist('$(cmd 3522)', '$S25', '$G1E', $(gver 3520), '$(pl 17 3)')"
+tw $D18 $RP1 "edit_event('$(cmd 3523)', '$S25', '$G1E', $(gver 3520), '$(pl 17 4)', false, 5)"
+tw $D18 $RP1 "set_clock('$(cmd 3524)', '$S25', '$RP1', $(mver $RP1), 600000)"
+tw $D18 $RP1 "pause_clock('$(cmd 3525)', '$S25', '$RP1', $(mver $RP1))"
+tw $D18 $RP1 "next_period('$(cmd 3526)', '$S25', '$RP1', $(mver $RP1))"
+tw $D18 $RP1 "delete_event('$(cmd 3527)', '$S25', '$CE', $(gver 3521))"
+[ "$(ecount $RP1 goal)|$(ecount $RP1 card)" = '1|0' ] || fail "twice: one goal, the card deleted"
+[ "$(q "select player_id||':'||assist_id||':'||minute from app.match_event where id = '$G1E'")" = "$(pl 17 4):$(pl 17 3):5" ] || fail "twice: the goal's assist and edit"
+tw $D18 $RP1 "end_match('$(cmd 3528)', '$S25', '$RP1', $(mver $RP1), now(), null, null, '$(pl 17 4)', '$(pl 18 1)')"
+tw $A $RP1 "set_awards('$(cmd 3529)', '$S25', '$RP1', $(mver $RP1), '$(pl 17 1)', null)"
+[ "$(rs $RP1 | cut -d: -f1-2)|$(ecount $RP1 goal)" = 'finished:1-0|1' ] || fail "twice: the finished Match $(rs $RP1)"
+tw $A $RP2 "type_result('$(cmd 3530)', '$S25', '$RP2', $(mver $RP2), 2, 1)"
+[ "$(rs $RP2 | cut -d: -f1-2)" = 'finished:2-1' ] || fail "twice: type_result $(rs $RP2)"
+# The holder grace: RP3 is live, D18 holds scoring and D19 held it before; 'moved' is when it changed hands. A goal, a card and each clock command go through
+# for D19 when entered before moved + the grace window, whatever the time they arrive; later ones answer not_scoring_device and change nothing. D20 never held it.
+tc $D18 "start_clock('$(cmd 3540)', '$S25', '$RP3', $(mver $RP3))" >/dev/null
+handed() { q "update app.match set scoring_device = '$D18', scoring_prev_device = '$D19', scoring_moved_at = $1 where id='$RP3'" >/dev/null; }
+pg() { tc $D19 "record_goal('$(cmd $1)', '$S25', '$RP3', '$X17', null, false, 1, 3, $2)"; }
+pe() { tc $D19 "record_event('$(cmd $1)', '$S25', '$RP3', 'missed_penalty', '$X17', '$(pl 17 1)', null, null, 1, 4, 240000, $2)"; }
+pc() { tc $D19 "$2('$(cmd $1)', '$S25', '$RP3', $(mver $RP3), ${3:-now()})"; }
+handed 'now()'
+[ "$(pg 3541 "now() - interval '1 minute'")|$(pe 3542 'now()')|$(pc 3543 pause_clock)" = 'ok|ok|ok' ] || fail "grace: the previous holder inside the window"
+[ "$(tg $RP3 $X17)" = 1 ] || fail "grace: the goal counts"
+handed "now() - interval '2 hours'"
+[ "$(pg 3544 "now() - interval '2 hours 30 minutes'")|$(pe 3545 "now() - interval '2 hours 10 minutes'")|$(pc 3546 start_clock "now() - interval '2 hours 10 minutes'")" = 'ok|ok|ok' ] || fail "grace: entered before the move, arriving late"
+f=$(fp $RP3)
+[ "$(pg 3547 'now()')|$(pe 3548 'now()')|$(pc 3549 pause_clock)|$(pc 3550 next_period)|$(pc 3552 end_match)" = 'not_scoring_device|not_scoring_device|not_scoring_device|not_scoring_device|not_scoring_device' ] \
+  || fail "grace: after the window"
+[ "$f" = "$(fp $RP3)" ] || fail "grace: a refused command wrote"
+[ "$(tc $D20 "record_goal('$(cmd 3553)', '$S25', '$RP3', '$X17', null, false, 1, 3, now() - interval '3 hours')")|$(tc $D20 "pause_clock('$(cmd 3554)', '$S25', '$RP3', $(mver $RP3))")" = 'not_scoring_device|not_scoring_device' ] || fail "grace: a phone that never held scoring"
+# A refused command is stored under its id: a replay answers the same.
+[ "$(pg 3547 'now()')" = not_scoring_device ] || fail "grace: a replay of a refused command"
+# A revoked phone that holds scoring keeps 4.1's grace: changes entered before the revoke + the window still go through; later ones are not_authorized.
+q "update app.match set scoring_device = '$D20', scoring_prev_device = null, scoring_moved_at = null where id='$RP3'; update app.scorer_device set status = 'revoked', revoked_at = now() - interval '10 minutes' where user_id = '$D20'" >/dev/null
+rg() { tc $D20 "record_goal('$(cmd $1)', '$S25', '$RP3', '$X18', null, false, 1, 3, $2)"; }
+rc() { tc $D20 "pause_clock('$(cmd $1)', '$S25', '$RP3', $(mver $RP3))"; }
+[ "$(rg 3555 "now() - interval '5 minutes'")|$(rc 3556)" = 'ok|ok' ] || fail "grace: a revoked holder inside the window"
+q "update app.scorer_device set revoked_at = now() - interval '2 hours' where user_id = '$D20'" >/dev/null
+[ "$(rg 3557 'now()')|$(rc 3558)" = 'not_authorized|not_authorized' ] || fail "grace: a revoked holder after the window"
+# The time of the change is the outbox's x-entered-at header when there is one (as for 4.1's revoked-phone grace): entered 2.5 h ago it still goes through for
+# the previous holder and for the revoked holder, entered a minute ago it does not.
+th() { local h; h=$(q "select to_char((now() - interval '$2') at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"); as "$1" "set local request.headers to '{\"x-entered-at\":\"$h\"}'; select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.$3 r"; }
+thg() { th "$1" "$2" "record_goal('$(cmd $3)', '$S25', '$RP3', '$X18', null, false, 1, 3)"; }
+[ "$(thg $D20 '2 hours 30 minutes' 3560)|$(thg $D20 '1 minute' 3561)" = 'ok|not_authorized' ] || fail "grace: a revoked holder, the entered-at header"
+handed "now() - interval '2 hours'"
+[ "$(thg $D19 '2 hours 30 minutes' 3562)|$(thg $D19 '1 minute' 3563)" = 'ok|not_scoring_device' ] || fail "grace: the previous holder, the entered-at header"
 # A finished Season refuses everything.
 q "update app.season set status = 'finished' where id='$S24'" >/dev/null
 [ "$(r24 $A 3395 $RTY '2, 2')|$(a24 $A 3396 $RGM 'null, null')|$(tc $A "delete_event('$(cmd 3397)', '$S24', '$SG', $(gver 3323))")" = 'season_finished|season_finished|season_finished' ] || fail "result: a finished Season"

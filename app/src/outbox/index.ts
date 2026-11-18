@@ -1,6 +1,6 @@
 import { liveQuery } from 'dexie'
 import { useSyncExternalStore } from 'react'
-import { db, type Conflict, type Entry, type Upload } from './db'
+import { db, kept, type Conflict, type Entry, type Upload } from './db'
 import { getConfig, kick, setConfig, setListeners, waitFor, type Config, type Result } from './replay'
 
 export type { Conflict, Entry, Result, Upload }
@@ -81,14 +81,28 @@ export async function send(
  * (the server stores the refusal under the old one and would only repeat it).
  */
 export async function resend(seq: number) {
-  await db.entries.where('seq').equals(seq).modify((e) => {
-    if (e.state === 'pending') return
-    e.commandId = crypto.randomUUID()
+  await db.transaction('rw', db.entries, db.versions, async () => {
+    const old = await db.entries.get(seq)
+    if (!old || old.state === 'pending') return
+    const id = crypto.randomUUID()
+    // A goal or event is its command id: the changes chained to it follow it to the new id.
+    if (old.name === 'record_goal' || old.name === 'record_event') {
+      await db.entries.filter((x) => x.args.event_id === old.commandId || x.scope === old.commandId || x.versionOf === old.commandId).modify((x) => {
+        if (x.args.event_id === old.commandId) x.args = { ...x.args, event_id: id }
+        if (x.scope === old.commandId) x.scope = id
+        if (x.versionOf === old.commandId) x.versionOf = id
+      })
+      const v = await db.versions.get(old.commandId)
+      if (v) await db.versions.put({ id, version: v.version })
+    }
+    await db.entries.where('seq').equals(seq).modify((e) => {
+    e.commandId = id
     e.state = 'pending'
     e.attempts = 0
     delete e.code
     delete e.message
     delete e.conflict
+    })
   })
   kick()
 }
@@ -177,6 +191,22 @@ export async function myQueued(): Promise<Entry[]> {
   const me = await getConfig()!.actor()
   return (await db.entries.orderBy('seq').toArray()).filter((e) => e.actor === me)
 }
+/** Keeps what a Match's console shows, and the command ids of the changes already in it, for opening it again with no signal. */
+export async function keepConsole(matchId: string, console: unknown, applied: string[]) {
+  const me = await getConfig()?.actor()
+  if (me) await kept.consoles.put({ key: `${me}:${matchId}`, console, applied }).catch(() => {})
+}
+/** The kept console of a Match for the signed-in user, or null. */
+export async function keptConsole(matchId: string): Promise<{ console: unknown; applied: string[] } | null> {
+  const me = await getConfig()?.actor()
+  return (me && (await kept.consoles.get(`${me}:${matchId}`).catch(() => undefined))) || null
+}
+/** Forgets the signed-in user's kept consoles (on sign-out). */
+export async function clearKeptConsoles() {
+  const me = await getConfig()?.actor()
+  if (me) await kept.consoles.filter((k) => k.key.startsWith(`${me}:`)).delete().catch(() => {})
+}
+
 /** True while the signed-in user has changes waiting to send. */
 export const hasPending = () => snap.mine.some((e) => e.state === 'pending')
 

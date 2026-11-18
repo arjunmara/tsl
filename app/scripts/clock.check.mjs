@@ -224,6 +224,9 @@ try {
   const before = await op.evaluate(() => window.__locks.length)
   assert.ok(before >= 1, 'no wake lock on open')
   await op.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')) })
+  // Nothing may still be waiting in the outbox: a reload opens with the queue applied on top of the read.
+  await op.waitForTimeout(300)
+  await op.waitForFunction(() => new Promise((res) => { const r = indexedDB.open('tsl-outbox'); r.onsuccess = () => { const q = r.result.transaction('entries').objectStore('entries').count(); q.onsuccess = () => res(q.result === 0) } }))
   matches[1].clock = { ...matches[1].clock, anchor_at: new Date(Date.now() - 120_000).toISOString(), elapsed_ms: 0 }
   await op.reload()
   await button(op, 'Pause clock').waitFor()

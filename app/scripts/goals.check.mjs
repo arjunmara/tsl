@@ -103,7 +103,6 @@ async function ctx() {
       return json(route, r)
     }
     if (cmd === 'start_clock') mock.calls.push({ ...a, cmd, seen: Date.now() })
-    if (cmd === 'start_clock') mock.calls.push({ ...a, cmd, seen: Date.now() })
     return json(route, { ok: true, code: null, message: 'ok' })
   })
   await context.addInitScript(([k, v]) => localStorage.setItem(k, v), ['sb-fake-auth-token', JSON.stringify(session(ORG, false))])
@@ -293,7 +292,7 @@ try {
   await sent('record_goal', 6)
   await button(op, 'Resume clock').click()
   for (let i = 0; i < 30 && !calls('start_clock').length; i++) await op.waitForTimeout(100)
-  assert.equal(new Set(calls('start_clock').map((c) => c.command_id)).size, 1, 'the clock tap sent')
+  assert.equal(calls('start_clock').length, 1, 'the clock tap sent once')
 
   assert.equal(await op.evaluate(() => document.documentElement.scrollWidth), 390, 'horizontal scroll')
   console.log('ok')

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { serverNow } from '../../domain/clock'
-import { dropQueuedClock, dropQueuedGoal, forgetRefused, myQueued, noteVersion, send, useOutbox } from '../../domain/commands'
-import { benchFor, clockCommand, elapsedAt, eventText, goalMinute, playerNames, goalsOf, periodButtons, pitchOf, readConsole, scorerName, stepClock, subsReason, takeScoring, timeoutReason, type ClockOp, type Console as ConsoleData, type ConsoleTeam, type EventKind, type MatchEvent } from '../../domain/console'
+import { dropQueuedClock, dropQueuedGoal, forgetRefused, keepConsole, keptConsole, myQueued, noteVersion, send, useOutbox } from '../../domain/commands'
+import { applyQueued, benchFor, clockCommand, elapsedAt, eventText, goalMinute, playerNames, goalsOf, periodButtons, pitchOf, readConsole, scorerName, stepClock, subsReason, takeScoring, timeoutReason, type ClockOp, type Console as ConsoleData, type ConsoleTeam, type EventKind, type MatchEvent } from '../../domain/console'
 import { formatDate, inZone } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { ConfirmSheet } from '../../ui/ConfirmSheet'
 import { Problem } from '../auth/Screen'
+import { setConsoleMode } from '../save-status/mode'
 import { Unavailable, UUID } from '../setup/Setup'
 import { useWakeLock } from './Clock'
 import { AwardsSheet, awardGroups, type Finish } from './Awards'
@@ -21,6 +22,12 @@ import { Scoreboard } from './Scoreboard'
 import { UndoToast } from './UndoToast'
 
 const LEFT = 'The clock keeps running.'
+// A refusal for the lock or a revoked phone: the command stays in the outbox and goes to the hand-back (zero events lost); anything else is dropped.
+// The command ids of the queued changes shown on the console of this page, and whether one had to wait (module state: read from handlers).
+const appliedIds: string[] = []
+const waitedFlag = { on: false }
+const markWaited = () => void (waitedFlag.on = true)
+const held = (code: string | null) => code === 'not_scoring_device' || code === 'not_authorized'
 
 /**
  * /t/:tournamentId/score/:matchId (an Organiser) and /score/:matchId (a Scorer phone): the scoring console, full screen with no App bar or
@@ -58,15 +65,56 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   const { entries } = useOutbox()
   useWakeLock()
 
+  // What this screen shows is kept on the phone with the command ids of the queued changes already in it, so a reload with no signal opens it again.
+  // Set when a change had to wait: once the queue empties, the console is read again (the On-air flag, the ids the server gave).
+  useEffect(() => {
+    if (typeof c === 'object' && c) void keepConsole(matchId, c, appliedIds)
+  }, [c, matchId])
+  const onAirNow = typeof c === 'object' && !!c?.onAir
+  useEffect(() => {
+    setConsoleMode(onAirNow ? 'on-air' : 'console')
+    return () => setConsoleMode(null)
+  }, [onAirNow])
+
+  // Reads the console again, keeping the changes still in the outbox (waiting or held for the hand-back) as they are shown here.
+  async function reread() {
+    const again = await readConsole(matchId)
+    if (typeof again !== 'object' || !('match' in again)) return
+    const keep = new Set((await myQueued()).flatMap((e) => [e.commandId, String(e.args.event_id ?? '')]))
+    again.events.forEach((e) => void noteVersion(e.id, e.version ?? 1))
+    setC((x) => {
+      if (!x || typeof x !== 'object') return x
+      const mine = (e: MatchEvent) => keep.has(e.id)
+      const events = [...again.events.map((s) => (mine(s) ? x.events.find((l) => l.id === s.id) ?? s : s)), ...x.events.filter((l) => mine(l) && !again.events.some((s) => s.id === l.id))]
+      return { ...x, onAir: again.onAir, events: events.sort((a, b) => b.enteredAt.localeCompare(a.enteredAt)) }
+    })
+  }
+  // The queue of changes that waited has emptied: read the console once more.
+  const waitingNow = entries.some((e) => e.state === 'pending')
+  const wasWaiting = useRef(false)
+  useEffect(() => {
+    if (wasWaiting.current && !waitingNow && waitedFlag.on && typeof c === 'object' && c?.holder) {
+      waitedFlag.on = false
+      void reread()
+    }
+    wasWaiting.current = waitingNow
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only the queue emptying matters
+  }, [waitingNow])
+
   useEffect(() => {
     let live = true
     void (async () => {
-      const first = await readConsole(matchId)
+      // With no signal the read isn't tried: with an expired token it would wait for a refresh that cannot happen.
+      let first = navigator.onLine ? await readConsole(matchId) : { code: 'offline' as const }
+      if (!live) return
+      // No signal: the kept console with the changes still waiting to send applied to it, if this phone has opened the Match before.
+      const kept = typeof first === 'object' && 'code' in first && first.code === 'offline' ? await keptConsole(matchId) : null
+      if (kept) first = kept.console as ConsoleData
       if (!live) return
       if (first === 'none') return setC('none')
       if ('code' in first) return setC(first.code)
       let r: ConsoleData = first
-      if (!r.holder && r.match.status !== 'finished' && r.match.seasonStatus === 'started' && r.teams.length === 2) {
+      if (!kept && !r.holder && r.match.status !== 'finished' && r.match.seasonStatus === 'started' && r.teams.length === 2) {
         const t = await takeScoring(r.match.seasonId, matchId)
         if (!live) return
         if (t.ok) {
@@ -77,6 +125,12 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
           setProblem(t.code === 'offline' ? messages.take_offline : messageFor(t.code))
         }
       }
+      // The changes still waiting (this phone's, from this page or an earlier one) go on top of the read; the kept console already holds some.
+      const queue = await myQueued()
+      if (!live) return
+      r = applyQueued(r, queue, kept?.applied ?? [])
+      appliedIds.splice(0, appliedIds.length, ...(kept?.applied ?? []), ...queue.map((e) => e.commandId))
+      if (kept) waitedFlag.on = true
       version.current = r.match.version
       r.events.forEach((e) => void noteVersion(e.id, e.version ?? 1))
       r.teams.forEach((t) => t.squad.forEach((p) => playerNames.set(p.playerId, p.name)))
@@ -106,7 +160,7 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   if (typeof c === 'string') {
     return (
       <main className="console">
-        <Problem text={c === 'offline' ? messages.take_offline : messages.console_unknown} />
+        <Problem text={c === 'offline' ? messages.console_unopened : messages.console_unknown} />
         <SecondaryButton label="Try opening the match again" onClick={() => (setC(null), setAttempt((n) => n + 1))} />
         <SecondaryButton label="Leave console" onClick={leave} />
       </main>
@@ -140,7 +194,9 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
     const side = (t: typeof home) => ({ team_id: t.teamId, kit_colour: drafts[t.teamId]!.kit,
       starters: t.squad.filter((p) => drafts[t.teamId]!.picks[p.playerId] === 'start').map((p) => p.playerId),
       bench: t.squad.filter((p) => drafts[t.teamId]!.picks[p.playerId] === 'bench').map((p) => p.playerId) })
-    const r = await send('confirm_lineups', { season_id: scope, match_id: matchId, home: side(home), away: side(away) }, { scope: matchId })
+    const cid = crypto.randomUUID()
+    appliedIds.push(cid)
+    const r = await send('confirm_lineups', { season_id: scope, match_id: matchId, home: side(home), away: side(away) }, { scope: matchId, commandId: cid })
     setBusy(false)
     if (r.ok || r.code === 'queued') {
       setConfirmed(true)
@@ -157,14 +213,17 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
     const step = stepClock(c.clock, op, at, c.rules, ms)
     if (!step) return
     const expected = version.current++
+    const cid = crypto.randomUUID()
+    appliedIds.push(cid)
     setProblem(null)
     setNotice('')
     setC((x) => x && typeof x === 'object' ? { ...x, clock: step.clock, match: { ...x.match, status: step.status ?? x.match.status },
-      events: step.event ? [{ id: crypto.randomUUID(), kind: step.event, period: step.clock.period, minute: Math.floor(step.clock.elapsedMs / 60000), enteredAt: at.toISOString(),
+      events: step.event ? [{ id: cid, kind: step.event, period: step.clock.period, minute: Math.floor(step.clock.elapsedMs / 60000), enteredAt: at.toISOString(),
         home: view.score.home, away: view.score.away }, ...x.events] : x.events } : x)
-    const r = await send(clockCommand[op], { season_id: scope, match_id: matchId, expected_version: expected, at: at.toISOString(), ...(op === 'set' ? { elapsed_ms: ms } : {}), ...end?.args }, { scope: matchId })
+    const r = await send(clockCommand[op], { season_id: scope, match_id: matchId, expected_version: expected, at: at.toISOString(), ...(op === 'set' ? { elapsed_ms: ms } : {}), ...end?.args }, { scope: matchId, commandId: cid })
     if (r.ok) return setFin(null)
-    if (r.code === 'queued') return (setFin(null), setNotice(messages.clock_queued))
+    if (r.code === 'queued') return (setFin(null), setNotice(messages.clock_queued), markWaited())
+    if (held(r.code)) return setProblem(messageFor(r.code))
     if (r.commandId) void forgetRefused(r.commandId)
     await dropQueuedClock(matchId)
     setProblem(r.code === 'downstream_started' && r.message ? r.message : messageFor(r.code))
@@ -179,25 +238,16 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   // again, keeping the ones (and the changes) still waiting in the outbox.
   async function settle(r: { ok: boolean; code: string | null; commandId?: string; message?: string | null }) {
     if (r.ok) return
-    if (r.code === 'queued') return setNotice(messages.clock_queued)
+    if (r.code === 'queued') return (setNotice(messages.clock_queued), markWaited())
     if (r.code !== 'version_conflict') {
-      if (r.commandId) {
+      if (r.commandId && !held(r.code)) {
         void forgetRefused(r.commandId)
         void dropQueuedGoal(r.commandId)
       }
       // The limits name the Team in the server's own words.
       setProblem((r.code === 'timeout_used' || r.code === 'subs_used') && r.message ? r.message : messageFor(r.code))
     }
-    const again = await readConsole(matchId)
-    if (typeof again !== 'object' || !('match' in again)) return
-    const keep = new Set((await myQueued()).filter((e) => e.state === 'pending').flatMap((e) => [e.commandId, String(e.args.event_id ?? '')]))
-    again.events.forEach((e) => void noteVersion(e.id, e.version ?? 1))
-    setC((x) => {
-      if (!x || typeof x !== 'object') return x
-      const mine = (e: MatchEvent) => keep.has(e.id)
-      const events = [...again.events.map((s) => (mine(s) ? x.events.find((l) => l.id === s.id) ?? s : s)), ...x.events.filter((l) => mine(l) && !again.events.some((s) => s.id === l.id))]
-      return { ...x, events: events.sort((a, b) => b.enteredAt.localeCompare(a.enteredAt)) }
-    })
+    await reread()
   }
 
   // The whistle: the clock stops on this phone at this tap and the Awards sheet opens; nothing is sent until Finish match.
@@ -220,6 +270,7 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
     if (!c || typeof c === 'string' || !home || !away) return
     const at = serverNow()
     const id = crypto.randomUUID()
+    appliedIds.push(id)
     const own = who === 'own'
     const player = own || who === 'unknown' ? null : who
     const e: MatchEvent = { id, kind: 'goal', period: c.clock.period, minute: goalMinute(c.clock, c.rules, at), enteredAt: at.toISOString(), home: null, away: null,
@@ -241,6 +292,7 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
     if (!c || typeof c === 'string') return
     const at = serverNow()
     const id = crypto.randomUUID()
+    appliedIds.push(id)
     const e: MatchEvent = { id, kind, period: c.clock.period, minute: goalMinute(c.clock, c.rules, at), enteredAt: at.toISOString(), home: null, away: null,
       teamId: t.teamId, playerId: player, playerOnId: on, card, clockMs: Math.floor(elapsedAt(c.clock, at)), version: 1 }
     setProblem(null)
@@ -278,7 +330,9 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
     setProblem(null)
     setNotice('')
     setC((x) => (x && typeof x === 'object' ? { ...x, events: apply(x.events) } : x))
-    void send(name, { season_id: scope, event_id: id, ...args }, { scope: id, versionOf: id }).then(settle)
+    const cid = crypto.randomUUID()
+    appliedIds.push(cid)
+    void send(name, { season_id: scope, event_id: id, ...args }, { scope: id, versionOf: id, commandId: cid }).then(settle)
   }
   // Takes a goal away (Undo, Delete goal): one still waiting to send is dropped from the outbox, otherwise the server deletes it.
   async function takeAway(id: string) {
@@ -288,7 +342,9 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
     if (c.events.find((x) => x.id === id)?.kind === 'goal') setAnnounce(`Goal removed. ${home.code} ${goalsOf(rest, home.teamId)}, ${away.code} ${goalsOf(rest, away.teamId)}.`)
     setToast(null)
     if (await dropQueuedGoal(id)) return
-    void send('delete_event', { season_id: scope, event_id: id }, { scope: id, versionOf: id }).then(settle)
+    const cid = crypto.randomUUID()
+    appliedIds.push(cid)
+    void send('delete_event', { season_id: scope, event_id: id }, { scope: id, versionOf: id, commandId: cid }).then(settle)
   }
   const patch = (id: string, p: Partial<MatchEvent>) => (events: MatchEvent[]) => events.map((x) => (x.id === id ? { ...x, ...p } : x))
   const toastEvent = c.events.find((x) => x.id === toast)

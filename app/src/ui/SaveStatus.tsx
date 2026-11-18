@@ -5,11 +5,12 @@ import './components.css'
 export type SaveState = 'saving' | 'saved' | 'offline' | 'failed'
 
 const changes = (n: number) => `${n} ${n === 1 ? 'change' : 'changes'} waiting to send`
-const words = (state: SaveState, count: number) =>
+// mode: beside a scoring console the offline words are short, and a saved Match that is on air says so.
+const words = (state: SaveState, count: number, mode: 'console' | 'on-air' | null) =>
   ({
     saving: count ? `Saving… · ${changes(count)}` : 'Saving…',
-    saved: 'Saved',
-    offline: `Offline · ${changes(count)}. They'll send when the signal is back.`,
+    saved: mode === 'on-air' ? 'Saved · on the stream' : 'Saved',
+    offline: mode ? `Offline · ${changes(count)}` : `Offline · ${changes(count)}. They'll send when the signal is back.`,
     failed: "Couldn't save",
   })[state]
 
@@ -18,8 +19,8 @@ const words = (state: SaveState, count: number) =>
  * stay mounted so screen readers hear each change. Tapping lists the changes (items, in plain words);
  * when failed, a separate button (reviewLabel) calls onReview.
  */
-export function SaveStatus({ state, count, items, reviewLabel, onReview }: {
-  state: SaveState | null; count: number; items: string[]; reviewLabel: string; onReview: () => void
+export function SaveStatus({ state, count, items, reviewLabel, onReview, mode = null }: {
+  state: SaveState | null; count: number; items: string[]; reviewLabel: string; onReview: () => void; mode?: 'console' | 'on-air' | null
 }) {
   const [open, setOpen] = useState(false)
   const listId = useId()
@@ -29,12 +30,12 @@ export function SaveStatus({ state, count, items, reviewLabel, onReview }: {
       <button type="button" className="ui-save-toggle body-strong" aria-expanded={open}
         aria-controls={open ? listId : undefined} onClick={() => setOpen((o) => !o)}>
         <span className="ui-save-dot" aria-hidden="true" />
-        {words(state, count)}
+        {words(state, count, mode)}
       </button>
     ) : (
       <p className="ui-save-toggle body-strong">
         <span className="ui-save-dot" aria-hidden="true" />
-        {words(state, count)}
+        {words(state, count, mode)}
       </p>
     )
   )

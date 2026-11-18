@@ -108,3 +108,5 @@ jobs:
         run: npm run check:events
       - name: End the match, Awards, shootout and typed results (Story 4.6)
         run: npm run check:result
+      - name: Offline-safe scoring on one phone (Story 4.7)
+        run: npm run check:offline

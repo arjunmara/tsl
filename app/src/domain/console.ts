@@ -160,6 +160,44 @@ export function stepClock(c: ClockState, op: ClockOp, at: Date, rules: Console['
   return { clock: to({ running: false, elapsedMs: el, interval: true }), event: 'period_end' }
 }
 
+/**
+ * A console read with the commands still queued applied as the live console applies them (Story 4.7). `applied`: the command ids already in
+ * it (the kept console knows which it holds); each other entry goes on by its own time, `at`, so the queue's replay shows the same Match.
+ */
+export function applyQueued(c: Console, queued: { name: string; args: Record<string, unknown>; commandId: string; enteredAt: string }[], applied: string[]): Console {
+  let x = c
+  const patch = (id: unknown, p: (e: MatchEvent) => Partial<MatchEvent>) => (x = { ...x, events: x.events.map((e) => (e.id === id ? { ...e, ...p(e) } : e)) })
+  for (const { name, args: a, commandId: id, enteredAt } of queued) {
+    if (applied.includes(id) || (a.match_id && a.match_id !== c.match.id)) continue
+    const at = String(a.at ?? enteredAt)
+    const op = (Object.keys(clockCommand) as ClockOp[]).find((k) => clockCommand[k] === name)
+    if (op) {
+      // Its divider (the command id) is already in the read: the server applied it and the reply was lost.
+      if (x.events.some((e) => e.id === id)) continue
+      const step = stepClock(x.clock, op, new Date(at), x.rules, a.elapsed_ms as number | undefined)
+      if (!step) continue
+      const [h, w] = x.teams
+      x = { ...x, clock: step.clock, match: { ...x.match, status: step.status ?? x.match.status, version: Math.max(x.match.version, Number(a.expected_version) + 1) },
+        events: step.event ? [{ id, kind: step.event, period: step.clock.period, minute: Math.floor(step.clock.elapsedMs / 60000), enteredAt: at,
+          home: h ? goalsOf(x.events, h.teamId) : 0, away: w ? goalsOf(x.events, w.teamId) : 0 }, ...x.events] : x.events }
+    } else if ((name === 'record_goal' || name === 'record_event') && !x.events.some((e) => e.id === id)) {
+      const goal = name === 'record_goal'
+      x = { ...x, events: [{ id, kind: goal ? 'goal' : a.kind as EventKind, period: a.period as number, minute: a.minute as number, enteredAt: at, home: null, away: null, version: 1,
+        teamId: a.team_id as string, playerId: (a.player_id as string | null) ?? null,
+        ...(goal ? { assistId: null, ownGoal: !!a.own_goal } : { playerOnId: (a.player_on_id as string | null) ?? null, card: (a.card as 'yellow' | 'red' | null) ?? null, clockMs: a.clock_ms as number }) }, ...x.events] }
+    } else if (name === 'add_assist') patch(a.event_id, () => ({ assistId: a.assist_id as string | null }))
+    else if (name === 'edit_event') patch(a.event_id, (e) => e.kind === 'goal'
+      ? { playerId: a.player_id as string | null, ownGoal: !!a.own_goal, minute: (a.minute as number | undefined) ?? e.minute, assistId: a.own_goal || a.player_id === e.assistId ? null : e.assistId }
+      : { playerId: a.player_id as string | null, minute: (a.minute as number | undefined) ?? e.minute })
+    else if (name === 'delete_event') x = { ...x, events: x.events.filter((e) => e.id !== a.event_id) }
+    else if (name === 'confirm_lineups') {
+      const sides = [a.home, a.away] as { team_id: string; kit_colour: string; starters: string[]; bench: string[] }[]
+      x = { ...x, teams: x.teams.map((t) => { const s = sides.find((y) => y.team_id === t.teamId); return s ? { ...t, lineup: { starters: s.starters, bench: s.bench, kitColour: s.kit_colour, version: (t.lineup?.version ?? 0) + 1 } } : t }) }
+    }
+  }
+  return x
+}
+
 /** A divider in words: "2nd half started · 2 – 3". Null for events the log doesn't show. */
 export function dividerText(e: MatchEvent, rules: Console['rules']): string | null {
   const score = ` · ${e.home ?? 0} – ${e.away ?? 0}`

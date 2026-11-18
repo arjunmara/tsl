@@ -4,7 +4,7 @@ import { appVersion } from './env'
 import { supabase } from './supabase'
 
 // Features write only through send(): it queues on the device and replays in order (src/outbox).
-export { discard, dropQueuedClock, dropQueuedGoal, forgetRefused, myQueued, noteVersion, resend, send, sendMine, useOutbox, whenEmpty, type Conflict, type Entry as OutboxEntry, type Upload } from '../outbox'
+export { discard, dropQueuedClock, dropQueuedGoal, clearKeptConsoles, forgetRefused, keepConsole, keptConsole, myQueued, noteVersion, resend, send, sendMine, useOutbox, whenEmpty, type Conflict, type Entry as OutboxEntry, type Upload } from '../outbox'
 
 /**
  * What every command returns. code is null on success. A refused edit of a versioned row returns
@@ -65,7 +65,15 @@ async function uploadFile(u: Upload): Promise<CommandResult> {
 export const queuedFor = async (scope: string): Promise<Entry[]> =>
   (await myQueued()).filter((e) => e.scope === scope && e.state === 'pending')
 
-const actor = async () => (await supabase.auth.getSession()).data.session?.user.id ?? null
+// With no signal getSession can wait on a token refresh that cannot happen (an expired token); the stored session still says whose changes and kept consoles these are (the server decides what it may do).
+const storedUser = () => {
+  try {
+    return (JSON.parse(localStorage.getItem((supabase.auth as unknown as { storageKey: string }).storageKey) ?? 'null') as { user?: { id?: string } } | null)?.user?.id ?? null
+  } catch {
+    return null
+  }
+}
+const actor = async () => (navigator.onLine ? null : storedUser()) ?? (await supabase.auth.getSession()).data.session?.user.id ?? null
 
 /**
  * Starts the outbox once at app start: replays now (after the first clock sync, or 3 s at most), on sign-in

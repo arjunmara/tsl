@@ -1,5 +1,6 @@
 import { isAuthError, isAuthRetryableFetchError, type EmailOtpType } from '@supabase/supabase-js'
 import { callbackUrl } from './appUrl'
+import { clearKeptConsoles } from './commands'
 import { messages, type MessageCode } from './messages'
 import { supabase } from './supabase'
 
@@ -99,7 +100,8 @@ export async function checkVerified(): Promise<'verified' | 'unverified' | 'none
   }
 }
 
-export const signOut = () => run(() => supabase.auth.signOut({ scope: 'local' }))
+// The kept scoring consoles of this user go too (Story 4.7).
+export const signOut = async () => (await clearKeptConsoles(), run(() => supabase.auth.signOut({ scope: 'local' })))
 
 /** A Registration link's Team-manager session: anonymous, no account, guarded by CAPTCHA like sign-in (AD-19). */
 export const signInAnonymously = (captchaToken?: string) =>

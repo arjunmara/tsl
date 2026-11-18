@@ -43,6 +43,13 @@ export type Entry = {
 /** The last version this device knows for a row: from reads with nothing pending for it, and from every ok result. */
 export type BaseVersion = { id: string; version: number }
 
-export const db = new Dexie('tsl-outbox') as Dexie & { entries: EntityTable<Entry, 'seq'>; versions: EntityTable<BaseVersion, 'id'> }
+/** The last console of one Match on this device, per user (key `user:match`): what the screen showed, with the command ids of the queued changes already in it (Story 4.7). */
+export type KeptConsole = { key: string; console: unknown; applied: string[] }
+
+export const db = new Dexie('tsl-outbox') as Dexie & { entries: EntityTable<Entry, 'seq'>; versions: EntityTable<BaseVersion, 'id'>}
 db.version(1).stores({ entries: '++seq' })
 db.version(2).stores({ entries: '++seq', versions: 'id' })
+
+// Its own database, so a write of the console never queues behind the outbox's transactions.
+export const kept = new Dexie('tsl-console') as Dexie & { consoles: EntityTable<KeptConsole, 'key'> }
+kept.version(1).stores({ consoles: 'key' })

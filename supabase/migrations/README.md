@@ -578,3 +578,14 @@ sides). `record_goal`, `add_assist`, `edit_event` and `delete_event` now also wo
 next round has already started.") and changes nothing, as do `end_match` and `type_result`. `app.console_match` gains `home_pens`, `away_pens`,
 `mom_player_id` and `fair_player_id` on `match`. Steps: paste `0033_match_result.sql` into the SQL Editor and run it. Check:
 `select app.console_match('<match id>')` runs as an Organiser and shows the new keys on `match`.
+
+## Apply 0034_holder_grace.sql (Story 4.7)
+
+Apply after 0033 and before the app deploy with offline-safe scoring (test first, then live). It adds `scoring_prev_device` and
+`scoring_moved_at` to `app.match` (nothing sets them yet; Story 4.8, hand over and take over, will) and the helper `app.holds_scoring`. A scoring
+command (the clock commands, `end_match`, the goal commands and `record_event`) from a phone that is not the holder is accepted when that phone
+was the previous holder and the change was entered (`at`, never later than now) before `scoring_moved_at` plus `app.grace_window()`; later
+ones still answer `not_scoring_device`, which holds that Match's queue on the phone and hands the command back (Try again / Discard). A revoked
+Scorer phone keeps the `scorer_allows` grace from 0028. `goal_step`, `event_step`, `clock_step` and `end_match` are recreated with the same
+signatures. Steps: paste `0034_holder_grace.sql` into the SQL Editor and run it. Check:
+`select scoring_prev_device, scoring_moved_at from app.match limit 1` runs and shows two empty columns.

@@ -5,6 +5,7 @@ import { SaveStatus, type SaveState } from '../../ui/SaveStatus'
 import { useOnline } from '../app/online'
 import { HandBack } from './HandBack'
 import { labelFor } from './labels'
+import { useConsoleMode } from './mode'
 
 /**
  * The page header's Save status for the signed-in user: shown only while changes wait or are refused, then
@@ -13,6 +14,7 @@ import { labelFor } from './labels'
 export function SaveStatusBar() {
   const { entries, sending } = useOutbox()
   const online = useOnline()
+  const mode = useConsoleMode()
   const [review, setReview] = useState(false)
   const pending = entries.filter((e) => e.state === 'pending').length
   const stopped = entries.filter((e) => e.state !== 'pending')
@@ -38,7 +40,7 @@ export function SaveStatusBar() {
   ]
   return (
     <header className={state ? 'save-bar' : 'save-bar save-bar-empty'}>
-      <SaveStatus state={state} count={pending} items={items}
+      <SaveStatus state={state} count={pending} items={items} mode={mode}
         reviewLabel={stopped.length > 1 ? 'Review refused changes' : 'Review this change'} onReview={() => setReview(true)} />
       <HandBack open={review} entries={stopped} onClose={() => setReview(false)} />
     </header>

@@ -46,6 +46,7 @@
     "check:goals": "node scripts/goals.check.mjs",
     "check:events": "node scripts/events.check.mjs",
     "check:result": "node scripts/result.check.mjs",
+    "check:offline": "node scripts/offline.check.mjs",
     "check:fixtures": "node scripts/fixtures.check.mjs && node scripts/fixtures.ui.check.mjs"
   },
   "dependencies": {
