@@ -106,3 +106,5 @@ jobs:
         run: npm run check:goals
       - name: Cards, fouls, substitutions, timeouts and power play (Story 4.5)
         run: npm run check:events
+      - name: End the match, Awards, shootout and typed results (Story 4.6)
+        run: npm run check:result

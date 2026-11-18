@@ -71,6 +71,8 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   next_period: () => 'Start the next period',
   set_clock: () => 'Correct the Match clock',
   end_match: () => 'End the Match',
+  set_awards: () => 'Change the Awards',
+  type_result: () => 'Save the result',
   record_goal: () => 'Record a goal',
   add_assist: () => 'Add an assist to a goal',
   record_event: () => 'Record an event',

@@ -18,7 +18,9 @@ export type MatchEvent = {
 }
 export type EventKind = 'card' | 'foul' | 'sub' | 'timeout' | 'missed_penalty'
 export type Console = {
-  match: { id: string; seasonId: string; tournamentId: string; stage: string; round: string; label: string | null; kickOff: string | null; status: string; seasonStatus: string; version: number }
+  match: { id: string; seasonId: string; tournamentId: string; stage: string; round: string; label: string | null; kickOff: string | null; status: string; seasonStatus: string; version: number
+    /** The shootout (a level knockout Match) and the Awards (Story 4.6), in the line-up's home and away order. */
+    homeId: string | null; awayId: string | null; homePens: number | null; awayPens: number | null; momId: string | null; fairId: string | null }
   /** periods: regular periods; extraTimePeriods: 0 unless this is a knockout Match with extra time on. */
   rules: { starters: number; maxBench: number; periods: number; extraTimePeriods: number; periodMinutes: number; extraTimeMinutes: number
     /** Season settings (Story 4.5); null when off. */
@@ -34,7 +36,8 @@ export type Console = {
 }
 
 type Row = {
-  match: { id: string; season_id: string; tournament_id: string; stage: string; round: string; label: string | null; kick_off: string | null; status: string; season_status: string; version: number }
+  match: { id: string; season_id: string; tournament_id: string; stage: string; round: string; label: string | null; kick_off: string | null; status: string; season_status: string; version: number
+    home_team_id?: string | null; away_team_id?: string | null; home_pens?: number | null; away_pens?: number | null; mom_player_id?: string | null; fair_player_id?: string | null }
   rules: { starters: number; max_bench: number; periods: number; extra_time_periods: number; period_minutes?: number; extra_time_minutes?: number
     foul_warning?: number | null; timeouts_per_period?: number | null; substitutions?: string; max_substitutions?: number | null; power_play_minutes?: number | null }
   clock: { running: boolean; anchor_at: string | null; elapsed_ms: number; period: number; interval: boolean }
@@ -56,7 +59,8 @@ export async function readConsole(matchId: string): Promise<Console | 'none' | {
     const r = data as Row
     return {
       match: { id: r.match.id, seasonId: r.match.season_id, tournamentId: r.match.tournament_id, stage: r.match.stage, round: r.match.round, label: r.match.label,
-        kickOff: r.match.kick_off, status: r.match.status, seasonStatus: r.match.season_status, version: r.match.version },
+        kickOff: r.match.kick_off, status: r.match.status, seasonStatus: r.match.season_status, version: r.match.version,
+        homeId: r.match.home_team_id ?? null, awayId: r.match.away_team_id ?? null, homePens: r.match.home_pens ?? null, awayPens: r.match.away_pens ?? null, momId: r.match.mom_player_id ?? null, fairId: r.match.fair_player_id ?? null },
       rules: { starters: r.rules.starters, maxBench: r.rules.max_bench, periods: r.rules.periods, extraTimePeriods: r.rules.extra_time_periods,
         periodMinutes: r.rules.period_minutes ?? 20, extraTimeMinutes: r.rules.extra_time_minutes ?? 5,
         foulWarning: r.rules.foul_warning ?? null, timeoutsPerPeriod: r.rules.timeouts_per_period ?? null, limitedSubs: r.rules.substitutions === 'limited',
@@ -128,11 +132,11 @@ export type ClockOp = 'start' | 'pause' | 'next' | 'set' | 'end'
 export const clockCommand: Record<ClockOp, string> = { start: 'start_clock', pause: 'pause_clock', next: 'next_period', set: 'set_clock', end: 'end_match' }
 
 /** The period button(s) now: what each does and the command it sends, as the server decides it. None before kick-off. */
-export function periodButtons(c: ClockState, rules: Console['rules']): { label: string; op: 'next' | 'end' }[] {
+export function periodButtons(c: ClockState, rules: Console['rules'], level = false): { label: string; op: 'next' | 'end' }[] {
   const last = rules.periods + rules.extraTimePeriods
   if (c.period === 0) return []
   if (c.interval) return [{ label: `Start ${periodName(c.period + 1, rules)}`, op: 'next' }]
-  if (c.period === rules.periods && rules.extraTimePeriods > 0) return [{ label: 'Start extra time', op: 'next' }, { label: 'End the match', op: 'end' }]
+  if (c.period === rules.periods && rules.extraTimePeriods > 0) return [{ label: 'Start extra time', op: 'next' }, ...(level ? [] : [{ label: 'End the match', op: 'end' as const }])]
   if (c.period >= last) return [{ label: 'End the match', op: 'end' }]
   return [{ label: c.period === 1 && rules.periods === 2 ? 'Start half-time' : 'Start interval', op: 'next' }]
 }
@@ -196,7 +200,10 @@ const chronological = (events: MatchEvent[]) => [...events].reverse().sort((a, b
 export function pitchOf(t: ConsoleTeam, picks: Record<string, 'start' | 'bench'>, events: MatchEvent[]): { on: SquadPlayer[]; bench: SquadPlayer[] } {
   const on = new Set(starters(t, picks).map((p) => p.playerId))
   for (const e of chronological(events)) {
-    if (e.kind === 'sub' && e.teamId === t.teamId && e.playerId && e.playerOnId && on.has(e.playerId) && !on.has(e.playerOnId)) (on.delete(e.playerId), on.add(e.playerOnId))
+    if (e.kind === 'sub' && e.teamId === t.teamId && e.playerId && e.playerOnId && on.has(e.playerId) && !on.has(e.playerOnId)) {
+      on.delete(e.playerId)
+      on.add(e.playerOnId)
+    }
   }
   // A red-carded Player has left the pitch for good.
   const red = new Set(events.filter((e) => e.kind === 'card' && e.card === 'red' && e.teamId === t.teamId).map((e) => e.playerId))

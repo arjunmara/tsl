@@ -198,18 +198,22 @@ try {
   assert.equal(calls('end_match').length, 0)
   await button(op, 'End the match').click()
   await op.getByRole('dialog').getByRole('button', { name: 'End the match', exact: true }).click()
+  // The whistle stops the clock here and opens the Awards sheet; nothing is sent until Finish match.
+  await op.getByRole('dialog').getByRole('button', { name: 'Finish match', exact: true }).waitFor()
+  assert.equal(calls('end_match').length, 0)
+  await op.getByRole('dialog').getByRole('button', { name: 'Finish match', exact: true }).click()
   await text(op, 'Full time').waitFor()
   await sent('end_match', 1)
   assert.equal(matches[0].status, 'finished')
   assert.equal(await button(op, 'Pause clock').count() + (await button(op, 'Resume clock').count()) + (await button(op, 'End the match').count()), 0)
 
-  // Extra time: a knockout Match with extra time on offers "Start extra time" and "End the match" in the last regular period.
+  // Extra time: a knockout Match with extra time on offers "Start extra time" (and "End the match" only when not level) in the last regular period.
   await op.goto(`${base}/t/${T}/score/${mid(2)}`)
   await button(op, 'Start clock').click()
   await button(op, 'Start half-time').click()
   await button(op, 'Start 2nd half').click()
   await button(op, 'Start extra time').waitFor()
-  await button(op, 'End the match').waitFor()
+  assert.equal(await button(op, 'End the match').count(), 0, 'End the match on a level knockout Match before extra time')
   await button(op, 'Start extra time').click()
   await text(op, 'Extra time').waitFor()
   await button(op, 'Start interval').waitFor()

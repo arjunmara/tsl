@@ -196,6 +196,12 @@ export const messages = {
   subs_used: 'That Team has used all its substitutions.',
   not_on_pitch: "That Player isn't on the pitch. Pick the Player again.",
   not_on_bench: "That Player isn't on the bench. Pick the Player again.",
+  shootout_needed: 'Enter the shootout result.',
+  extra_time_needed: 'Play extra time first.',
+  shootout_tied: 'A shootout needs a winner.',
+  goals_named: 'That score is lower than the goals already named. Check the score.',
+  match_live: 'This Match is live. Finish it from the console.',
+  match_not_finished: "This Match isn't finished yet.",
   lineups_queued: "Line-ups saved on this phone. They send when there's a signal.",
 } as const
 

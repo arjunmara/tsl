@@ -11,6 +11,7 @@ import { Problem } from '../auth/Screen'
 import { Unavailable, UUID } from '../setup/Setup'
 import { kickOffText, sideText } from './Fixtures'
 import { readHead } from './Home'
+import { Result } from './Result'
 import { useTeams } from './Teams'
 
 /** /t/:tournamentId/m/:matchId: one Fixture: the round, both sides and the kick-off, which an Organiser can set while registration is open, and move after start once confirmed. */
@@ -26,6 +27,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
   const [season, setSeason] = useState<{ editable: boolean; started: boolean; finished: boolean; starts: string; ends: string }>({ editable: false, started: false, finished: false, starts: '', ends: '' })
   const pending = useOutbox().entries.length
   const [notice, setNotice] = useState('')
+  const [attempt, setAttempt] = useState(0)
   const [match, setMatch] = useState<Match | 'missing' | 'offline' | 'unknown' | null>(null)
   useEffect(() => {
     let live = true
@@ -42,7 +44,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
     return () => {
       live = false
     }
-  }, [tournamentId, matchId, pending])
+  }, [tournamentId, matchId, pending, attempt])
   const { teams } = useTeams(tournamentId, seasonId ?? '')
   const byId = new Map(Array.isArray(teams) ? teams.map((t) => [t.id, t]) : [])
   if (match === 'missing') return <Unavailable />
@@ -72,6 +74,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
             <p className="body">{kickOffText(match.kickOff)}</p>
           </div>
         )}
+        {typeof match === 'object' && match && seasonId && season.started && <Result seasonId={seasonId} match={match} onChanged={() => setAttempt((n) => n + 1)} />}
         {typeof match === 'object' && match && season.finished && <p className="meta">{messages.season_finished}</p>}
         {typeof match === 'object' && match && season.editable && seasonId && (
           <KickOffForm key={match.version} notice={notice} setNotice={setNotice} tournamentId={tournamentId} seasonId={seasonId} match={match} starts={season.starts} ends={season.ends}

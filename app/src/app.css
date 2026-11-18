@@ -1220,3 +1220,8 @@
 .picker-extra {
   flex: 1;
 }
+.match-result {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}

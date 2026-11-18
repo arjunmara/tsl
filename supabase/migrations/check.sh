@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -2612,7 +2612,7 @@ E1=$(q "select clock->>'elapsed_ms' from app.match where id='$N1'")
 seq=
 for n in 2943 2944 2945 2946 2947 2948; do seq+="$(ck $D9 next_period $n $N2)|$(st $N2); "; done
 [ "$seq" = 'ok|live:1:false:true; ok|live:2:true:false; ok|live:3:true:false; ok|live:3:false:true; ok|live:4:true:false; clock_invalid|live:4:true:false; ' ] || fail "extra time: $seq"
-[ "$(ck $D9 end_match 2949 $N2)|$(st $N2)|$(evs $N2)" = 'ok|finished:4:false:false|period_start1,period_end1,period_start2,period_start3,period_end3,period_start4,match_end4' ] \
+[ "$(ck $D9 end_match 2949 $N2 'now(), 4, 3, null, null')|$(st $N2)|$(evs $N2)" = 'ok|finished:4:false:false|period_start1,period_end1,period_start2,period_start3,period_end3,period_start4,match_end4' ] \
   || fail "extra time: end $(evs $N2) $(st $N2)"
 # The console: clock, score, rules and the events newest first, the same for the phone and the Organiser; no personal fields.
 [ "$(as $D9 "select (j->'rules'->>'periods')||'|'||(j->'rules'->>'extra_time_periods')||'|'||(j->'clock'->>'period')||'|'||(j->'score'->>'home')||'|'||jsonb_array_length(j->'events')||'|'||(j->'events'->0->>'kind')||'|'||(j->'events'->-1->>'kind') from (select app.console_match('$N2') j) x")" \
@@ -2895,6 +2895,141 @@ q "update app.scorer_device set status = 'revoked', revoked_at = now() - interva
 [ "$(ev $D15 3297 $S23 $EM2 foul $X11 null null null)|$(cm $D15 $EM2)" = 'not_authorized|none' ] || fail "events: a revoked phone still works"
 q "update app.season set status = 'finished' where id='$S22'" >/dev/null
 [ "$(ev $A 3298 $S22 $EM1 foul $X9 null null null)" = season_finished ] || fail "events: a finished Season"
+
+# --- End the match, typed results and corrections (Story 4.6). S24 of T15 (groups and knockout, 2 starters, 2 on the bench): X13 v X14 (GM group, SF1
+# knockout), X15 v X16 (SF2), the Final (Winner SF1 v Winner SF2), TY (group X13 v X15, typed), KO3 (knockout X13 v X16, typed) and FX (sides unknown).
+# D16 is an approved phone of S24, D17 is pending; D7 (S17), G1 and Organiser B stay outside; A organises T15.
+S24=21111111-0000-4000-8000-0000000000f6
+X13=45111111-0000-4000-8000-000000000013 X14=45111111-0000-4000-8000-000000000014 X15=46111111-0000-4000-8000-000000000015 X16=46111111-0000-4000-8000-000000000016
+RGM=54111111-0000-4000-8000-0000000000c1 RS1=54111111-0000-4000-8000-0000000000c2 RS2=54111111-0000-4000-8000-0000000000c3 RFN=54111111-0000-4000-8000-0000000000c4
+RTY=54111111-0000-4000-8000-0000000000c5 RK3=54111111-0000-4000-8000-0000000000c6 RFX=54111111-0000-4000-8000-0000000000c7
+D16=f6111111-0000-4000-8000-000000000016 D17=f6111111-0000-4000-8000-000000000017
+q "insert into auth.users (id, is_anonymous) values ('$D16', true), ('$D17', true)" >/dev/null
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench, periods, period_minutes, extra_time) values ('$S24', '$T15', 7, 'started', 2, 2, 2, 20, false)" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$X13', '$T15', '$S24', 'Thirteen FC', 'TRT', '#ff0000', 'approved'), ('$X14', '$T15', '$S24', 'Fourteen FC', 'FRT', '#0000ff', 'approved'),
+  ('$X15', '$T15', '$S24', 'Fifteen FC', 'FFT', '#00ff00', 'approved'), ('$X16', '$T15', '$S24', 'Sixteen FC', 'SXT', '#ffff00', 'approved')" >/dev/null
+for t in 13 14 15 16; do for n in 1 2 3 4; do
+  q "insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl $t $n)', '$T15', 'Player $t-$n', '2000-01-01');
+     insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '$(eval echo \$X$t)', '$(pl $t $n)', $n)" >/dev/null
+done; done
+q "insert into app.match (id, tournament_id, season_id, stage, round, label, ord, home_team_id, away_team_id, status) values
+  ('$RGM', '$T15', '$S24', 'group', 'Group A', null, 1, '$X13', '$X14', 'scheduled'), ('$RS1', '$T15', '$S24', 'knockout', 'SF', 'SF1', 2, '$X13', '$X14', 'scheduled'),
+  ('$RS2', '$T15', '$S24', 'knockout', 'SF', 'SF2', 3, '$X15', '$X16', 'scheduled'), ('$RTY', '$T15', '$S24', 'group', 'Group A', null, 5, '$X13', '$X15', 'scheduled'),
+  ('$RK3', '$T15', '$S24', 'knockout', 'QF', 'KO3', 6, '$X13', '$X16', 'scheduled');
+  insert into app.match (id, tournament_id, season_id, stage, round, label, ord, home_src, away_src, status) values
+  ('$RFN', '$T15', '$S24', 'knockout', 'Final', 'Final', 4, 'Winner SF1', 'Winner SF2', 'scheduled'),
+  ('$RFX', '$T15', '$S24', 'knockout', 'Final', 'FX', 7, 'Winner ZZ', 'Winner YY', 'scheduled')" >/dev/null
+q "insert into app.scorer_device (tournament_id, season_id, user_id, label, status, number_hash, expires_at) values
+  ('$T15', '$S24', '$D16', 'Result phone', 'approved', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S24', '$D17', 'Waiting phone', 'pending', repeat('0', 64), now() + interval '1 hour')" >/dev/null
+# g24 <user> <n> <match> <team> <player|null> [minute]: record_goal in period 1. e24 <user> <n> <match> [pens and Awards args]: end_match at the Match's version.
+g24() { tc "$1" "record_goal('$(cmd "$2")', '$S24', '$3', '$4', $(nq $5), false, 1, ${6:-3})"; }
+e24() { tc "$1" "end_match('$(cmd "$2")', '$S24', '$3', $(mver "$3"), now(), ${4:-null, null, null, null})"; }
+r24() { tc "$1" "type_result('$(cmd "$2")', '$S24', '$3', $(mver "$3"), $4)"; }
+a24() { tc "$1" "set_awards('$(cmd "$2")', '$S24', '$3', $(mver "$3"), $4)"; }
+rs() { q "select status||':'||coalesce(hg::text, '-')||'-'||coalesce(ag::text, '-')||':'||coalesce(home_pens::text||'-'||away_pens::text, '-')||':'||coalesce(mom_player_id::text, '-')||':'||coalesce(fair_player_id::text, '-') from app.match where id='$1'"; }
+tg() { q "select count(*) from app.match_event where match_id='$1' and team_id='$2' and kind='goal' and deleted_at is null"; }
+fn() { as $A "select coalesce(h.code, r.home_src, '-')||'v'||coalesce(a.code, r.away_src, '-') from app.match_sides('$S24') r left join app.team h on h.id = r.home_team_id
+  left join app.team a on a.id = r.away_team_id where r.match_id = '$RFN'"; }
+# Isolation: a pending phone, an approved phone, another Season's phone, a Registration link and another Tournament's Organiser change no result.
+for who in $D17 $D16 $D7 $G1 $B; do
+  [ "$(r24 $who 3300 $RTY '3, 1')|$(a24 $who 3301 $RGM 'null, null')" = 'not_authorized|not_authorized' ] || fail "leak: $who ran type_result or set_awards"
+  redo 3300; redo 3301
+done
+[ "$(rs $RTY)|$(tg $RTY $X13)" = 'scheduled:---:-:-:-|0' ] || fail "result: a refused command wrote"
+for f in "type_result('$(cmd 3302)', '$S24', '$RTY', 1, 3, 1)" "set_awards('$(cmd 3302)', '$S24', '$RGM', 1, null, null)" "end_match('$(cmd 3302)', '$S24', '$RGM', 1, now(), null, null, null, null)" \
+  "result_check('knockout', 1, 1, null, null)" "goal_step('$D16', 'record', '$(cmd 3302)', '$S24', '$RGM', null, null, '$X13', null, false, 1, 3, now())"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
+done
+out=$(as $D16 "select app.result_check('knockout', 1, 1, null, null)" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "phone: can execute result_check: $out"
+# Put GM, SF1 and SF2 live with goals: GM 2-1, SF1 1-1, SF2 2-1.
+[ "$(tc $D16 "take_scoring('$(cmd 3303)', '$S24', '$RGM')")|$(tc $D16 "take_scoring('$(cmd 3304)', '$S24', '$RS1')")|$(tc $D16 "take_scoring('$(cmd 3305)', '$S24', '$RS2')")" = 'ok|ok|ok' ] || fail "result: take scoring"
+LA=$(lu 13 '1 2' '3 4' '#ff0000') LB=$(lu 14 '1 2' '3 4' '#0000ff') LC=$(lu 15 '1 2' '3 4' '#00ff00') LD=$(lu 16 '1 2' '3 4' '#ffff00')
+[ "$(tc $D16 "confirm_lineups('$(cmd 3306)', '$S24', '$RGM', '$LA'::jsonb, '$LB'::jsonb)")|$(tc $D16 "confirm_lineups('$(cmd 3307)', '$S24', '$RS1', '$LA'::jsonb, '$LB'::jsonb)")|$(tc $D16 "confirm_lineups('$(cmd 3308)', '$S24', '$RS2', '$LC'::jsonb, '$LD'::jsonb)")" = 'ok|ok|ok' ] || fail "result: line-ups"
+[ "$(tc $D16 "start_clock('$(cmd 3309)', '$S24', '$RGM', $(mver $RGM))")|$(tc $D16 "start_clock('$(cmd 3310)', '$S24', '$RS1', $(mver $RS1))")|$(tc $D16 "start_clock('$(cmd 3311)', '$S24', '$RS2', $(mver $RS2))")" = 'ok|ok|ok' ] || fail "result: start"
+[ "$(g24 $D16 3320 $RGM $X13 $(pl 13 1))|$(g24 $D16 3321 $RGM $X13 $(pl 13 2))|$(g24 $D16 3322 $RGM $X14 $(pl 14 1))|$(g24 $D16 3323 $RS1 $X13 $(pl 13 1))|$(g24 $D16 3324 $RS1 $X14 null)|$(g24 $D16 3325 $RS2 $X15 null)|$(g24 $D16 3326 $RS2 $X15 null)|$(g24 $D16 3327 $RS2 $X16 null)" \
+  = 'ok|ok|ok|ok|ok|ok|ok|ok' ] || fail "result: goals"
+# Finish: not the holder; a shootout for a group Match; an Award from outside the line-ups; none of them changes the Match.
+[ "$(e24 $A 3330 $RGM)|$(e24 $D16 3331 $RGM '5, 3, null, null')|$(e24 $D16 3332 $RGM "null, null, '$(pl 15 1)', null")|$(e24 $D16 3333 $RGM "null, null, null, '$(pl 99 1)'")" \
+  = 'not_scoring_device|event_invalid|player_invalid|player_invalid' ] || fail "end_match: refused rows"
+[ "$(q "select status from app.match where id='$RGM'")|$(mver $RGM)" = "live|$(mver $RGM)" ] && [ "$(rs $RGM)" = "live:2-1:-:-:-" ] || fail "end_match: a refused Finish wrote $(rs $RGM)"
+# Group Match: finished 2-1 with both Awards (the bench Player counts).
+[ "$(e24 $D16 3334 $RGM "null, null, '$(pl 13 1)', '$(pl 14 3)'")|$(rs $RGM)" = "ok|finished:2-1:-:$(pl 13 1):$(pl 14 3)" ] || fail "end_match: group Match: $(rs $RGM)"
+[ "$(e24 $D16 3335 $RGM)" = match_finished ] || fail "end_match: finished twice"
+# Knockout level 1-1: the shootout is needed, needs a winner, and adds no goals; the winner fills the Final's slot.
+[ "$(fn)" = 'Winner SF1vWinner SF2' ] || fail "knockout: the Final before: $(fn)"
+[ "$(e24 $D16 3336 $RS1)|$(e24 $D16 3337 $RS1 '4, 4, null, null')|$(e24 $D16 3338 $RS1 '5, null, null, null')|$(rs $RS1)" = 'shootout_needed|shootout_tied|event_invalid|live:1-1:-:-:-' ] || fail "end_match: shootout rows $(rs $RS1)"
+[ "$(e24 $D16 3339 $RS1 '5, 3, null, null')|$(rs $RS1)|$(tg $RS1 $X13)|$(tg $RS1 $X14)|$(fn)" = 'ok|finished:1-1:5-3:-:-|1|1|TRTvWinner SF2' ] || fail "end_match: shootout: $(rs $RS1) $(fn)"
+# Knockout 2-1: a shootout sent anyway is refused; no Awards is fine; the other slot fills.
+[ "$(e24 $D16 3340 $RS2 '3, 1, null, null')|$(e24 $D16 3341 $RS2)|$(rs $RS2)|$(fn)" = 'event_invalid|ok|finished:2-1:-:-:-|TRTvFFT' ] || fail "end_match: knockout without a shootout: $(rs $RS2) $(fn)"
+# A level knockout Match with extra time on is not ended before extra time is played; with it off, it can be.
+RK4=54111111-0000-4000-8000-0000000000c8 RK5=54111111-0000-4000-8000-0000000000c9
+q "update app.season set extra_time = true, extra_time_periods = 2 where id='$S24';
+   insert into app.match (id, tournament_id, season_id, stage, round, label, ord, home_team_id, away_team_id, status) values
+   ('$RK4', '$T15', '$S24', 'knockout', 'QF', 'KO4', 8, '$X14', '$X16', 'scheduled'), ('$RK5', '$T15', '$S24', 'knockout', 'QF', 'KO5', 9, '$X13', '$X14', 'scheduled')" >/dev/null
+[ "$(tc $D16 "take_scoring('$(cmd 3400)', '$S24', '$RK4')")|$(tc $D16 "take_scoring('$(cmd 3401)', '$S24', '$RK5')")|$(tc $D16 "confirm_lineups('$(cmd 3402)', '$S24', '$RK4', '$LB'::jsonb, '$LD'::jsonb)")|$(tc $D16 "confirm_lineups('$(cmd 3403)', '$S24', '$RK5', '$LB'::jsonb, '$LA'::jsonb)")" = 'ok|ok|ok|ok' ] || fail "result: extra time fixtures"
+[ "$(tc $D16 "start_clock('$(cmd 3404)', '$S24', '$RK4', $(mver $RK4))")|$(tc $D16 "start_clock('$(cmd 3405)', '$S24', '$RK5', $(mver $RK5))")|$(g24 $D16 3406 $RK4 $X14 null)|$(g24 $D16 3407 $RK4 $X16 null)" = 'ok|ok|ok|ok' ] || fail "result: start the extra time Matches"
+[ "$(e24 $D16 3408 $RK4 '5, 3, null, null')|$(rs $RK4)" = 'extra_time_needed|live:1-1:-:-:-' ] || fail "end_match: level knockout before extra time: $(rs $RK4)"
+q "update app.season set extra_time = false where id='$S24'" >/dev/null
+# Swapped line-up sides: RK5 is X13 v X14 but the line-up has X14 at home; the shootout is sent in the line-up's order and stored in the Match's own sides.
+[ "$(g24 $D16 3409 $RK5 $X13 null)|$(g24 $D16 3410 $RK5 $X14 null)|$(r24 $A 3411 $RK5 '1, 1, 5, 3')" = 'ok|ok|match_live' ] || fail "result: type_result on a live Match"
+[ "$(e24 $D16 3412 $RK5 '5, 3, null, null')|$(rs $RK5)|$(as $D16 "select (j->'match'->>'home_pens')||'|'||(j->'match'->>'away_pens') from (select app.console_match('$RK5') j) x")" = 'ok|finished:1-1:3-5:-:-|5|3' ] || fail "end_match: swapped sides: $(rs $RK5)"
+# The console: the shootout and the Awards, for the phone and the Organiser.
+[ "$(as $D16 "select (j->'match'->>'home_pens')||'|'||(j->'match'->>'away_pens') from (select app.console_match('$RS1') j) x")|$(as $A "select (j->'match'->>'mom_player_id')||'|'||(j->'match'->>'fair_player_id') from (select app.console_match('$RGM') j) x")" \
+  = "5|3|$(pl 13 1)|$(pl 14 3)" ] || fail "console_match: shootout or Awards"
+# Typed results (Organiser only). A shootout on a group Match, a knockout Match level without one, with a tie, and unknown sides.
+[ "$(r24 $A 3350 $RTY '2, 1, 3, 1')|$(r24 $A 3351 $RK3 '2, 2')|$(r24 $A 3352 $RK3 '2, 2, 3, 3')|$(r24 $A 3353 $RFX '1, 0')|$(r24 $A 3354 $RTY '-1, 0')|$(r24 $A 3355 $RTY "100, 0")" \
+  = 'event_invalid|shootout_needed|shootout_tied|team_invalid|event_invalid|event_invalid' ] || fail "type_result: refused rows"
+[ "$(rs $RTY)|$(tg $RTY $X13)|$(rs $RK3)|$(rs $RFX)" = 'scheduled:---:-:-:-|0|scheduled:---:-:-:-|scheduled:---:-:-:-' ] || fail "type_result: a refused row wrote"
+[ "$(r24 $A 3360 $RTY '3, 1')|$(rs $RTY)|$(tg $RTY $X13)|$(tg $RTY $X15)" = 'ok|finished:3-1:-:-:-|3|1' ] || fail "type_result: 3-1 $(rs $RTY)"
+[ "$(q "select count(*) from app.match_event where match_id='$RTY' and kind='goal' and player_id is null and minute = 0 and deleted_at is null")|$(q "select count(*) from app.activity_log where command_id='$(cmd 3360)' and table_name = 'match_event' and op = 'insert'")" = '4|4' ] || fail "type_result: unknown-scorer goals or not logged"
+[ "$(r24 $A 3361 $RK3 '2, 2, 4, 2')|$(rs $RK3)" = 'ok|finished:2-2:4-2:-:-' ] || fail "type_result: knockout shootout $(rs $RK3)"
+# Name later: an unknown-scorer goal gets a Player; the score stays.
+UG=$(q "select id from app.match_event where match_id='$RTY' and team_id='$X13' and kind='goal' order by created_at limit 1")
+[ "$(tc $A "edit_event('$(cmd 3362)', '$S24', '$UG', 1, '$(pl 13 1)', false)")|$(rs $RTY)" = 'ok|finished:3-1:-:-:-' ] || fail "edit_event: name a typed goal later"
+# Typed down: the unknown goals go (newest first), the named one stays; fewer than the named goals is refused with the Team named.
+[ "$(r24 $A 3363 $RTY '1, 1')|$(rs $RTY)|$(tg $RTY $X13)|$(q "select player_id from app.match_event where match_id='$RTY' and team_id='$X13' and kind='goal' and deleted_at is null")" = "ok|finished:1-1:-:-:-|1|$(pl 13 1)" ] || fail "type_result: typed down $(rs $RTY)"
+[ "$(as $A "select r->>'message' from app.type_result('$(cmd 3364)', '$S24', '$RTY', $(mver $RTY), 0, 1) r")|$(rs $RTY)" = 'TRT already has 1 named goal.|finished:1-1:-:-:-' ] || fail "type_result: named goals exceed"
+[ "$(tc $A "type_result('$(cmd 3365)', '$S24', '$RTY', 1, 2, 2)")" = version_conflict ] || fail "type_result: a stale version"
+# Corrections of a finished Match (GM 2-1, Man of the Match TR1): the Organiser deletes and records goals, a Scorer phone may not.
+GD=$(cmd 3322)
+[ "$(tc $D16 "delete_event('$(cmd 3370)', '$S24', '$GD', $(gver 3322))")|$(g24 $D16 3371 $RGM $X14 null)|$(tc $D16 "edit_event('$(cmd 3372)', '$S24', '$GD', $(gver 3322), null, false, 9)")|$(rs $RGM)" \
+  = "match_not_live|match_not_live|match_not_live|finished:2-1:-:$(pl 13 1):$(pl 14 3)" ] || fail "corrections: a Scorer phone changed a finished Match"
+[ "$(tc $A "delete_event('$(cmd 3373)', '$S24', '$GD', $(gver 3322))")|$(rs $RGM)" = "ok|finished:2-0:-:$(pl 13 1):$(pl 14 3)" ] || fail "corrections: delete a goal $(rs $RGM)"
+[ "$(g24 $A 3374 $RGM $X14 $(pl 14 2) 30)|$(rs $RGM)" = "ok|finished:2-1:-:$(pl 13 1):$(pl 14 3)" ] || fail "corrections: record a goal $(rs $RGM)"
+# Awards edit: logged, a stale version is a conflict, a Player outside the line-ups or an unfinished Match is refused.
+V=$(mver $RGM)
+[ "$(a24 $A 3380 $RGM "'$(pl 14 1)', null")|$(rs $RGM)|$(mver $RGM)" = "ok|finished:2-1:-:$(pl 14 1):-|$((V + 1))" ] || fail "set_awards: $(rs $RGM)"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 3380)' and table_name = 'match' and op = 'update'")" = 1 ] || fail "set_awards: not logged"
+[ "$(tc $A "set_awards('$(cmd 3381)', '$S24', '$RGM', $V, null, null)")|$(a24 $A 3382 $RGM "'$(pl 15 1)', null")|$(a24 $A 3383 $RFX 'null, null')" = 'version_conflict|player_invalid|match_not_finished' ] || fail "set_awards: refused rows"
+# The next round is live: a change that would change its frozen slot fails and changes nothing; one that doesn't still saves.
+q "update app.match set status = 'live' where id='$RFN'" >/dev/null
+SG=$(cmd 3323)
+[ "$(tc $A "delete_event('$(cmd 3390)', '$S24', '$SG', $(gver 3323))")|$(tg $RS1 $X13)|$(rs $RS1)|$(fn)" = 'downstream_started|1|finished:1-1:5-3:-:-|TRTvFFT' ] || fail "corrections: downstream_started $(rs $RS1) $(fn)"
+[ "$(tc $A "edit_event('$(cmd 3391)', '$S24', '$SG', $(gver 3323), '$(pl 13 2)', false, 7)")|$(rs $RS1)" = 'ok|finished:1-1:5-3:-:-' ] || fail "corrections: a harmless change"
+# Retyping a finished Match that decides a live next round: a change that ends in the same winner is accepted (the goals go one at a time, the check
+# runs on the end state); one that changes the winner is refused and changes nothing. A pens result becomes plain goals when the score is not level.
+[ "$(r24 $A 3420 $RS2 '0, 0, 5, 3')|$(rs $RS2)|$(fn)" = 'ok|finished:0-0:5-3:-:-|TRTvFFT' ] || fail "type_result: same winner on pens: $(rs $RS2) $(fn)"
+[ "$(r24 $A 3421 $RS2 '0, 1')|$(rs $RS2)|$(tg $RS2 $X16)" = 'downstream_started|finished:0-0:5-3:-:-|0' ] || fail "type_result: downstream_started: $(rs $RS2)"
+[ "$(r24 $A 3422 $RK3 '3, 2')|$(rs $RK3)" = 'ok|finished:3-2:-:-:-' ] || fail "type_result: pens to a plain score: $(rs $RK3)"
+# set_awards through the same answer: with the live Final's frozen side made wrong on purpose, any change to a Match is refused and nothing changes.
+q "alter table app.match disable trigger match_freeze; update app.match set away_team_id = '$X16' where id='$RFN'; alter table app.match enable trigger match_freeze" >/dev/null
+[ "$(a24 $A 3423 $RGM "'$(pl 14 2)', null")|$(rs $RGM)" = "downstream_started|finished:2-1:-:$(pl 14 1):-" ] || fail "set_awards: downstream_started: $(rs $RGM)"
+q "alter table app.match disable trigger match_freeze; update app.match set away_team_id = '$X15' where id='$RFN'; alter table app.match enable trigger match_freeze" >/dev/null
+# Nobody writes the new columns directly.
+for stmt in "update app.match set mom_player_id = null" "update app.match set home_pens = 1, away_pens = 0" "update app.match set status = 'finished'"; do
+  for who in $D16 $A; do
+    out=$(as $who "$stmt" 2>&1 || true)
+    [[ $out == *"permission denied"* ]] || fail "$who wrote directly: $stmt: $out"
+  done
+done
+for who in $D17 $D7 $G1 $B; do [ "$(cm $who $RGM)" = none ] || fail "leak: $who reads the result"; done
+# A finished Season refuses everything.
+q "update app.season set status = 'finished' where id='$S24'" >/dev/null
+[ "$(r24 $A 3395 $RTY '2, 2')|$(a24 $A 3396 $RGM 'null, null')|$(tc $A "delete_event('$(cmd 3397)', '$S24', '$SG', $(gver 3323))")" = 'season_finished|season_finished|season_finished' ] || fail "result: a finished Season"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

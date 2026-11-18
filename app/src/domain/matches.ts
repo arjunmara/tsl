@@ -7,9 +7,12 @@ export type Match = {
   homeTeamId: string | null; awayTeamId: string | null; homeSrc: string | null; awaySrc: string | null; kickOff: string | null; version: number
   /** scheduled, live or finished. */
   status?: string
+  /** The result of a finished Match, and its shootout (Story 4.6). */
+  hg?: number | null; ag?: number | null; homePens?: number | null; awayPens?: number | null
 }
 type Row = { id: string; stage: Match['stage']; round: string; label: string | null; ord: number; home_team_id: string | null; away_team_id: string | null
-  home_src: string | null; away_src: string | null; kick_off: string | null; version: number; status?: string }
+  home_src: string | null; away_src: string | null; kick_off: string | null; version: number; status?: string
+  hg?: number | null; ag?: number | null; home_pens?: number | null; away_pens?: number | null }
 
 // The last read per Season, kept on the device (ids and labels only): offline, the cards show it.
 const key = (seasonId: string) => `tsl-matches:${seasonId}`
@@ -29,12 +32,13 @@ export async function seasonMatches(seasonId: string): Promise<{ matches: Match[
   if (!navigator.onLine) return kept()
   try {
     const { data, error, status } = await supabase.schema('app').from('match')
-      .select('id, stage, round, label, ord, home_team_id, away_team_id, home_src, away_src, kick_off, version, status').eq('season_id', seasonId).order('ord')
+      .select('id, stage, round, label, ord, home_team_id, away_team_id, home_src, away_src, kick_off, version, status, hg, ag, home_pens, away_pens').eq('season_id', seasonId).order('ord')
     const season = await supabase.schema('app').from('season').select('fixtures_published_at').eq('id', seasonId)
     const bad = error ?? season.error ? (error ? status : season.status) : null
     if (bad !== null) return bad === 0 || !navigator.onLine ? kept() : { code: 'unknown' }
     const matches = (data as Row[]).map((r): Match => ({ id: r.id, stage: r.stage, round: r.round, label: r.label, ord: r.ord, homeTeamId: r.home_team_id,
-      awayTeamId: r.away_team_id, homeSrc: r.home_src, awaySrc: r.away_src, kickOff: r.kick_off, version: r.version ?? 1, status: r.status ?? 'scheduled' }))
+      awayTeamId: r.away_team_id, homeSrc: r.home_src, awaySrc: r.away_src, kickOff: r.kick_off, version: r.version ?? 1, status: r.status ?? 'scheduled',
+      hg: r.hg, ag: r.ag, homePens: r.home_pens, awayPens: r.away_pens }))
     const published = !!(season.data as { fixtures_published_at: string | null }[] | null)?.[0]?.fixtures_published_at
     try {
       localStorage.setItem(key(seasonId), JSON.stringify({ matches, published }))

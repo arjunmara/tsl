@@ -48,6 +48,9 @@ export function useMatches(tournamentId: string, seasonId: string) {
 export const sideText = (teamId: string | null, src: string | null, byId: Map<string, Team>) =>
   teamId ? `${byId.get(teamId)?.code ?? '?'}${src === 'Bye' ? ' (Bye)' : ''}` : src ?? '?'
 
+/** "4–2", or "4–4 · pens 5–3" after a shootout. */
+export const resultText = (m: Match) => m.hg == null || m.ag == null ? '' : `${m.hg ?? 0}–${m.ag ?? 0}${m.homePens != null ? ` · pens ${m.homePens}–${m.awayPens}` : ''}`
+
 /** "Kick-off not set", or the BS and AD day with the time. */
 export function kickOffText(kickOff: string | null) {
   if (!kickOff) return 'Kick-off not set'
@@ -210,7 +213,9 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
           <span className="meta" aria-label="versus">v</span>
           <span className="match-side">{away}</span>
         </span>
-        <span className="meta">{kickOffText(m.kickOff)}</span>
+        {m.status === 'finished'
+          ? <span className="match-result"><StatusPill state="done" label="FT" /><span className="body-strong">{resultText(m)}</span></span>
+          : <span className="meta">{kickOffText(m.kickOff)}</span>}
       </>
     )
     if (!arranging) return (

@@ -561,3 +561,20 @@ undeleted subs. `edit_event` (Player and minute; a foul or timeout takes the min
 `app.console_match` gains `foul_warning`, `timeouts_per_period`, `substitutions`, `max_substitutions` and `power_play_minutes` in `rules`, and
 `card`, `player_on_id` and `clock_ms` on events. Steps: paste `0032_match_events.sql` into the SQL Editor and run it. Check:
 `select app.console_match('<match id>')` runs as an Organiser and shows the new `rules` keys.
+
+## Apply 0033_match_result.sql (Story 4.6)
+
+Apply after 0032 and before the app deploy with the Awards sheet and "Type the result" (test first, then live). It adds `mom_player_id` and
+`fair_player_id` (the Man of the Match and Fair Player Awards) to `app.match`; `home_pens` and `away_pens` exist from 0023. `app.end_match` is
+dropped and recreated with `home_pens`, `away_pens`, `mom_player_id` and `fair_player_id` (all default null, so an old call still works): one
+Finish takes the shootout and the Awards. Pens only for a level knockout Match (else `event_invalid`), none for a level one is `shootout_needed`,
+equal is `shootout_tied`; Awards only from the two line-ups (`player_invalid`); the pens are in the line-up's home and away order and add no
+goals. New Organiser-only commands (started Seasons only): `set_awards` (a finished Match; `match_not_finished`, a stale version is a
+`version_conflict`) and `type_result` (a scheduled Match with both sides known, or a finished one; `match_live`, `team_invalid`): it adds
+unknown-scorer goals (minute 0) or soft-deletes unknown-scorer goals newest first until each Team's goals equal the typed number, refuses
+with `goals_named` when named goals exceed it, then finishes the Match (hg and ag still come from the goals; the pens are in the Match's own
+sides). `record_goal`, `add_assist`, `edit_event` and `delete_event` now also work for an Organiser on a finished Match (a Scorer phone still gets
+`match_not_live`); a change to a finished Match that would change a frozen knockout slot answers `downstream_started` ("This can't change: the
+next round has already started.") and changes nothing, as do `end_match` and `type_result`. `app.console_match` gains `home_pens`, `away_pens`,
+`mom_player_id` and `fair_player_id` on `match`. Steps: paste `0033_match_result.sql` into the SQL Editor and run it. Check:
+`select app.console_match('<match id>')` runs as an Organiser and shows the new keys on `match`.
