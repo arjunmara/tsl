@@ -116,3 +116,5 @@ jobs:
         run: npm run check:handover
       - name: Console layouts and sunlight accessibility (Story 4.9)
         run: npm run check:console-a11y
+      - name: Result Graphic in the Classic Template with Share and Download (Story 5.1)
+        run: npm run check:graphic

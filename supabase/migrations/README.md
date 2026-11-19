@@ -635,3 +635,11 @@ Switch season 99 on, put a Match on air, then run `select state from public.live
 end: each shows at once (`hs`/`as`, `since`/`elapsed`, `period` "1st Half", "Half Time", "2nd Half", "Full Time"). Switch it off and drop test-only rows
 when done. The overlay itself reads the live project, so its 2-second check runs when Season 2 goes live. The triggers are dropped when the Stage 2
 Overlay ships (`drop trigger legacy_mirror on app.live_state`, the same on `app.match` and `app.match_lineup`, then `drop function app.legacy_mirror_push()`).
+
+## Apply 0037_season_venue.sql (Story 5.1)
+
+Apply after 0036 and before the app deploy with the Result Graphic (test first, then live). It adds the optional `venue` (1 to 80 characters) to
+`app.season` and the command `set_season_venue` (action `edit_venue`: allowed in setup, registration and started, so the venue stays editable after
+the Season starts while the dates lock). A blank venue clears it; a stale version is a `version_conflict`; anything longer than 80 characters or with a
+control character is `venue_invalid`. Steps: paste `0037_season_venue.sql` into the SQL Editor and run it. Check:
+`select venue from app.season limit 1` runs and shows an empty column.

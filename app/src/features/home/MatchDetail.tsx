@@ -8,6 +8,7 @@ import { backIcon, IconButton, PrimaryButton } from '../../ui/Button'
 import { ConfirmSheet } from '../../ui/ConfirmSheet'
 import { Field } from '../../ui/Field'
 import { Problem } from '../auth/Screen'
+import { GraphicCard } from '../graphics/GraphicCard'
 import { Unavailable, UUID } from '../setup/Setup'
 import { kickOffText, sideText } from './Fixtures'
 import { readHead } from './Home'
@@ -75,6 +76,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
           </div>
         )}
         {typeof match === 'object' && match && seasonId && season.started && <Result seasonId={seasonId} match={match} onChanged={() => setAttempt((n) => n + 1)} />}
+        {typeof match === 'object' && match && seasonId && match.status === 'finished' && <GraphicCard key={match.id} tournamentId={tournamentId} seasonId={seasonId} match={match} />}
         {typeof match === 'object' && match && season.finished && <p className="meta">{messages.season_finished}</p>}
         {typeof match === 'object' && match && season.editable && seasonId && (
           <KickOffForm key={match.version} notice={notice} setNotice={setNotice} tournamentId={tournamentId} seasonId={seasonId} match={match} starts={season.starts} ends={season.ends}

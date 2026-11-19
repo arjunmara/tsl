@@ -21,3 +21,6 @@ export const turnstileSiteKey: string = import.meta.env.VITE_TURNSTILE_SITE_KEY 
 export const appUrlEnv: string = import.meta.env.VITE_APP_URL ?? ''
 /** package.json version, recorded on every outbox entry. */
 export const appVersion: string = __APP_VERSION__
+
+/** The platform name on every Graphic's "Made with" line: one setting per environment, not changeable by a Tournament. */
+export const platformName: string = import.meta.env.VITE_PLATFORM_NAME || 'Tamghas Super League'

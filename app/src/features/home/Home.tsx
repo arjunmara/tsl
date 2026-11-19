@@ -37,7 +37,7 @@ export async function readHead(id: string): Promise<Head | 'missing' | 'offline'
   // Season answers still waiting to send count too (the Teams tab needs the consent statement and dates).
   const answers = { ...head.season.answers }
   for (const e of queued) {
-    if (e.args.season_id !== head.season.id || (e.name !== 'set_season_rules' && e.name !== 'set_season_dates')) continue
+    if (e.args.season_id !== head.season.id || (e.name !== 'set_season_rules' && e.name !== 'set_season_dates' && e.name !== 'set_season_venue')) continue
     for (const k of Object.keys(answers) as (keyof SeasonAnswers)[]) {
       const x = e.args[k]
       if (typeof x === 'string') answers[k] = x

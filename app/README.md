@@ -183,3 +183,7 @@ Money is stored and passed as integer paisa plus an ISO 4217 currency code (`Mon
 ## Make the release gate block merges
 
 GitHub > `arjunmara/tsl` > Settings > Rules > Rulesets (or Branches > Branch protection) > target `main` > Require status checks to pass > add `gate` (from `.github/workflows/release-gate.yml`). Also require a pull request before merging.
+
+## Result Graphic (Story 5.1)
+
+`src/features/graphics`: a finished Match page (`MatchDetail.tsx`) shows a Result Graphic card. `Classic.tsx` is the Classic Template at a fixed 1080×1350 and serves the thumbnail (scaled with CSS) and the PNG (`modern-screenshot`, `scale: 1`, after `document.fonts.ready`, rendered twice for iOS Safari). `domain/graphics.ts` builds its data and the caption (also the thumbnail's alt text) from `readConsole`, the Tournament and the Season's Sponsors. "Share this Graphic" opens the share sheet with the PNG and caption where files can be shared; otherwise, and for "Download this Graphic", the PNG `{home code}-v-{away code}.png` is saved and the caption copied (shown as text if the clipboard is blocked). Nothing is uploaded or stored. The "Made with" name is `VITE_PLATFORM_NAME` (per environment, default "Tamghas Super League"); no Tournament can change it. The Season's venue (migration 0037, `set_season_venue`) is set in Settings → Dates and stays editable after the Season starts. `npm run check:graphic` (needs Google Chrome) runs every case against a mocked server; `GRAPHIC_SAVE=<file>` also saves the full Graphic's PNG for a look.

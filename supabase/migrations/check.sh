@@ -360,6 +360,25 @@ for f in "set_season_rules('$(cmd 77)', '$S1', 1)" "set_season_dates('$(cmd 78)'
   [[ $out == *"permission denied for function"* ]] || fail "anon: can execute $f: $out"
 done
 
+# --- Season venue (Story 5.1): optional, 1 to 80 characters, editable before and after start, trimmed, blank clears.
+venue() { as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.set_season_venue('$(cmd "$2")', '$3', $4, $5) r"; }
+v=$(sver)
+[ "$(venue $A 3900 $S1 $v "'  Tamghas Futsal Arena '")|$(q "select venue||'|'||version from app.season where id='$S1'")" = "ok|Tamghas Futsal Arena|$((v + 1))" ] || fail "venue: not set and trimmed"
+[ "$(q "select count(*) from app.activity_log where table_name='season' and op='update' and command_id='$(cmd 3900)' and actor='$A'")" = 1 ] || fail "venue: not logged"
+[ "$(venue $A 3900 $S1 $v "'Again'")|$(sver)" = "ok|$((v + 1))" ] || fail "venue: repeat wrote again"
+r=$(as $A "select app.set_season_venue('$(cmd 3901)', '$S1', $v, 'Stale')")
+[ "$(q "select r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'venue' from (select '$r'::jsonb r) x")" = "version_conflict|$((v + 1))|Tamghas Futsal Arena" ] || fail "venue: conflict envelope: $r"
+v=$((v + 1))
+[ "$(venue $A 3902 $S1 $v "repeat('x', 81)")|$(venue $A 3903 $S1 $v "E'bad\\x01'")|$(venue $B 3904 $S1 $v "'Stolen'")" = "venue_invalid|venue_invalid|not_authorized" ] || fail "venue: too long, control character or non-member"
+[ "$(venue $A 3905 $S1 $v "repeat('x', 80)")" = ok ] || fail "venue: 80 characters refused"
+v=$((v + 1))
+[ "$(venue $A 3906 $S1 $v "'   '")|$(q "select coalesce(venue, 'none') from app.season where id='$S1'")" = "ok|none" ] || fail "venue: blank did not clear"
+! q "update app.season set venue = '' where id='$S1'" >/dev/null 2>&1 || fail "venue: check constraint missing"
+[ "$(venue $A 3907 $S9 1 "'Started venue'")|$(q "select venue from app.season where id='$S9'")" = "ok|Started venue" ] || fail "venue: refused after the Season started"
+[ "$(dates $A 3908 $S9 2 "ends_on => '2026-12-01'")" = season_started ] || fail "venue: dates unlocked after start"
+out=$(as anon "select app.set_season_venue('$(cmd 3909)', '$S1', 1, 'x')" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute set_season_venue: $out"
+
 # --- Wizard step 4 (Story 1.10): Format presets from one table, Match settings with versions and range checks.
 ms() { as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end
                 from app.set_match_settings('$(cmd "$2")', '$3', $4, $5) r"; }

@@ -28,7 +28,11 @@ function useSeasonStep({ tournamentId, seasonId, initial }: Props, step: number,
     if (!Object.keys(changed).length) return
     last.current = { ...last.current, ...changed }
     setSaved(last.current)
-    void send(command, { season_id: seasonId, ...changed }, { scope: tournamentId, versionOf: seasonId })
+    // The venue is its own command: it stays editable after the Season starts, the dates don't.
+    const { venue, ...rest } = changed
+    const to = { scope: tournamentId, versionOf: seasonId }
+    if (Object.keys(rest).length) void send(command, { season_id: seasonId, ...rest }, to)
+    if (venue !== undefined) void send('set_season_venue', { season_id: seasonId, venue }, to)
   }
 
   function next() {
@@ -76,11 +80,13 @@ export function StepTwo(props: Props) {
   )
 }
 
+const venueProblem = (v: string) => ([...v.trim()].length > 80 || /\p{Cc}/u.test(v) ? messages.venue_invalid : null)
 const DATES = ['starts_on', 'ends_on', 'registration_deadline'] as const
 
 /** Step 3, Dates. Each date shows in BS and AD; a deadline after the start or an end before it says why and isn't saved. */
 export function StepThree(props: Props) {
-  const { ref, saved, next, back, field } = useSeasonStep(props, 3, 'set_season_dates', DATES)
+  const started = useContext(SeasonStarted)
+  const { ref, saved, next, back, field } = useSeasonStep(props, 3, 'set_season_dates', [...DATES, 'venue'])
   // Checked against the other dates as last saved, as the server checks them.
   const order = (k: Key) => (v: string) => {
     if (!toBs(v)) return messages.date_out_of_range
@@ -96,10 +102,14 @@ export function StepThree(props: Props) {
   return (
     <Frame step={3} onBack={back} onNext={next}>
       <form ref={ref} noValidate className="wizard-fields wizard-single" onSubmit={(e) => (e.preventDefault(), next())}>
-        <Field label="Season starts" {...date('starts_on', messages.start_required)} />
-        <Field label="Season ends" {...date('ends_on', messages.end_required)} />
-        <Field label="Registration deadline" {...date('registration_deadline', messages.deadline_required)} />
-        <p className="meta">Teams can register until the end of the deadline day.</p>
+        <fieldset disabled={!!started} className="wizard-fields">
+          <Field label="Season starts" {...date('starts_on', messages.start_required)} />
+          <Field label="Season ends" {...date('ends_on', messages.end_required)} />
+          <Field label="Registration deadline" {...date('registration_deadline', messages.deadline_required)} />
+          <p className="meta">Teams can register until the end of the deadline day.</p>
+        </fieldset>
+        <Field label="Venue (optional)" {...field('venue')} validate={venueProblem} />
+        <p className="meta">Shown on the result Graphic and its caption.</p>
       </form>
     </Frame>
   )

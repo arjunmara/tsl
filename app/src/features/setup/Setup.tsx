@@ -125,8 +125,8 @@ type Loaded = {
   presets: FormatPreset[]; setupStep: number; sponsors: Sponsor[]; blobs: Record<string, Blob>
 }
 
-const noAnswers: SeasonAnswers = { description: '', rules: '', photo_consent: '', starts_on: '', ends_on: '', registration_deadline: '' }
-const SEASON_EDITS = ['set_season_rules', 'set_season_dates']
+const noAnswers: SeasonAnswers = { description: '', rules: '', photo_consent: '', starts_on: '', ends_on: '', registration_deadline: '', venue: '' }
+const SEASON_EDITS = ['set_season_rules', 'set_season_dates', 'set_season_venue']
 const noSettings = Object.fromEntries(SETTINGS.map((k) => [k, null])) as MatchSettings
 
 /** Applies this user's pending Match settings edits in order: a preset replaces every setting, then single values. */

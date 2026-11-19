@@ -1,0 +1,42 @@
+/* The Classic Template (Story 5.1): a fixed 1080x1350 canvas whatever the screen. Colours come from the Tournament (inline) and tokens. */
+.graphic-thumb { position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: hidden; border-radius: var(--rounded-md); background: var(--surface); }
+.graphic-thumb > .graphic-stage { position: absolute; top: 0; left: 0; transform-origin: top left; }
+.graphic-placeholder { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; background: var(--surface); }
+
+.graphic-classic {
+  position: relative; box-sizing: border-box; width: 1080px; height: 1350px; padding: 96px 88px 88px; display: flex; flex-direction: column; align-items: center;
+  text-align: center; overflow: hidden; font-variant-numeric: tabular-nums lining-nums;
+}
+.graphic-classic * { box-sizing: border-box; margin: 0; }
+.graphic-frame { position: absolute; inset: 28px; border: 3px solid; pointer-events: none; }
+.graphic-eyebrow { display: flex; align-items: center; gap: 24px; font: var(--graphic-label-font-weight) var(--graphic-label-font-size) / var(--graphic-label-line-height) var(--graphic-label-font-family); letter-spacing: var(--graphic-label-letter-spacing); text-transform: uppercase; }
+.graphic-logo { width: 88px; height: 88px; object-fit: contain; }
+.graphic-round { margin-top: 36px; font: var(--graphic-headline-font-weight) var(--graphic-headline-font-size) / var(--graphic-headline-line-height) var(--graphic-headline-font-family); text-transform: uppercase; }
+.graphic-tick { width: 120px; height: 8px; margin-top: 24px; }
+.graphic-row { display: grid; grid-template-columns: 250px 1fr 250px; align-items: start; width: 100%; margin-top: 48px; }
+.graphic-score { align-self: center; }
+.graphic-crest { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.graphic-disc { display: grid; place-items: center; width: 200px; height: 200px; border-radius: 50%; box-shadow: inset 0 0 0 6px currentColor, 0 10px 0 var(--bg-dark); font: 800 72px / 1 var(--graphic-team-font-family); letter-spacing: 2px; }
+.graphic-team, .graphic-round, .graphic-eyebrow span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.graphic-crest { min-width: 0; }
+.graphic-eyebrow span { max-width: 760px; }
+.graphic-team { font: var(--graphic-team-font-weight) var(--graphic-team-font-size) / var(--graphic-team-line-height) var(--graphic-team-font-family); text-transform: uppercase; }
+.graphic-score { font: var(--graphic-score-classic-font-weight) var(--graphic-score-classic-font-size) / var(--graphic-score-classic-line-height) var(--graphic-score-classic-font-family); letter-spacing: var(--graphic-score-classic-letter-spacing); white-space: nowrap; }
+.graphic-pens { margin-top: 16px; font: var(--graphic-fact-font-weight) var(--graphic-fact-font-size) / var(--graphic-fact-line-height) var(--graphic-fact-font-family); }
+.graphic-rule { width: 100%; height: 2px; margin-top: 40px; }
+.graphic-goals { flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 0 48px; margin-top: 28px; overflow: hidden; align-content: start; }
+.graphic-goals ul { list-style: none; padding: 0; }
+.graphic-goals li, .graphic-when { font: var(--graphic-fact-font-weight) var(--graphic-fact-font-size) / var(--graphic-fact-line-height) var(--graphic-fact-font-family); }
+.graphic-goals ul:first-child { text-align: left; }
+.graphic-goals ul:last-child { text-align: right; }
+.graphic-when { margin-top: 16px; white-space: pre-line; }
+.graphic-sponsors { display: flex; gap: 16px; width: 100%; margin-top: 24px; }
+.graphic-plate { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 16px; padding: 12px 16px; border-radius: 12px; background: var(--ink-dark); color: var(--bg-dark);
+  font: var(--graphic-body-font-weight) var(--graphic-body-font-size) / var(--graphic-body-line-height) var(--graphic-body-font-family); }
+.graphic-plate img { width: 64px; height: 64px; object-fit: contain; flex: none; }
+.graphic-plate span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graphic-made { margin-top: 24px; font: 700 26px / 1.2 var(--graphic-label-font-family); letter-spacing: 3px; text-transform: uppercase; }
+
+.graphic-card { display: grid; gap: var(--spacing-3); }
+.graphic-card .graphic-thumb { max-width: 24rem; }
+.graphic-caption { user-select: text; white-space: pre-wrap; }

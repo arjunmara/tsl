@@ -13,6 +13,7 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   set_setup_step: (a) => `Finish setup step ${String(a.step ?? '')}`,
   set_season_rules: (a) => `Change the season's ${changed(a)}`,
   set_season_dates: () => 'Change the season dates',
+  set_season_venue: () => 'Change the venue',
   // Preset keys are their labels in lower case (futsal → Futsal, 7-a-side).
   set_match_settings: (a) => (a.format_preset != null
     ? `Change the format to ${String(a.format_preset).replace(/^./, (c) => c.toUpperCase())}` : 'Change the Match settings'),
@@ -105,6 +106,7 @@ export const fieldLabels: Record<string, string> = {
   description: 'Description',
   rules: 'Rules',
   photo_consent: 'Photo-consent statement',
+  venue: 'Venue',
   starts_on: 'Season starts',
   ends_on: 'Season ends',
   registration_deadline: 'Registration deadline',

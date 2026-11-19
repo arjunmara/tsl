@@ -8,6 +8,8 @@ export type TournamentSummary = { id: string; name: string; logoUrl: string | nu
 /** The Season's answers to wizard steps 2 and 3, keyed as the commands name them; dates are YYYY-MM-DD or ''. */
 export type SeasonAnswers = {
   description: string; rules: string; photo_consent: string; starts_on: string; ends_on: string; registration_deadline: string
+  /** The venue shown on the Result Graphic; '' for none. */
+  venue: string
 }
 /** A Season's Match settings, keyed as set_match_settings names them; every value is null until a preset is picked. */
 export type MatchSettings = {
@@ -51,7 +53,7 @@ export type TournamentSetup = {
 
 type SeasonRow = { id: string; number: number; status: SeasonStatus; setup_step?: number; version?: number }
   & Partial<Record<keyof SeasonAnswers, string | null>> & Partial<MatchSettings> & Partial<LineupRules> & Partial<Structure>
-const ANSWERS = ['description', 'rules', 'photo_consent', 'starts_on', 'ends_on', 'registration_deadline'] as const
+const ANSWERS = ['description', 'rules', 'photo_consent', 'starts_on', 'ends_on', 'registration_deadline', 'venue'] as const
 type Row = {
   id: string; name: string; brand_primary?: string; brand_secondary?: string; logo_path?: string | null; version?: number
   season: SeasonRow[]
@@ -132,7 +134,7 @@ export async function myTournaments(): Promise<{ tournaments: TournamentSummary[
 export async function tournamentSetup(id: string): Promise<{ tournament: TournamentSetup | null } | { code: 'offline' | 'unknown' }> {
   try {
     const { data, error, status } = await supabase.schema('app').from('tournament')
-      .select('id, name, brand_primary, brand_secondary, logo_path, version, season(id, number, status, setup_step, version, description, rules, photo_consent, starts_on, ends_on, registration_deadline, ' +
+      .select('id, name, brand_primary, brand_secondary, logo_path, version, season(id, number, status, setup_step, version, description, rules, photo_consent, starts_on, ends_on, registration_deadline, venue, ' +
         `${SETTINGS.join(', ')}, ${Object.keys(NEW_LINEUP).join(', ')}, ${Object.keys(NEW_STRUCTURE).join(', ')})`)
       .eq('id', id)
     if (error) return failed(status)

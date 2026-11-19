@@ -30,13 +30,13 @@ export function Frame({ step, onBack, onNext, backLabel, nextLabel = 'Next', chi
   const settings = useContext(SettingsMode)
   const season = useContext(SeasonStarted)
   const locked = !!season && ((step >= 2 && step <= 6) || (season === 'finished' && step === 7))
-  // Step 2 stays open for the description alone (its rules and consent statement lock inside the step).
-  const wholeStep = locked && (step !== 2 || season === 'finished')
+  // Steps 2 and 3 stay open for one field after start (the description, the venue); the rest locks inside the step.
+  const wholeStep = locked && ((step !== 2 && step !== 3) || season === 'finished')
   if (settings) {
     return (
       <main className="wizard" onSubmitCapture={(e) => (e.preventDefault(), e.stopPropagation())}>
         <h1 className="title">Settings · {STEPS[step - 1]}</h1>
-        {locked && <p className="body">{season === 'finished' ? messages.season_finished : step === 2 ? messages.rules_locked : messages.season_started}</p>}
+        {locked && <p className="body">{season === 'finished' ? messages.season_finished : step === 2 ? messages.rules_locked : step === 3 ? messages.dates_locked : messages.season_started}</p>}
         <fieldset disabled={wholeStep} className="wizard-fields">{children}</fieldset>
         <div className="wizard-bar">
           <div className="wizard-bar-inner">
