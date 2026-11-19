@@ -43,17 +43,17 @@ const events = {
 }
 const matches = [
   { n: 1, kick_off: '2033-11-13T10:00:00+05:45', hg: 3, ag: 2, home_pens: null, away_pens: null },
-  { n: 2, kick_off: null, hg: 2, ag: 2, home_pens: 4, away_pens: 3 },
+  { n: 2, kick_off: '2033-11-14T10:00:00+05:45', hg: 2, ag: 2, home_pens: 4, away_pens: 3 },
   { n: 3, kick_off: null, hg: 12, ag: 0, home_pens: null, away_pens: null },
 ].map((m) => ({ id: mid(m.n), stage: m.n === 1 ? 'group' : 'knockout', round: m.n === 1 ? 'Group A' : 'Final', label: null, ord: m.n, home_team_id: tid(1), away_team_id: tid(2),
   home_src: null, away_src: null, status: 'finished', version: 2, ...m }))
 const rules = { starters: 3, max_bench: 9, periods: 2, extra_time_periods: 0, period_minutes: 20, extra_time_minutes: 5, substitutions: 'rolling' }
 const frozen = { running: false, anchor_at: new Date().toISOString(), elapsed_ms: 2400000, period: 2, interval: false }
 const LONG = 'Extraordinarily Long Name For A Futsal Side That Goes On And On Forever Ok'
-function consoleFor(id, long) {
+function consoleFor(id, long, kits) {
   const m = matches.find((x) => x.id === id)
-  const teams = TEAMS.map((t, i) => ({ team_id: t.id, name: long ? `${t.name} ${LONG}`.slice(0, 80) : t.name, code: t.code, registered_kit: t.kit, side: i === 0 ? 'home' : 'away', squad: squad(i),
-    lineup: { starters: [1, 2, 3].map((n) => pid(i + 1, n)), bench: [4, 5].map((n) => pid(i + 1, n)), kit_colour: t.kit, version: 1 } }))
+  const teams = TEAMS.map((t, i) => ({ team_id: t.id, name: long ? `${t.name} ${LONG}`.slice(0, 80) : t.name, code: t.code, registered_kit: kits?.[i] ?? t.kit, side: i === 0 ? 'home' : 'away', squad: squad(i),
+    lineup: { starters: [1, 2, 3].map((n) => pid(i + 1, n)), bench: [4, 5].map((n) => pid(i + 1, n)), kit_colour: kits?.[i] ?? t.kit, version: 1 } }))
   return { match: { id, season_id: S, tournament_id: T, stage: m.stage, round: m.round, label: null, kick_off: m.kick_off, status: 'finished', season_status: 'started', version: 2,
     home_team_id: tid(1), away_team_id: tid(2), home_pens: m.home_pens, away_pens: m.away_pens, mom_player_id: null, fair_player_id: null },
     rules, clock: frozen, score: { home: 0, away: 0 }, events: events[id], holder: true, held: true, on_air: false, teams }
@@ -63,8 +63,8 @@ const browser = await chromium.launch({ channel: 'chrome' })
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
 const READS = new Set(['console_match', 'server_now', 'standings', 'match_sides', 'takeover_requests', 'scoring_state'])
 
-/** variant 'full': logo, brand colours, two Sponsors and a venue; 'plain': none of them. A Season in the started state. */
-async function open({ variant = 'full', init = '', long = false } = {}) {
+/** variant 'full': logo, brand colours, two Sponsors and a venue; 'plain': none of them. A Season in the started state. brand: { primary, secondary, kits } overrides the colours. */
+async function open({ variant = 'full', init = '', long = false, brand = null } = {}) {
   const mock = { writes: [], commands: [] }
   const season = { id: S, number: 1, status: 'started', setup_step: 7, version: 3, description: '', rules: '', photo_consent: 'Photos may be posted.',
     starts_on: '2033-11-07', ends_on: '2033-11-21', registration_deadline: '2033-11-03', structure: 'groups_knockout', group_count: 2, teams_per_group: 4, qualifiers_per_group: 2,
@@ -89,7 +89,7 @@ async function open({ variant = 'full', init = '', long = false } = {}) {
     if (path === '/rest/v1/tournament') {
       // The full variant has a later Season with another venue: the Graphic reads the venue of the Match's own Season (S).
       const later = { ...season, id: '22222222-0000-4000-8000-000000000010', number: 2, venue: 'Latest Venue' }
-      return json(route, [{ id: T, name: long ? LONG : 'Gulmi Cup', brand_primary: variant === 'full' ? '#f6c453' : '#0a1a3f', brand_secondary: '#f58220', logo_path: variant === 'full' ? `${T}/logo.webp` : null, version: 1, season: variant === 'full' ? [season, later] : [season] }])
+      return json(route, [{ id: T, name: long ? LONG : 'Gulmi Cup', brand_primary: brand?.primary ?? (variant === 'full' ? '#f6c453' : '#0a1a3f'), brand_secondary: brand?.secondary ?? '#f58220', logo_path: variant === 'full' ? `${T}/logo.webp` : null, version: 1, season: variant === 'full' ? [season, later] : [season] }])
     }
     if (path === '/rest/v1/season') return json(route, { venue: new URL(req.url()).searchParams.get('id') === `eq.${S}` ? season.venue : 'Latest Venue' })
     if (path === '/rest/v1/sponsor') return json(route, sponsors)
@@ -102,7 +102,7 @@ async function open({ variant = 'full', init = '', long = false } = {}) {
     const cmd = path.replace('/rest/v1/rpc/', '')
     if (req.method() !== 'GET' && !READS.has(cmd)) mock.commands.push({ cmd, ...a })
     if (req.method() !== 'GET' && !READS.has(cmd) && !/^(set_season_venue|set_setup_step)$/.test(cmd)) mock.writes.push(`${req.method()} ${path}`)
-    if (cmd === 'console_match') return json(route, consoleFor(a.p_match_id, long))
+    if (cmd === 'console_match') return json(route, consoleFor(a.p_match_id, long, brand?.kits))
     if (READS.has(cmd)) return json(route, [])
     return json(route, { ok: true, code: null, message: 'ok', version: 4 })
   })
@@ -122,6 +122,37 @@ const download = async (p) => {
   const [d] = await Promise.all([p.waitForEvent('download'), button(p, 'Download this Graphic').click()])
   return { name: d.suggestedFilename(), buf: readFileSync(await d.path()) }
 }
+/**
+ * Story 5.2: every text layer (an element with its own text) against the opaque fill directly behind it (the nearest ancestor with an opaque
+ * background), at 4.5:1, or 3:1 at 70px and up. Any see-through text or fill fails, since its contrast can't be read off the DOM.
+ */
+const audit = (p) => p.locator('.graphic-classic').evaluate((root) => {
+  const rgba = (s) => { const v = s.match(/[\d.]+/g).map(Number); return v.length === 3 ? [...v, 1] : v }
+  const lum = (c) => { const [r, g, b] = c.slice(0, 3).map((v) => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4 }); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+  const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05) }
+  const layers = []
+  for (const el of root.querySelectorAll('*')) {
+    if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue
+    const cs = getComputedStyle(el)
+    let fill = el
+    while (fill && rgba(getComputedStyle(fill).backgroundColor)[3] === 0) fill = fill.parentElement
+    let see = rgba(cs.color)[3] < 1
+    for (let n = el; n && n !== root.parentElement; n = n.parentElement) if (getComputedStyle(n).opacity !== '1') see = true
+    const bg = rgba(getComputedStyle(fill).backgroundColor)
+    const px = parseFloat(cs.fontSize)
+    layers.push({ cls: el.className, text: el.textContent.slice(0, 20), px, ratio: Math.round(ratio(rgba(cs.color), bg) * 100) / 100, need: px >= 70 ? 3 : 4.5, see: see || bg[3] < 1 })
+  }
+  return layers
+})
+const COLOURS = [
+  { primary: '#f6c453', secondary: '#ffffff', kits: ['#ffffff', '#f6c453'] },
+  { primary: '#ffff00', secondary: '#ffffff', kits: ['#777777', '#808080'] },
+  { primary: '#fde68a', secondary: '#f6c453', kits: ['#ffff00', '#000000'] },
+  { primary: '#777777', secondary: '#ffffff', kits: ['#e0457b', '#00a0e0'] },
+  { primary: '#e0457b', secondary: '#0a1a3f', kits: ['#0a1a3f', '#ff0000'] },
+  { primary: '#00a0e0', secondary: '#ffffff', kits: ['#808080', '#0000ff'] },
+]
+
 const DATE = /^Full time: Red Tigers 3, Eight Eagles 2\. Group A, Gulmi Cup\. Goals: RTM RTM Player 1 5′, RTM \(og\) 14′, RTM RTM Player 2 31′, RE8 RE8 Player 1 9′, RE8 Unknown 20′\. \w+ · \w+ \d+, 20\d\d BS \(13 Nov 2033\), Tamghas Arena\. Sponsored by Alpha Co, Beta Ltd\.$/
 
 try {
@@ -171,6 +202,21 @@ try {
     assert.equal(await p.evaluate(() => navigator.clipboard.readText()), caption)
     assert.ok(!caption.includes('Made with'), 'the caption has the platform name')
     assert.deepEqual(mock.writes, [], 'a Storage upload or an app write')
+    await p.context().close()
+  }
+
+  // Readable text (Story 5.2): with gold #f6c453 / white and a sweep of hard brand and kit colours, every text layer passes, the "Made with" mark and
+  // the date line included, and the stored colours are never written.
+  for (const brand of COLOURS) {
+    const { page: p, mock } = await open({ brand })
+    await ready(p, 2)
+    const layers = await audit(p)
+    const names = layers.map((l) => l.cls)
+    for (const c of ['graphic-made', 'graphic-when', 'graphic-score', 'graphic-pens', 'graphic-disc', 'graphic-team', 'graphic-round']) assert.ok(names.includes(c), `${brand.primary}: no ${c} layer`)
+    const bad = layers.filter((l) => l.see || l.ratio < l.need)
+    assert.deepEqual(bad, [], `${brand.primary}: unreadable text`)
+    assert.deepEqual(mock.writes, [])
+    assert.equal(mock.commands.length, 0, `${brand.primary}: a command was sent`)
     await p.context().close()
   }
 

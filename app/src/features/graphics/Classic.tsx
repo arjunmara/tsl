@@ -1,13 +1,13 @@
 import { forwardRef, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { platformName } from '../../domain/env'
 import type { ResultData, Side } from '../../domain/graphics'
-import { brandDefaults, readable, textColours, textOn } from '../setup/brand'
+import { brandDefaults, inkFor, readable, textColours } from '../setup/brand'
 import './graphics.css'
 
 /**
  * The Classic Template (Story 5.1) for a finished Match: one component for the thumbnail, the preview and the PNG, at a fixed 1080x1350.
- * Only the brand colours and logo come from the Tournament; type, grid, dates, codes and the "Made with" line are fixed. Ink is navy or white,
- * whichever reads better; a main colour neither reaches 4.5:1 on is darkened behind the text (Story 5.2 widens this to every layer).
+ * Only the brand colours and logo come from the Tournament; type, grid, dates, codes and the "Made with" line are fixed. Every text layer's ink
+ * comes from inkFor (Story 5.2): the field's smallest text needs 4.5:1, so a main colour neither navy nor white reaches that on is darkened.
  */
 export const Classic = forwardRef<HTMLDivElement, { data: ResultData }>(function Classic({ data }, ref) {
   const area = useRef<HTMLDivElement>(null)
@@ -27,10 +27,10 @@ export const Classic = forwardRef<HTMLDivElement, { data: ResultData }>(function
   const field = readable(data.primary ?? def.primary, ink)
   const accent = data.secondary ?? def.secondary
   const crest = (s: Side) => {
-    const kit = s.kit ?? ink.navy
+    const kit = inkFor([s.kit ?? ink.navy], 72, ink)
     return (
       <div className="graphic-crest">
-        <div className="graphic-disc" style={{ background: kit, color: textOn(kit, ink) }}>{s.code}</div>
+        <div className="graphic-disc" style={{ background: kit.fill ?? s.kit ?? ink.navy, color: kit.text }}>{s.code}</div>
         <p className="graphic-team">{s.name}</p>
       </div>
     )

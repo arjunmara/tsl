@@ -34,23 +34,33 @@ export function contrast(a: string, b: string) {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-/** Whichever of navy and white reads better on bg. */
-export const textOn = (bg: string, t: TextColours) => (contrast(t.navy, bg) >= contrast(t.white, bg) ? t.navy : t.white)
+/** Contrast a Graphic text layer needs on the 1080px canvas: 4.5:1, or 3:1 at 70px and up (NFR-11). */
+export const needed = (px: number) => (px >= 70 ? 3 : 4.5)
 
 /**
- * Text on a brand-colour panel (the main colour's panel, the second colour's chip): navy or white when one reaches 4.5:1. Otherwise the panel behind the text is
- * darkened in 10% steps until white reaches 4.5:1, and adjusted is true.
+ * Ink for one Graphic text layer (Story 5.2), measured against the worst of the fills behind its box, never saved. In order, the first that
+ * passes: the Template's own colour, then navy or white (whichever reads better on the worst fill; brand-secondary stays on rules and
+ * chips), else the fill behind the text is darkened in 10% steps until white passes, and adjusted is true.
  */
-export function readable(primary: string, t: TextColours): { panel: string; text: string; adjusted: boolean } {
-  if (Math.max(contrast(t.navy, primary), contrast(t.white, primary)) >= 4.5) {
-    return { panel: primary, text: textOn(primary, t), adjusted: false }
-  }
-  let c = channels(primary)
-  let panel = primary
-  // 50 steps of 10% reach black from any colour; the cap only guards against a bad value.
-  for (let i = 0; i < 50 && contrast(t.white, panel) < 4.5; i++) {
+export function inkFor(fills: string[], px: number, t: TextColours, own?: string): { text: string; fill?: string; adjusted: boolean } {
+  const need = needed(px)
+  const worst = (c: string) => Math.min(...fills.map((f) => contrast(c, f)))
+  if (own && worst(own) >= need) return { text: own, adjusted: false }
+  const text = worst(t.navy) >= worst(t.white) ? t.navy : t.white
+  if (worst(text) >= need) return { text, adjusted: false }
+  // The fill white reads worst on is darkened; 50 steps of 10% reach black from any colour, the cap only guards against a bad value.
+  const base = fills.reduce((a, b) => (contrast(t.white, b) < contrast(t.white, a) ? b : a))
+  let c = channels(base)
+  let fill = base
+  for (let i = 0; i < 50 && contrast(t.white, fill) < need; i++) {
     c = c.map((v) => v * 0.9)
-    panel = toHex(c)
+    fill = toHex(c)
   }
-  return { panel, text: t.white, adjusted: true }
+  return { text: t.white, fill, adjusted: true }
+}
+
+/** Text on one brand-colour panel at body size (the setup sample, the Classic field): inkFor with the panel to paint behind the text. */
+export function readable(primary: string, t: TextColours): { panel: string; text: string; adjusted: boolean } {
+  const r = inkFor([primary], 0, t)
+  return { panel: r.fill ?? primary, text: r.text, adjusted: r.adjusted }
 }
