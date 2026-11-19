@@ -602,3 +602,36 @@ earlier changes), raises the Match's version by one and closes the Match's other
 2-second poll: holder name, whether the caller holds it, the caller's own ask, version, a stamp that grows with the Match's events, and for the holder
 the phones it can hand over to) and `app.takeover_requests(tournament)` (pending asks, Organisers only). Steps: paste `0035_handover.sql` into the SQL
 Editor and run it. Check: `select app.takeover_requests('<tournament id>')` runs as an Organiser and answers `[]`.
+
+## Apply 0036_legacy_mirror.sql (Story 4.10)
+
+Apply after 0035 and before TSL Season 2 goes on air (test first, then live). It adds the switch table `app.legacy_mirror` (Tournament, Season; no client
+access, you fill it by hand) and triggers on `app.live_state`, `app.match` and `app.match_lineup`. While a switch row names a Season, its On-air Match is
+copied one way into `public.live.state`: `home`, `away`, `hc`, `ac`, `hs`, `as`, `period`, `elapsed`, `since`, with `match` set to null so the old
+`score_to_live` trigger leaves the score alone. Other keys (`scene`, `lay`, `ad`, `ticker`, `show`) are untouched. Nothing else in `public` is written: the
+old maker and graphics get no Season 2 results. With no switch row nothing is written; an error inside the mirror is a warning in the Supabase logs and
+the scoring command still succeeds. Steps: paste `0036_legacy_mirror.sql` into the SQL Editor and run it.
+
+Switch on (ids from `select id, number, tournament_id from app.season`):
+
+```sql
+insert into app.legacy_mirror (tournament_id, season_id) values ('<tournament id>', '<season id>') on conflict do nothing;
+```
+
+Switch off (the next change writes nothing; `public.live` keeps its last state):
+
+```sql
+delete from app.legacy_mirror where season_id = '<season id>';
+```
+
+Check on tsl-test with season 99: tsl-test has no legacy `public.live`, so create it first if missing:
+
+```sql
+create table if not exists public.live (id smallint primary key default 1 check (id = 1), state jsonb not null default '{}');
+insert into public.live (id) values (1) on conflict do nothing;
+```
+
+Switch season 99 on, put a Match on air, then run `select state from public.live` after a goal, an undo, a clock start and pause, the interval and the
+end: each shows at once (`hs`/`as`, `since`/`elapsed`, `period` "1st Half", "Half Time", "2nd Half", "Full Time"). Switch it off and drop test-only rows
+when done. The overlay itself reads the live project, so its 2-second check runs when Season 2 goes live. The triggers are dropped when the Stage 2
+Overlay ships (`drop trigger legacy_mirror on app.live_state`, the same on `app.match` and `app.match_lineup`, then `drop function app.legacy_mirror_push()`).

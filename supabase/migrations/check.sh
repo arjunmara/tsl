@@ -32,6 +32,8 @@ grant select on public.legacy_probe to anon;
 -- Supabase's own default for public: new functions there are executable by client roles.
 alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 insert into public.legacy_probe values (1, 'probe');
+create table public.live (id smallint primary key default 1 check (id = 1), state jsonb not null default '{}');
+insert into public.live default values;
 -- Supabase Storage stand-ins: buckets, objects (RLS on, client grants as Supabase has them), foldername().
 create schema storage;
 create table storage.buckets (id text primary key, name text not null, public boolean default false,
@@ -87,7 +89,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring,holder_label,move_scoring,scoring_state,takeover_requests}"
+helpers="{is_member,legacy_mirror_push,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring,holder_label,move_scoring,scoring_state,takeover_requests}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -3265,5 +3267,102 @@ for r in anon authenticated; do
   [ "$(q "select has_sequence_privilege('$r','app.t_id_seq','usage')")" = f ] || fail "New sequence later: $r has usage"
   [ "$(q "select has_function_privilege('$r','app.f()','execute')")" = f ] || fail "New function later: $r can execute"
 done
+
+# --- Legacy mirror (Story 4.10). S27 of T15 is switched on in app.legacy_mirror: X21 v X22, ML1 goes on air, ML2 never does; S28 (no switch row) has ML3.
+S27=21111111-0000-4000-8000-0000000000f9 S28=21111111-0000-4000-8000-0000000000fa
+X21=47111111-0000-4000-8000-000000000021 X22=47111111-0000-4000-8000-000000000022 X23=47111111-0000-4000-8000-000000000023
+ML1=57111111-0000-4000-8000-0000000000f1 ML2=57111111-0000-4000-8000-0000000000f2 ML3=57111111-0000-4000-8000-0000000000f3
+D31=f7111111-0000-4000-8000-000000000031
+q "insert into auth.users (id, is_anonymous) values ('$D31', true)" >/dev/null
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench, periods, period_minutes, extra_time) values
+  ('$S27', '$T15', 10, 'started', 2, 2, 2, 20, false), ('$S28', '$T15', 11, 'started', 2, 2, 2, 20, false)" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$X21', '$T15', '$S27', 'Twenty-one FC', 'TOO', '#ff0000', 'approved'), ('$X22', '$T15', '$S27', 'Twenty-two FC', 'TTW', '#0000ff', 'approved'),
+  ('$X23', '$T15', '$S28', 'Twenty-three FC', 'TTH', '#00ff00', 'approved')" >/dev/null
+for t in 21 22; do for n in 1 2 3 4; do
+  q "insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl $t $n)', '$T15', 'Player $t-$n', '2000-01-01');
+     insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '$(eval echo \$X$t)', '$(pl $t $n)', $n)" >/dev/null
+done; done
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status) values
+  ('$ML1', '$T15', '$S27', 'group', 'Group A', 1, '$X21', '$X22', 'scheduled'), ('$ML2', '$T15', '$S27', 'group', 'Group A', 2, '$X21', '$X22', 'scheduled'),
+  ('$ML3', '$T15', '$S28', 'group', 'Group A', 1, '$X23', null, 'scheduled')" >/dev/null
+q "insert into app.scorer_device (tournament_id, season_id, user_id, label, status, number_hash, expires_at) values
+  ('$T15', '$S27', '$D31', 'Mirror phone', 'approved', repeat('0', 64), now() + interval '1 hour')" >/dev/null
+lv() { q "select state->>'$1' from public.live"; }
+lvs() { q "select state from public.live"; }
+ML=$(q "select state from public.live"); [ "$ML" = '{}' ] || fail "mirror: public.live starts empty, got $ML"
+q "update public.live set state = '{\"scene\":\"auto\",\"ad\":\"x\",\"ticker\":true,\"match\":7,\"hs\":9}'" >/dev/null
+q "insert into app.legacy_mirror (tournament_id, season_id) values ('$T15', '$S27')" >/dev/null
+out=$(as $D31 "select * from app.legacy_mirror" 2>&1 || true); [[ $out == *"permission denied"* ]] || fail "mirror: a client read legacy_mirror: $out"
+out=$(as anon "select * from app.legacy_mirror" 2>&1 || true); [[ $out == *"permission denied"* ]] || fail "mirror: anon read legacy_mirror: $out"
+out=$(as $D31 "select app.legacy_mirror_push()" 2>&1 || true); [[ $out == *"permission denied"* ]] || fail "mirror: a client ran the mirror function: $out"
+LA=$(lu 21 '1 2' '3 4' '#ff0000') LB=$(lu 22 '1 2' '3 4' '#0000ff')
+ML_before=$(lvs)
+# Not on air yet: take scoring and confirm line-ups write nothing.
+[ "$(tc $D31 "take_scoring('$(cmd 3800)', '$S27', '$ML1')")|$(tc $D31 "confirm_lineups('$(cmd 3801)', '$S27', '$ML1', '$LA'::jsonb, '$LB'::jsonb)")" = 'ok|ok' ] || fail "mirror: set up"
+[ "$(lvs)" = "$ML_before" ] || fail "mirror: wrote for a Match that is not on air"
+# On air.
+[ "$(tc $D31 "show_on_stream('$(cmd 3802)', '$S27', '$ML1')")" = ok ] || fail "mirror: show_on_stream"
+[ "$(q "select (state->>'home')||'|'||(state->>'away')||'|'||(state->>'hc')||'|'||(state->>'ac')||'|'||(state->>'hs')||'|'||(state->>'as')||'|'||(state->>'period')||'|'||(state->>'elapsed')||'|'||coalesce(state->>'since','null')||'|'||(state->'match')::text from public.live")" \
+  = 'Twenty-one FC|Twenty-two FC|#ff0000|#0000ff|0|0|1st Half|0|null|null' ] || fail "mirror: on air: $(lvs)"
+[ "$(lv scene)|$(lv ad)|$(lv ticker)" = 'auto|x|true' ] || fail "mirror: other keys were touched: $(lvs)"
+# Clock.
+[ "$(tc $D31 "start_clock('$(cmd 3803)', '$S27', '$ML1', $(mver $ML1))")" = ok ] || fail "mirror: start_clock"
+[ "$(q "select (state->>'period')||'|'||((state->>'since')::numeric / 1000 > extract(epoch from now()) - 60) from public.live")" = '1st Half|true' ] || fail "mirror: running clock: $(lvs)"
+# Goals and undo.
+gl() { tc $D31 "record_goal('$(cmd $1)', '$S27', '$ML1', '$2', null, false, 1, 3, now())"; }
+[ "$(gl 3804 $X21)|$(gl 3805 $X21)|$(gl 3806 $X22)" = 'ok|ok|ok' ] || fail "mirror: goals"
+[ "$(lv hs)-$(lv as)" = 2-1 ] || fail "mirror: goal: $(lvs)"
+[ "$(tc $D31 "delete_event('$(cmd 3807)', '$S27', '$(cmd 3805)', 1)")" = ok ] || fail "mirror: undo"
+[ "$(lv hs)-$(lv as)" = 1-1 ] || fail "mirror: undo: $(lvs)"
+# Pause, interval, second half.
+[ "$(tc $D31 "pause_clock('$(cmd 3808)', '$S27', '$ML1', $(mver $ML1))")" = ok ] || fail "mirror: pause"
+[ "$(lv period)|$(lvs | grep -c '"since": null')" = '1st Half|1' ] || fail "mirror: paused: $(lvs)"
+[ "$(tc $D31 "next_period('$(cmd 3809)', '$S27', '$ML1', $(mver $ML1))")" = ok ] || fail "mirror: half time"
+[ "$(lv period)" = 'Half Time' ] || fail "mirror: Half Time: $(lvs)"
+[ "$(tc $D31 "next_period('$(cmd 3810)', '$S27', '$ML1', $(mver $ML1))")" = ok ] || fail "mirror: second half"
+[ "$(lv period)|$(lv elapsed)" = '2nd Half|0' ] || fail "mirror: 2nd Half: $(lvs)"
+# Sides: swapping the line-up's sides swaps names, kits and the score.
+q "update app.match_lineup set side = case side when 'home' then 'away' else 'home' end where match_id = '$ML1'" >/dev/null
+[ "$(lv home)|$(lv away)|$(lv hc)|$(lv ac)|$(lv hs)-$(lv as)" = 'Twenty-two FC|Twenty-one FC|#0000ff|#ff0000|1-1' ] || fail "mirror: swapped sides: $(lvs)"
+q "update app.match_lineup set kit_colour = '#00ff00' where match_id = '$ML1' and side = 'home'" >/dev/null
+[ "$(lv hc)" = '#00ff00' ] || fail "mirror: kit change: $(lvs)"
+gl 3811 $X22 >/dev/null
+[ "$(lv hs)-$(lv as)" = 2-1 ] || fail "mirror: goal after swap: $(lvs)"
+# End.
+[ "$(tc $D31 "end_match('$(cmd 3812)', '$S27', '$ML1', $(mver $ML1))")" = ok ] || fail "mirror: end_match"
+[ "$(lv period)|$(lv hs)-$(lv as)" = 'Full Time|2-1' ] || fail "mirror: Full Time: $(lvs)"
+# Other: a Match that is not on air, on-air cleared, and a Match of a Season with no switch row write nothing.
+ML_before=$(lvs)
+[ "$(tc $D31 "take_scoring('$(cmd 3820)', '$S27', '$ML2')")|$(tc $D31 "confirm_lineups('$(cmd 3821)', '$S27', '$ML2', '$LA'::jsonb, '$LB'::jsonb)")|$(tc $D31 "start_clock('$(cmd 3822)', '$S27', '$ML2', $(mver $ML2))")" = 'ok|ok|ok' ] || fail "mirror: second Match"
+q "update app.live_state set on_air_match_id = null where tournament_id = '$T15'" >/dev/null
+q "update app.match set hg = 5 where id = '$ML3'; update app.live_state set on_air_match_id = '$ML3' where tournament_id = '$T15'" >/dev/null
+[ "$(lvs)" = "$ML_before" ] || fail "mirror: wrote for a non-on-air Match, a cleared on-air flag or an unswitched Season: $(lvs)"
+# Broken: a missing public.live is a warning, the command succeeds and nothing is written.
+q "update app.live_state set on_air_match_id = '$ML2' where tournament_id = '$T15'" >/dev/null
+ML_before=$(lvs)
+q "alter table public.live rename to live_gone" >/dev/null
+[ "$(tc $D31 "pause_clock('$(cmd 3823)', '$S27', '$ML2', $(mver $ML2))")" = ok ] || fail "mirror: a broken mirror stopped the command"
+q "alter table public.live_gone rename to live" >/dev/null
+[ "$(lvs)" = "$ML_before" ] || fail "mirror: wrote though broken: $(lvs)"
+# Broken: no id 1 row in public.live is a warning too, and the command still succeeds.
+ML_before=$(lvs)
+q "delete from public.live" >/dev/null
+[ "$(tc $D31 "start_clock('$(cmd 3825)', '$S27', '$ML2', $(mver $ML2))")" = ok ] || fail "mirror: a missing live row stopped the command"
+q "insert into public.live (id, state) values (1, '$ML_before'::jsonb)" >/dev/null
+# One line-up on the swapped side: the missing side is the Match's other Team.
+q "delete from app.match_lineup where match_id = '$ML2' and side = 'away'; update app.match_lineup set side = 'home', team_id = '$X22' where match_id = '$ML2'" >/dev/null
+q "update app.match set version = version where id = '$ML2'" >/dev/null
+[ "$(lv home)|$(lv away)|$(lv hs)-$(lv as)" = 'Twenty-two FC|Twenty-one FC|0-0' ] || fail "mirror: one swapped line-up: $(lvs)"
+# Switch off: the row is deleted and the next change writes nothing.
+q "delete from app.legacy_mirror where season_id = '$S27'" >/dev/null
+ML_before=$(lvs)
+[ "$(tc $D31 "pause_clock('$(cmd 3824)', '$S27', '$ML2', $(mver $ML2))")" = ok ] || fail "mirror: start after switch off"
+[ "$(lvs)" = "$ML_before" ] || fail "mirror: wrote after switch off: $(lvs)"
+# Only public.live is ever written by the app: no other migration or app/ file writes a legacy table.
+if grep -rEin "(insert into|update|delete from|truncate)[[:space:]]+(only[[:space:]]+)?public\." "$dir"/*.sql "$dir/../../app/src" 2>/dev/null | grep -v "^$dir/0036_legacy_mirror.sql" | grep -v "^[^:]*:[0-9]*:[[:space:]]*--"; then
+  fail "mirror: a file writes a public table"
+fi
+[ "$(grep -Ein "(insert into|update|delete from)[[:space:]]+public\." "$dir/0036_legacy_mirror.sql" | grep -v ":[[:space:]]*--" | grep -vc "public\.live")" = 0 ] || fail "mirror: 0036 writes a table besides public.live"
 
 echo ok
