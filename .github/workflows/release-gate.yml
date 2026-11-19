@@ -66,6 +66,8 @@ jobs:
         run: npm run check:deadline
       - name: Delete a Player's photo and personal details on request (Story 2.10)
         run: npm run check:erase
+      - name: Import Teams and Players from a CSV file
+        run: npm run check:team-import
       - name: Record the live chit Draw (Story 3.1)
         run: npm run check:draw
       - name: Suggested fixtures and the knockout path (Story 3.2)

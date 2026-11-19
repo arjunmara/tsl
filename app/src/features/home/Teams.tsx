@@ -12,6 +12,7 @@ import { StatusPill } from '../../ui/StatusPill'
 import { blocked, useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
 import type { Head } from './Home'
+import { TeamImport } from './TeamImport'
 
 export const teamStatusLabel: Record<TeamStatus, string> = { invited: 'Invited', submitted: 'Submitted', approved: 'Approved', returned: 'Returned', withdrawn: 'Withdrawn' }
 
@@ -174,6 +175,7 @@ export function Teams({ tournamentId, head: h, openId, onSeasonChange }: { tourn
           ))}
         </ul>
       ) : <p className="body">Add your Teams to send each one its Registration link.</p>}
+      {canAdd && <TeamImport tournamentId={tournamentId} seasonId={h.season.id} seasonStatus={h.season.status} onSeasonChange={onSeasonChange} onSent={(n) => (setNotice(n), reload())} />}
       {canAdd ? (
         <section className="teams-add">
           <h2 className="body-strong">Add a Team</h2>

@@ -5,6 +5,7 @@ import { inZone } from './format'
 import { supabase } from './supabase'
 import type { TeamStatus } from './teams'
 import type { SeasonStatus } from './tournaments'
+import type { ExistingTeam } from './teamCsv'
 
 // The Registration link form (Story 2.2): the Team a redeemed link's grant is for, and the Season facts its banner needs.
 export type RegistrationTeam = {
@@ -335,3 +336,52 @@ export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): Reg
 /** The form with every pending change of this session laid over: Team details, then Squad and Staff. */
 export const overlayForm = (form: RegistrationForm, queued: OutboxEntry[]): RegistrationForm =>
   overlaySquad({ ...form, team: overlayTeam(form.team, queued) }, queued)
+
+/**
+ * The Season's Teams with their Squads for the CSV import, this user's pending Team and Squad commands (scope: the
+ * Tournament) laid over. Needs the signal: { code } when the read fails. Each row's version becomes its edits' base.
+ */
+export async function importBase(seasonId: string, queued: OutboxEntry[]): Promise<{ teams: ExistingTeam[] } | { code: 'offline' | 'unknown' }> {
+  try {
+    const app = supabase.schema('app')
+    const t = await app.from('team').select('id, name, code, kit_colour, status, version').eq('season_id', seasonId).order('created_at').order('id')
+    if (t.error) return { code: t.status === 0 || !navigator.onLine ? 'offline' : 'unknown' }
+    const rows = (t.data ?? []) as { id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; version: number }[]
+    const sq = rows.length ? await app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version)').in('team_id', rows.map((r) => r.id)) : null
+    if (sq?.error) return { code: sq.status === 0 || !navigator.onLine ? 'offline' : 'unknown' }
+    const entries = ((sq?.data ?? []) as unknown as { team_id: string; shirt_number: number; player: { id: string; name: string; date_of_birth: string | null; version: number } | null }[])
+    const teams: ExistingTeam[] = rows.map((r) => ({ id: r.id, name: r.name, code: r.code, kitColour: r.kit_colour, version: r.version, withdrawn: r.status === 'withdrawn',
+      players: entries.filter((e) => e.team_id === r.id && e.player).map((e) => ({ id: e.player!.id, name: e.player!.name, shirtNumber: e.shirt_number,
+        dateOfBirth: e.player!.date_of_birth ?? '', version: e.player!.version })) }))
+    await Promise.all([...teams, ...teams.flatMap((x) => x.players)].map((x) => noteVersion(x.id, x.version)))
+    for (const { name, args: a } of queued) {
+      const x = teams.find((y) => y.id === a.team_id)
+      if (name === 'add_team' && a.season_id === seasonId && !x) teams.push({ id: String(a.team_id), name: String(a.name), code: String(a.code), kitColour: null, version: 1, players: [] })
+      else if (name === 'edit_team' && x) {
+        if (typeof a.name === 'string') x.name = a.name
+        if (typeof a.kit_colour === 'string') x.kitColour = a.kit_colour
+      } else if (name === 'add_player' && x && !x.players.some((p) => p.id === a.player_id)) {
+        x.players.push({ id: String(a.player_id), name: String(a.name), shirtNumber: Number(a.shirt_number), dateOfBirth: String(a.date_of_birth), version: 1 })
+      } else if (name === 'edit_player' && x) {
+        const p = x.players.find((y) => y.id === a.player_id)
+        if (p && typeof a.shirt_number === 'number') p.shirtNumber = a.shirt_number
+        if (p && typeof a.date_of_birth === 'string') p.dateOfBirth = a.date_of_birth
+      }
+    }
+    return { teams }
+  } catch {
+    return { code: navigator.onLine ? 'unknown' : 'offline' }
+  }
+}
+
+/** The Season's Squad size limit (starters + bench) for the CSV import; null when either is unset. */
+export async function squadLimit(seasonId: string): Promise<{ limit: number | null } | { code: 'offline' | 'unknown' }> {
+  try {
+    const { data, error, status } = await supabase.schema('app').from('season').select('starters, max_bench').eq('id', seasonId)
+    if (error) return { code: status === 0 || !navigator.onLine ? 'offline' : 'unknown' }
+    const s = ((data ?? []) as { starters: number | null; max_bench: number | null }[])[0]
+    return { limit: s && s.starters !== null && s.max_bench !== null ? s.starters + s.max_bench : null }
+  } catch {
+    return { code: navigator.onLine ? 'unknown' : 'offline' }
+  }
+}

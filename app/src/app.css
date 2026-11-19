@@ -533,6 +533,7 @@
 
 /* Teams tab and Team page (Story 2.1). The row opens the Team; "Share link" trails it. Names and links wrap. */
 .teams,
+.teams-import,
 .teams-add,
 .teams-add form,
 .team-page,
@@ -1328,4 +1329,14 @@ html:has(.console) {
 }
 .takeover-prompt .ui-button {
   min-height: 64px;
+}
+
+/* CSV import on the Teams tab: the problems and the per-Team preview wrap and never widen the page. */
+.teams-import ul {
+  margin: 0;
+  padding-left: var(--spacing-4);
+  overflow-wrap: anywhere;
+}
+.teams-import a {
+  width: fit-content;
 }

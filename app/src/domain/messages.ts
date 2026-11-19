@@ -212,6 +212,9 @@ export const messages = {
   goals_named: 'That score is lower than the goals already named. Check the score.',
   match_live: 'This Match is live. Finish it from the console.',
   match_not_finished: "This Match isn't finished yet.",
+  team_import_unknown: "Couldn't read this Season's Teams to compare with the file. Choose the file again.",
+  team_import_failed: "The import couldn't finish.",
+  team_import_unreadable: "Couldn't read that file. Choose a CSV file saved as UTF-8.",
   lineups_queued: "Line-ups saved on this phone. They send when there's a signal.",
 } as const
 
