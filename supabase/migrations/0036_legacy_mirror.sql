@@ -7,10 +7,12 @@
 -- Overlay ships. The founder applies this in the Supabase SQL Editor as `postgres`: test first, then live. Safe to run twice.
 
 create table if not exists app.legacy_mirror (
-  tournament_id uuid not null references app.tournament (id) on delete cascade,
+  -- No foreign key to app.tournament: with both, the Data API sees a second tournament-season path and refuses embeds (PGRST201).
+  tournament_id uuid not null,
   season_id uuid not null references app.season (id) on delete cascade,
   primary key (tournament_id, season_id)
 );
+alter table app.legacy_mirror drop constraint if exists legacy_mirror_tournament_id_fkey;
 -- No personal fields; the switch being flipped shows in the Activity log.
 create or replace trigger log_change after insert or update or delete on app.legacy_mirror
   for each row execute function app.log_change('tournament_id', '{}');
