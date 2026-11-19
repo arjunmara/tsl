@@ -589,3 +589,16 @@ ones still answer `not_scoring_device`, which holds that Match's queue on the ph
 Scorer phone keeps the `scorer_allows` grace from 0028. `goal_step`, `event_step`, `clock_step` and `end_match` are recreated with the same
 signatures. Steps: paste `0034_holder_grace.sql` into the SQL Editor and run it. Check:
 `select scoring_prev_device, scoring_moved_at from app.match limit 1` runs and shows two empty columns.
+
+## Apply 0035_handover.sql (Story 4.8)
+
+Apply after 0034 and before the app deploy with hand over and take over scoring (test first, then live). It adds `app.takeover_request` (a Scorer
+phone's ask to take over a Match: pending, approved, declined or expired; 2 minutes; one pending per Match, a newer ask replaces older ones; Organisers
+read their Tournament's rows, a phone reads its own ask only through `app.scoring_state`) and the commands `hand_over_scoring` (the holder passes
+scoring to another approved Scorer phone of the Season: `device_not_approved`, a stale version is a `version_conflict`), `ask_take_over` (an approved
+Scorer phone that is not the holder), `approve_take_over` and `decline_take_over` (Organisers; `request_expired` after 2 minutes) and
+`take_over_scoring` (an Organiser takes it directly). Every move sets `scoring_prev_device` and `scoring_moved_at` (0034's grace keeps the old holder's
+earlier changes), raises the Match's version by one and closes the Match's other pending asks. New reads: `app.scoring_state(match)` (the console's
+2-second poll: holder name, whether the caller holds it, the caller's own ask, version, a stamp that grows with the Match's events, and for the holder
+the phones it can hand over to) and `app.takeover_requests(tournament)` (pending asks, Organisers only). Steps: paste `0035_handover.sql` into the SQL
+Editor and run it. Check: `select app.takeover_requests('<tournament id>')` runs as an Organiser and answers `[]`.

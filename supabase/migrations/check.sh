@@ -87,7 +87,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring}"
+helpers="{is_member,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring,holder_label,move_scoring,scoring_state,takeover_requests}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -3107,6 +3107,154 @@ handed "now() - interval '2 hours'"
 # A finished Season refuses everything.
 q "update app.season set status = 'finished' where id='$S24'" >/dev/null
 [ "$(r24 $A 3395 $RTY '2, 2')|$(a24 $A 3396 $RGM 'null, null')|$(tc $A "delete_event('$(cmd 3397)', '$S24', '$SG', $(gver 3323))")" = 'season_finished|season_finished|season_finished' ] || fail "result: a finished Season"
+
+# --- Hand over and take over scoring (Story 4.8). S26 of T15: X19 v X20; HV1 and HV2 are live, HV3 nobody holds, HV4 is finished. D21 (Bikash's phone) holds HV1 and
+# HV2; D22 (Ana's phone) is approved too; D23 is pending; D7 is another Season's phone, G1 a Registration grant, B another Tournament's Organiser.
+S26=21111111-0000-4000-8000-0000000000f8
+X19=47111111-0000-4000-8000-000000000019 X20=47111111-0000-4000-8000-000000000020
+HV1=57111111-0000-4000-8000-0000000000e1 HV2=57111111-0000-4000-8000-0000000000e2 HV3=57111111-0000-4000-8000-0000000000e3 HV4=57111111-0000-4000-8000-0000000000e4
+D21=f7111111-0000-4000-8000-000000000021 D22=f7111111-0000-4000-8000-000000000022 D23=f7111111-0000-4000-8000-000000000023 D24=f7111111-0000-4000-8000-000000000024
+HV5=57111111-0000-4000-8000-0000000000e5
+q "insert into auth.users (id, is_anonymous) values ('$D21', true), ('$D22', true), ('$D23', true), ('$D24', true)" >/dev/null
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench, periods, period_minutes, extra_time) values ('$S26', '$T15', 9, 'started', 2, 2, 2, 20, false)" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$X19', '$T15', '$S26', 'Nineteen FC', 'NNT', '#ff0000', 'approved'), ('$X20', '$T15', '$S26', 'Twenty FC', 'TWN', '#0000ff', 'approved')" >/dev/null
+for t in 19 20; do for n in 1 2 3 4; do
+  q "insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl $t $n)', '$T15', 'Player $t-$n', '2000-01-01');
+     insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '$(eval echo \$X$t)', '$(pl $t $n)', $n)" >/dev/null
+done; done
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status) values
+  ('$HV1', '$T15', '$S26', 'group', 'Group A', 1, '$X19', '$X20', 'scheduled'), ('$HV2', '$T15', '$S26', 'group', 'Group A', 2, '$X19', '$X20', 'scheduled'),
+  ('$HV3', '$T15', '$S26', 'group', 'Group A', 3, '$X19', '$X20', 'scheduled'), ('$HV4', '$T15', '$S26', 'group', 'Group A', 4, '$X19', '$X20', 'finished'), ('$HV5', '$T15', '$S26', 'group', 'Group A', 5, '$X19', '$X20', 'scheduled')" >/dev/null
+q "insert into app.scorer_device (tournament_id, season_id, user_id, label, status, number_hash, expires_at) values
+  ('$T15', '$S26', '$D21', 'Bikash''s phone', 'approved', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S26', '$D22', 'Ana''s phone', 'approved', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S26', '$D23', 'Cara''s phone', 'pending', repeat('0', 64), now() + interval '1 hour'),
+  ('$T15', '$S26', '$D24', 'Dev''s phone', 'approved', repeat('0', 64), now() + interval '1 hour')" >/dev/null
+LH=$(lu 19 '1 2' '3 4' '#ff0000') LJ=$(lu 20 '1 2' '3 4' '#0000ff')
+for m in $HV1 $HV2 $HV5; do
+  [ "$(tc $D21 "take_scoring('$(cmd $((3600 + ${m: -1})))', '$S26', '$m')")|$(tc $D21 "confirm_lineups('$(cmd $((3610 + ${m: -1})))', '$S26', '$m', '$LH'::jsonb, '$LJ'::jsonb)")|$(tc $D21 "start_clock('$(cmd $((3620 + ${m: -1})))', '$S26', '$m', $(mver $m))")" = 'ok|ok|ok' ] || fail "handover: set up $m"
+done
+dev() { q "select id from app.scorer_device where user_id='$1'"; }
+ssf() { as "$1" "select coalesce(app.scoring_state('$2')->>'$3', 'none')"; }
+who() { q "select coalesce(scoring_device::text, 'none')||':'||coalesce(scoring_prev_device::text, 'none') from app.match where id='$1'"; }
+hv() { tc "$1" "hand_over_scoring('$(cmd $2)', '$S26', '$3', '$4', $(mver $3))"; }
+ask() { tc "$1" "ask_take_over('$(cmd $2)', '$S26', '$3')"; }
+rq() { q "select id from app.takeover_request where match_id='$1' and status='$2' order by created_at desc limit 1"; }
+apv() { tc "$1" "approve_take_over('$(cmd $2)', '$S26', '$3')"; }
+dcl() { tc "$1" "decline_take_over('$(cmd $2)', '$S26', '$3')"; }
+tov() { tc "$1" "take_over_scoring('$(cmd $2)', '$S26', '$3')"; }
+fp2() { q "select (select count(*) from app.takeover_request)||':'||(select string_agg(scoring_device||'/'||version, ',' order by id) from app.match where season_id='$S26')"; }
+# Isolation: a pending phone, another Season's phone, a Registration link and another Tournament's Organiser read no state or request and run no command.
+f=$(fp2)
+for u in $D23 $D7 $G1 $B; do
+  [ "$(ssf $u $HV1 version)|$(as $u "select app.takeover_requests('$T15')")" = 'none|[]' ] || fail "handover leak: $u reads"
+  [ "$(hv $u 3630 $HV1 $(dev $D22))|$(ask $u 3631 $HV1)|$(tov $u 3632 $HV1)" = 'not_authorized|not_authorized|not_authorized' ] || fail "handover leak: $u ran a command"
+  redo 3630; redo 3631; redo 3632
+done
+[ "$(as $D7 "select count(*) from app.takeover_request")|$f" = "0|$(fp2)" ] || fail "handover leak: rows"
+# Read-only: Ana sees Bikash holding, her scoring commands fail, an Organiser sees the same; Ana can't approve or take over directly.
+[ "$(ssf $D22 $HV1 mine)|$(ssf $D22 $HV1 holder_label)|$(ssf $A $HV1 holder_label)|$(ssf $D21 $HV1 mine)" = "false|Bikash's phone|Bikash's phone|true" ] || fail "handover: scoring_state"
+[ "$(tc $D22 "record_goal('$(cmd 3633)', '$S26', '$HV1', '$X19', null, false, 1, 3)")|$(tc $D22 "pause_clock('$(cmd 3634)', '$S26', '$HV1', $(mver $HV1))")" = 'not_scoring_device|not_scoring_device' ] || fail "handover: read-only commands"
+[ "$(ssf $D21 $HV1 devices | grep -c Ana)|$(ssf $D22 $HV1 devices)" = '1|[]' ] || fail "handover: devices only for the holder"
+[ "$(dev $D23 | wc -l)|$(ssf $D21 $HV1 devices | grep -c Cara)" = '1|0' ] || fail "handover: a pending phone is a target"
+[ "$(tov $D22 3635 $HV1)|$(apv $D22 3636 $(cmd 7))" = 'not_authorized|not_authorized' ] || fail "handover: a phone took over as an Organiser"
+# Hand over: only the holder; the target must be an approved phone of this Season (not pending, not itself, not another Season's); a stale version conflicts.
+OLD=$(mver $HV1)
+[ "$(hv $D22 3640 $HV1 $(dev $D21))|$(hv $D21 3641 $HV1 $(dev $D23))|$(hv $D21 3642 $HV1 $(dev $D21))|$(hv $D21 3643 $HV1 $(dev $D7))|$(hv $D21 3644 $HV1 $(cmd 7))" \
+  = 'not_scoring_device|device_not_approved|device_not_approved|device_not_approved|device_not_approved' ] || fail "handover: refused targets"
+[ "$(tc $D21 "hand_over_scoring('$(cmd 3645)', '$S26', '$HV1', '$(dev $D22)', $((OLD - 1)))")|$(who $HV1)" = "version_conflict|$D21:none" ] || fail "handover: stale version"
+q "update app.match set scoring_device = '$D21' where id='$HV4'" >/dev/null
+[ "$(tc $D21 "hand_over_scoring('$(cmd 3646)', '$S26', '$HV4', '$(dev $D22)', 1)")|$(tc $A "hand_over_scoring('$(cmd 3647)', '$S26', '$HV3', '$(dev $D22)', 1)")" = 'match_finished|not_scoring_device' ] || fail "handover: finished or free Match"
+[ "$(hv $D21 3648 $HV1 $(dev $D22))|$(who $HV1)|$(mver $HV1)" = "ok|$D22:$D21|$OLD" ] || fail "handover: the move"
+[ "$(q "select (scoring_moved_at > now() - interval '1 minute')::text from app.match where id='$HV1'")|$(q "select count(*) from app.activity_log where command_id='$(cmd 3648)' and table_name='match'")" = 'true|1' ] || fail "handover: moved_at and the log"
+[ "$(ssf $D22 $HV1 mine)|$(ssf $D21 $HV1 mine)|$(ssf $D21 $HV1 holder_label)|$(ssf $D21 $HV1 version)" = "true|false|Ana's phone|$OLD" ] || fail "handover: both consoles read the move"
+[ "$(hv $D21 3648 $HV1 $(dev $D22))|$(who $HV1)" = "ok|$D22:$D21" ] || fail "handover: a replay moved again"
+# Ask: a phone that isn't the holder; a newer ask replaces the older one; the holder, a pending phone, an Organiser and a free or finished Match are refused.
+[ "$(ask $D21 3650 $HV1)|$(ask $D22 3651 $HV1)|$(ask $D23 3652 $HV1)|$(ask $A 3653 $HV1)|$(ask $D21 3654 $HV3)|$(ask $D21 3655 $HV4)|$(ask $D7 3656 $HV1)" \
+  = 'ok|already_scoring|not_authorized|not_authorized|scoring_free|match_finished|not_authorized' ] || fail "handover: ask"
+[ "$(ask $D21 3657 $HV1)|$(q "select count(*) filter (where status = 'pending') || '/' || count(*) filter (where status = 'expired') from app.takeover_request where match_id='$HV1'")" = 'ok|1/1' ] || fail "handover: a newer ask replaces the older one"
+[ "$(ssf $D21 $HV1 request | grep -o pending)|$(as $D21 "select app.scoring_state('$HV1')->'request'->>'status'")|$(ssf $D22 $HV1 request)" = 'pending|pending|none' ] || fail "handover: the asker's own ask"
+[ "$(as $A "select jsonb_array_length(app.takeover_requests('$T15'))||(app.takeover_requests('$T15')->0->>'label')||(app.takeover_requests('$T15')->0->>'holder_label')||(app.takeover_requests('$T15')->0->>'home_code')||(app.takeover_requests('$T15')->0->>'away_code')")" \
+  = "1Bikash's phoneAna's phoneNNTTWN" ] || fail "handover: the Organisers' list"
+[ "$(as $A "select count(*) from app.takeover_request")|$(as $D21 "select count(*) from app.takeover_request")|$(as $D21 "select app.takeover_requests('$T15')")" = '2|0|[]' ] || fail "handover: who reads asks"
+# Approve: an Organiser lets Bikash's phone score although Ana's phone is dead (offline: nothing from it); a phone can't; a second approve is refused.
+RQ=$(rq $HV1 pending)
+[ "$(apv $D21 3660 $RQ)|$(apv $A 3661 $(cmd 7))|$(who $HV1)" = "not_authorized|request_missing|$D22:$D21" ] || fail "handover: approve refused"
+[ "$(apv $A 3662 $RQ)|$(who $HV1)|$(rq $HV1 approved)" = "ok|$D21:$D22|$RQ" ] || fail "handover: approve"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 3662)' and table_name in ('match', 'takeover_request')")" = 2 ] || fail "handover: approve is logged"
+[ "$(apv $A 3663 $RQ)|$(dcl $A 3664 $RQ)|$(who $HV1)" = "request_answered|request_answered|$D21:$D22" ] || fail "handover: an answered ask answers again"
+# Decline: the holder stays, the asker reads the decline, the ask leaves the list; logged.
+[ "$(ask $D22 3670 $HV1)" = ok ] || fail "handover: ask again"
+RQ=$(rq $HV1 pending)
+[ "$(dcl $D22 3671 $RQ)|$(dcl $A 3672 $RQ)|$(who $HV1)|$(rq $HV1 declined)" = "not_authorized|ok|$D21:$D22|$RQ" ] || fail "handover: decline"
+[ "$(as $D22 "select app.scoring_state('$HV1')->'request'->>'status'")|$(ssf $D22 $HV1 holder_label)|$(as $A "select app.takeover_requests('$T15')")" = "declined|Bikash's phone|[]" ] || fail "handover: the decline is read"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 3672)' and table_name='takeover_request'")" = 1 ] || fail "handover: decline is logged"
+# Expire: after 2 minutes the asker reads expired, the Organiser's list is empty and approve and decline say request_expired; nothing moves.
+[ "$(ask $D22 3673 $HV1)" = ok ] || fail "handover: ask a third time"
+RQ=$(rq $HV1 pending)
+q "update app.takeover_request set expires_at = now() - interval '1 second' where id='$RQ'" >/dev/null
+[ "$(as $D22 "select app.scoring_state('$HV1')->'request'->>'status'")|$(as $A "select app.takeover_requests('$T15')")|$(apv $A 3674 $RQ)|$(dcl $A 3675 $RQ)|$(who $HV1)" = "expired|[]|request_expired|request_expired|$D21:$D22" ] || fail "handover: expiry"
+[ "$(ask $D22 3676 $HV1)|$(q "select count(*) from app.takeover_request where match_id='$HV1' and status='pending' and expires_at > now() + interval '1 minute'")" = 'ok|1' ] || fail "handover: ask again after expiry (2 minutes)"
+# Organiser: takes it directly from a held Match (logged), again is ok and changes nothing, a phone can't, a finished Match can't; Bikash's console turns read-only.
+V=$(mver $HV2)
+[ "$(tov $D22 3680 $HV2)|$(tov $A 3681 $HV2)|$(who $HV2)|$(mver $HV2)" = "not_authorized|ok|$A:$D21|$V" ] || fail "handover: Organiser take over"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 3681)' and table_name='match'")|$(tov $A 3682 $HV2)|$(mver $HV2)" = "1|ok|$V" ] || fail "handover: Organiser take over logged, again changes nothing"
+[ "$(ssf $D21 $HV2 mine)|$(ssf $D21 $HV2 holder_label)|$(ssf $A $HV2 mine)" = "false|none|true" ] || fail "handover: the old holder reads an Organiser holding"
+[ "$(tov $A 3683 $HV4)" = match_finished ] || fail "handover: take over a finished Match"
+# A move closes the Match's other pending asks (Ana's ask on HV1 is still pending; handing HV1 to Bikash's phone closes it).
+[ "$(hv $D21 3684 $HV1 $(dev $D22))|$(rq $HV1 pending)" = "ok|" ] || fail "handover: a move closes pending asks"
+# Comeback (4.7's grace with a real move): Bikash's phone records a goal before the move; after the move (here 2 hours back) a goal entered before it is kept, one entered after is
+# not_scoring_device and changes nothing; the old holder now reads another holder.
+cg() { tc $D22 "record_goal('$(cmd $1)', '$S26', '$HV1', '$X19', null, false, 1, 3, $2)"; }
+[ "$(who $HV1)" = "$D22:$D21" ] || fail "handover: comeback set up $(who $HV1)"
+q "update app.match set scoring_moved_at = now() - interval '2 hours', scoring_prev = jsonb_build_array(jsonb_build_object('device', '$D21', 'moved_at', now() - interval '2 hours')) where id='$HV1'" >/dev/null
+[ "$(tc $D21 "record_goal('$(cmd 3690)', '$S26', '$HV1', '$X19', null, false, 1, 3, now() - interval '2 hours 30 minutes')")" = ok ] || fail "handover: comeback, the goal entered before the move"
+f=$(fp $HV1)
+[ "$(tc $D21 "record_goal('$(cmd 3691)', '$S26', '$HV1', '$X19', null, false, 1, 3, now())")|$(tc $D21 "pause_clock('$(cmd 3692)', '$S26', '$HV1', $(mver $HV1))")|$(tg $HV1 $X19)" = 'not_scoring_device|not_scoring_device|1' ] || fail "handover: comeback, entered after the move"
+[ "$f" = "$(fp $HV1)" ] || fail "handover: a handed-back change wrote"
+[ "$(ssf $D21 $HV1 mine)|$(ssf $D21 $HV1 holder_label)" = "false|Ana's phone" ] || fail "handover: the comeback console is read-only"
+# The state's stamp moves with the Match's events, so a read-only phone knows to read the console again (a goal does not change the version).
+ST=$(ssf $D22 $HV1 stamp)
+tc $D22 "record_goal('$(cmd 3697)', '$S26', '$HV1', '$X20', null, false, 1, 4)" >/dev/null
+[ "$(ssf $D22 $HV1 stamp)" != "$ST" ] || fail "handover: the stamp did not move with a goal"
+ST=$(ssf $D22 $HV1 stamp)
+q "update app.match_lineup set version = version + 1 where match_id='$HV1'" >/dev/null
+[ "$(ssf $D22 $HV1 stamp)" != "$ST" ] || fail "handover: the stamp did not move with a line-up"
+ST=$(ssf $D22 $HV1 stamp)
+q "insert into app.live_state (tournament_id, on_air_match_id) values ('$T15', '$HV1') on conflict (tournament_id) do update set on_air_match_id = excluded.on_air_match_id" >/dev/null
+[ "$(ssf $D22 $HV1 stamp)" != "$ST" ] || fail "handover: the stamp did not move with the On-air flag"
+# Two quick moves keep every recent previous holder (A to B to C): HV5 goes Bikash's phone, Ana's phone, then the Organiser. Bikash's phone keeps its grace for changes entered
+# before its own move, Ana's phone for changes entered before hers; neither keeps it for later ones; a move from a free Match leaves no previous holder.
+[ "$(hv $D21 3700 $HV5 $(dev $D22))|$(tov $A 3701 $HV5)|$(who $HV5)|$(q "select jsonb_array_length(scoring_prev) from app.match where id='$HV5'")" = "ok|ok|$A:$D22|2" ] || fail "handover: A to B to C"
+g5() { tc $1 "record_goal('$(cmd $2)', '$S26', '$HV5', '$X19', null, false, 1, 3, $3)"; }
+# Both moves happened long ago (Bikash's phone 3 hours, Ana's phone 2 hours): each keeps its grace only for changes entered before its own move plus the window.
+q "update app.match set scoring_moved_at = now() - interval '2 hours', scoring_prev = jsonb_build_array(jsonb_build_object('device', '$D21', 'moved_at', now() - interval '3 hours'), jsonb_build_object('device', '$D22', 'moved_at', now() - interval '2 hours')) where id='$HV5'" >/dev/null
+[ "$(g5 $D21 3702 "now() - interval '2 hours 30 minutes'")|$(g5 $D22 3703 "now() - interval '1 hour 30 minutes'")|$(g5 $D21 3704 "now() - interval '1 hour 30 minutes'")|$(g5 $D22 3705 'now()')" = 'ok|ok|not_scoring_device|not_scoring_device' ] || fail "handover: A to B to C keeps both graces"
+[ "$(tc $D24 "take_scoring('$(cmd 3706)', '$S26', '$HV3')")|$(tov $A 3707 $HV3)|$(q "select coalesce(scoring_prev_device::text, 'none')||':'||jsonb_array_length(scoring_prev) from app.match where id='$HV3'")" = "ok|ok|$D24:1" ] || fail "handover: a move from a held Match"
+q "update app.match set scoring_device = null, scoring_prev = '[]' where id='$HV3'" >/dev/null
+[ "$(tov $A 3708 $HV3)|$(q "select jsonb_array_length(scoring_prev) from app.match where id='$HV3'")" = 'ok|0' ] || fail "handover: a move from a free Match leaves no previous holder"
+# Strict checks: an ask whose phone is revoked before the Organiser answers is device_not_approved (no grace), a revoked target is refused, and a revoked holder can't hand over.
+q "update app.match set scoring_device = '$D24' where id='$HV3'" >/dev/null
+[ "$(ask $D22 3710 $HV3)" = ok ] || fail "handover: ask before the revoke"
+q "update app.scorer_device set status = 'revoked', revoked_at = now() where user_id = '$D22'" >/dev/null
+[ "$(apv $A 3711 $(rq $HV3 pending))|$(hv $D24 3712 $HV3 $(dev $D22))" = 'device_not_approved|device_not_approved' ] || fail "handover: a phone revoked between the ask and the approve, or before the hand over"
+q "update app.scorer_device set status = 'approved', revoked_at = null where user_id = '$D22'; update app.scorer_device set status = 'revoked', revoked_at = now() + interval '1 hour' where user_id = '$D24'" >/dev/null
+[ "$(hv $D24 3713 $HV3 $(dev $D22))|$(who $HV3)" = "not_authorized|$D24:none" ] || fail "handover: a revoked holder handed over"
+q "update app.scorer_device set status = 'approved', revoked_at = null where user_id = '$D24'" >/dev/null
+# A finished Season refuses everything.
+q "update app.season set status = 'finished' where id='$S26'" >/dev/null
+[ "$(hv $D22 3693 $HV1 $(dev $D21))|$(ask $D21 3694 $HV1)|$(tov $A 3695 $HV1)" = 'season_finished|season_finished|season_finished' ] || fail "handover: a finished Season"
+# No client role writes the table, anon runs nothing.
+for who in $D21 $A; do
+  out=$(as $who "update app.takeover_request set status = 'approved'" 2>&1 || true); [[ $out == *"permission denied"* ]] || fail "handover: $who wrote an ask: $out"
+  out=$(as $who "update app.match set scoring_device = '$who'" 2>&1 || true); [[ $out == *"permission denied"* ]] || fail "handover: $who moved scoring directly: $out"
+done
+for f in "scoring_state('$HV1')" "takeover_requests('$T15')" "ask_take_over('$(cmd 3699)', '$S26', '$HV1')" "move_scoring('$HV1', '$A')"; do
+  out=$(as anon "select app.$f" 2>&1 || true)
+  [[ $out == *"permission denied for function"* ]] || fail "handover anon: can execute $f: $out"
+done
+out=$(as $A "select app.move_scoring('$HV1', '$A')" 2>&1 || true); [[ $out == *"permission denied for function"* ]] || fail "handover: a client ran move_scoring: $out"
 
 q "create table app.t (id int generated always as identity primary key)" >/dev/null
 q "create function app.f() returns int language sql as 'select 1'" >/dev/null

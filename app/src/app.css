@@ -1225,3 +1225,22 @@
   align-items: center;
   gap: var(--spacing-3);
 }
+
+/* Hand over and take over scoring (Story 4.8): the read-only console's top and the Organiser's prompt; its buttons are 64px tall. */
+.handover-follow,
+.takeover-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.takeover-prompt {
+  margin: var(--spacing-3) var(--spacing-4) 0;
+}
+.takeover-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.takeover-prompt .ui-button {
+  min-height: 64px;
+}

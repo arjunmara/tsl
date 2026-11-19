@@ -32,8 +32,10 @@ function PowerPlay({ c }: { c: Console }) {
  * The scoreboard (Story 4.3): read-only, so tapping it does nothing. Home on the left, away on the right, the score in display-xl, the clock
  * and the period under it. Its menu holds "Correct the clock" (the holder only), which asks to confirm before it is logged.
  */
-export function Scoreboard({ c, home, away, kits, canCorrect, onCorrect }: {
+export function Scoreboard({ c, home, away, kits, canCorrect, onCorrect, onHandOver }: {
   c: Console; home: ConsoleTeam; away: ConsoleTeam; kits: Record<string, string>; canCorrect: boolean; onCorrect: (ms: number) => void
+  /** The holder's "Hand over scoring" (Story 4.8); absent for a phone that does not hold scoring. */
+  onHandOver?: () => void
 }) {
   const [menu, setMenu] = useState(false)
   const [fixing, setFixing] = useState(false)
@@ -57,10 +59,11 @@ export function Scoreboard({ c, home, away, kits, canCorrect, onCorrect }: {
       </div>
       <p className="scoreboard-time"><Clock clock={c.clock} /> <span className="body-strong scoreboard-period">{periodLabel(c)}</span></p>
       <PowerPlay c={c} />
-      {canCorrect && c.clock.period > 0 && (
+      {((canCorrect && c.clock.period > 0) || onHandOver) && (
         <div className="scoreboard-menu">
           <SecondaryButton label="Open scoreboard menu" onClick={() => setMenu((m) => !m)} />
-          {menu && !fixing && <SecondaryButton label="Correct the clock" onClick={() => (setFixing(true), setText(formatClock(elapsedAt(c.clock, serverNow()))))} />}
+          {menu && !fixing && canCorrect && c.clock.period > 0 && <SecondaryButton label="Correct the clock" onClick={() => (setFixing(true), setText(formatClock(elapsedAt(c.clock, serverNow()))))} />}
+          {menu && !fixing && onHandOver && <SecondaryButton label="Hand over scoring" onClick={() => (setMenu(false), onHandOver())} />}
           {fixing && (
             <div className="scoreboard-fix">
               <label className="body" htmlFor="fix-clock">New clock time (minutes:seconds)</label>

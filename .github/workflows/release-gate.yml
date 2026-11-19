@@ -110,3 +110,5 @@ jobs:
         run: npm run check:result
       - name: Offline-safe scoring on one phone (Story 4.7)
         run: npm run check:offline
+      - name: Hand over and take over scoring (Story 4.8)
+        run: npm run check:handover

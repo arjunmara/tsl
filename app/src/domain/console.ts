@@ -1,4 +1,6 @@
 import { runCommand, type CommandResult } from './commands'
+import { serverNow } from './clock'
+import { inZone } from './format'
 import { supabase } from './supabase'
 
 // The scoring console's pre-match (Story 4.2, FR-22): who holds scoring, the line-ups and the kit colours of the day.
@@ -83,6 +85,52 @@ export async function readConsole(matchId: string): Promise<Console | 'none' | {
 /** Opening a Match takes scoring when nobody holds it. Needs a signal, so it is never queued. 'scoring_elsewhere': read-only. */
 export const takeScoring = (seasonId: string, matchId: string): Promise<CommandResult> =>
   runCommand('take_scoring', { season_id: seasonId, match_id: matchId })
+
+// Hand over and take over scoring (Story 4.8, FR-3). None of these is queued: each needs a signal.
+/** What the console polls every 2 s: who holds the Match, this phone's own ask and, for the holder, the phones it can hand over to. */
+export type ScoringState = { version: number; stamp: string; status: string; held: boolean; mine: boolean; holderLabel: string | null
+  request: { id: string; status: 'pending' | 'approved' | 'declined' | 'expired' } | null; devices: { id: string; label: string }[] }
+/** The state of one Match's scoring; null when it can't be read (no signal, no access, or an answer in another shape). Never throws. */
+export async function readScoringState(matchId: string): Promise<ScoringState | null> {
+  try {
+    const { data, error } = await supabase.schema('app').rpc('scoring_state', { p_match_id: matchId })
+    const r = data as { version?: number; stamp: string; status: string; held: boolean; mine: boolean; holder_label: string | null; request: ScoringState['request']; devices: ScoringState['devices'] } | null
+    if (error || !r || typeof r.version !== 'number') return null
+    return { version: r.version, stamp: r.stamp ?? '', status: r.status, held: r.held, mine: r.mine, holderLabel: r.holder_label, request: r.request ?? null, devices: r.devices ?? [] }
+  } catch {
+    return null
+  }
+}
+export const handOverScoring = (seasonId: string, matchId: string, deviceId: string, expectedVersion: number): Promise<CommandResult> =>
+  runCommand('hand_over_scoring', { season_id: seasonId, match_id: matchId, device_id: deviceId, expected_version: expectedVersion })
+export const askTakeOver = (seasonId: string, matchId: string): Promise<CommandResult> => runCommand('ask_take_over', { season_id: seasonId, match_id: matchId })
+export const takeOverScoring = (seasonId: string, matchId: string): Promise<CommandResult> => runCommand('take_over_scoring', { season_id: seasonId, match_id: matchId })
+export const answerTakeOver = (seasonId: string, requestId: string, approve: boolean): Promise<CommandResult> =>
+  runCommand(approve ? 'approve_take_over' : 'decline_take_over', { season_id: seasonId, request_id: requestId })
+
+/** A pending ask for the Organiser's prompt. */
+export type TakeoverAsk = { id: string; seasonId: string; label: string; homeCode: string | null; awayCode: string | null; holderLabel: string | null }
+/** The Tournament's pending asks, and whether polling is worth it (a live Match, or one scheduled today). null: can't be read. */
+export async function readTakeovers(tournamentId: string): Promise<TakeoverAsk[] | null> {
+  try {
+    const { data, error } = await supabase.schema('app').rpc('takeover_requests', { p_tournament_id: tournamentId })
+    if (error || !Array.isArray(data)) return null
+    return (data as { id: string; season_id: string; label: string; home_code: string | null; away_code: string | null; holder_label: string | null }[])
+      .map((r) => ({ id: r.id, seasonId: r.season_id, label: r.label, homeCode: r.home_code, awayCode: r.away_code, holderLabel: r.holder_label }))
+  } catch {
+    return null
+  }
+}
+/** True while the Tournament has a live Match, one held by a phone or one scheduled today (Nepal time): the only time an ask can come. null: can't be read. */
+export async function matchesToday(tournamentId: string): Promise<boolean | null> {
+  try {
+    const { data, error } = await supabase.schema('app').from('match').select('status, kick_off, scoring_device').eq('tournament_id', tournamentId).in('status', ['live', 'scheduled'])
+    if (error || !data) return null
+    return (data as { status: string; kick_off: string | null; scoring_device: string | null }[]).some((m) => m.status === 'live' || m.scoring_device !== null || (m.kick_off !== null && inZone(m.kick_off).date === inZone(serverNow()).date))
+  } catch {
+    return null
+  }
+}
 
 /** A Scorer phone's Matches: the live ones and the next scheduled one. */
 export type ScorerMatch = { matchId: string; round: string; label: string | null; kickOff: string | null; status: string; homeCode: string | null; awayCode: string | null; held: boolean; mine: boolean }

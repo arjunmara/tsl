@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { serverNow } from '../../domain/clock'
 import { dropQueuedClock, dropQueuedGoal, forgetRefused, keepConsole, keptConsole, myQueued, noteVersion, send, useOutbox } from '../../domain/commands'
-import { applyQueued, benchFor, clockCommand, elapsedAt, eventText, goalMinute, playerNames, goalsOf, periodButtons, pitchOf, readConsole, scorerName, stepClock, subsReason, takeScoring, timeoutReason, type ClockOp, type Console as ConsoleData, type ConsoleTeam, type EventKind, type MatchEvent } from '../../domain/console'
+import { applyQueued, askTakeOver, benchFor, clockCommand, elapsedAt, eventText, goalMinute, handOverScoring, playerNames, goalsOf, periodButtons, pitchOf, readConsole, readScoringState, scorerName, stepClock, subsReason, takeOverScoring, takeScoring, timeoutReason, type ClockOp, type Console as ConsoleData, type ConsoleTeam, type EventKind, type MatchEvent, type ScoringState } from '../../domain/console'
 import { formatDate, inZone } from '../../domain/format'
 import { messageFor, messages } from '../../domain/messages'
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '../../ui/Button'
@@ -16,6 +16,7 @@ import { EventEditors } from './EventEditors'
 import { EventLog } from './EventLog'
 import { EventButtons } from './EventButtons'
 import { GoalButtons } from './GoalButtons'
+import { Following, HandOverSheet } from './Handover'
 import { Picker, type PickGroup } from './Picker'
 import { PreMatch, startDraft, type Drafts } from './PreMatch'
 import { Scoreboard } from './Scoreboard'
@@ -54,6 +55,8 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   const [today] = useState(() => inZone(serverNow()).date)
   // The Match's version as this phone expects the server to have it: each clock command raises it by one, queued or not.
   const version = useRef(0)
+  // The last scoring state seen: whether this phone held scoring, and the Match's version and event stamp.
+  const seen = useRef({ holder: false, version: 0, stamp: null as string | null })
   // The open picker: a goal's scorer, a goal's assist, or the steps of an event (card colour, Player off, ...).
   const [picker, setPicker] = useState<{ team: string } | { assist: string } | { ev: EventKind; card?: 'yellow' | 'red'; off?: string } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -62,6 +65,9 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   const [announce, setAnnounce] = useState('')
   // The whistle (Story 4.6): the clock stopped here at `at`; the Awards sheet and Finish match send end_match with that time.
   const [fin, setFin] = useState<Finish | null>(null)
+  // Who holds scoring, read every 2 s (Story 4.8); handOpen: the Hand over sheet.
+  const [st, setSt] = useState<ScoringState | null>(null)
+  const [handOpen, setHandOpen] = useState(false)
   const { entries } = useOutbox()
   useWakeLock()
 
@@ -77,17 +83,25 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   }, [onAirNow])
 
   // Reads the console again, keeping the changes still in the outbox (waiting or held for the hand-back) as they are shown here.
-  async function reread() {
+  async function reread(full = false, hadScoring = true) {
     const again = await readConsole(matchId)
-    if (typeof again !== 'object' || !('match' in again)) return
+    if (typeof again !== 'object' || !('match' in again)) return null
+    // A move of scoring: this phone's Match, clock, score and who holds it come from the server; a phone that has just become the holder also takes the line-ups.
+    const gained = full && again.holder && !hadScoring
+    if (gained) {
+      setDrafts(Object.fromEntries(again.teams.map((t) => [t.teamId, startDraft(t)])))
+      setConfirmed(again.teams.length === 2 && again.teams.every((t) => t.lineup))
+    }
     const keep = new Set((await myQueued()).flatMap((e) => [e.commandId, String(e.args.event_id ?? '')]))
     again.events.forEach((e) => void noteVersion(e.id, e.version ?? 1))
     setC((x) => {
       if (!x || typeof x !== 'object') return x
       const mine = (e: MatchEvent) => keep.has(e.id)
       const events = [...again.events.map((s) => (mine(s) ? x.events.find((l) => l.id === s.id) ?? s : s)), ...x.events.filter((l) => mine(l) && !again.events.some((s) => s.id === l.id))]
-      return { ...x, onAir: again.onAir, events: events.sort((a, b) => b.enteredAt.localeCompare(a.enteredAt)) }
+      return { ...x, ...(full ? { match: again.match, clock: again.clock, score: again.score, holder: again.holder, held: again.held, ...(gained ? { teams: again.teams } : {}) } : {}),
+        onAir: again.onAir, events: events.sort((a, b) => b.enteredAt.localeCompare(a.enteredAt)) }
     })
+    return again.match.version
   }
   // The queue of changes that waited has emptied: read the console once more.
   const waitingNow = entries.some((e) => e.state === 'pending')
@@ -105,6 +119,9 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
     let live = true
     void (async () => {
       // With no signal the read isn't tried: with an expired token it would wait for a refresh that cannot happen.
+      // The scoring state is read first: its stamp is never newer than the console read after it, so a change in between shows on the first poll.
+      const base = navigator.onLine ? await readScoringState(matchId) : null
+      if (base) seen.current = { ...seen.current, version: base.version, stamp: base.stamp }
       let first = navigator.onLine ? await readConsole(matchId) : { code: 'offline' as const }
       if (!live) return
       // No signal: the kept console with the changes still waiting to send applied to it, if this phone has opened the Match before.
@@ -143,15 +160,49 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
     }
   }, [matchId, attempt])
 
-  // A phone that does not hold scoring follows the Match: the clock, the score and the Event log come from the server every 5 s.
-  const following = typeof c === 'object' && c !== null && !c.holder && c.match.status !== 'finished'
+  // Every console polls the light scoring state every 2 s (one read at a time) and reads the whole console again when something moved: the holder changed,
+  // or, on a phone that does not hold scoring, the Match's version or its events changed. That is how a read-only phone follows the clock and the score.
+  const polling = typeof c === 'object' && c !== null && c.match.status !== 'finished' && c.match.seasonStatus === 'started'
+  const holderNow = typeof c === 'object' && !!c && c.holder
   useEffect(() => {
-    if (!following) return
-    const t = setInterval(() => void readConsole(matchId).then((r) => {
-      if (typeof r === 'object' && 'match' in r) setC((x) => (x && typeof x === 'object' ? { ...x, match: r.match, clock: r.clock, score: r.score, events: r.events, onAir: r.onAir } : x))
-    }).catch(() => {}), 5000)
-    return () => clearInterval(t)
-  }, [following, matchId])
+    seen.current.holder = holderNow
+  }, [holderNow])
+  useEffect(() => {
+    if (!polling) return
+    let live = true
+    let timer: ReturnType<typeof setTimeout>
+    let busy = false
+    const tick = async () => {
+      if (busy) return
+      busy = true
+      const s = navigator.onLine && !document.hidden ? await readScoringState(matchId) : null
+      if (live && s) {
+        setSt(s)
+        const was = seen.current
+        const moved = was.holder ? !s.mine : s.mine || (was.stamp !== null && (s.version !== was.version || s.stamp !== was.stamp))
+        was.version = s.version
+        was.stamp = s.stamp
+        if (moved) version.current = (await reread(true, was.holder)) ?? version.current
+      }
+      busy = false
+      if (live) timer = setTimeout(() => void tick(), 2000)
+    }
+    // Paused while the tab is hidden; back on screen, an immediate read.
+    const shown = () => {
+      if (!document.hidden) {
+        clearTimeout(timer)
+        void tick()
+      }
+    }
+    document.addEventListener('visibilitychange', shown)
+    void tick()
+    return () => {
+      live = false
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', shown)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reread only reads refs, state setters and the Match id
+  }, [polling, matchId])
 
   const leave = () => navigate(scorer ? { pathname: '/score', hash } : `/t/${tournamentId}`, { state: { tab: 'matches', note: LEFT } })
 
@@ -355,6 +406,25 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   const assistEvent = picker && 'assist' in picker ? c.events.find((x) => x.id === picker.assist) : undefined
   const assistTeam = teamOf(assistEvent?.teamId)
 
+  // Hand over, ask and take over need a signal: sent at once, never queued.
+  async function moveScoring(run: () => Promise<{ ok: boolean; code: string | null }>) {
+    if (busy) return
+    setBusy(true)
+    setProblem(null)
+    setNotice('')
+    const r = await run()
+    setBusy(false)
+    if (!r.ok) setProblem(r.code === 'offline' ? messages.move_offline : messageFor(r.code))
+    if (r.ok || r.code === 'version_conflict' || r.code === 'device_not_approved') version.current = (await reread(true, typeof c === 'object' && !!c && c.holder)) ?? version.current
+  }
+  const handOver = (deviceId: string) => void moveScoring(() => handOverScoring(scope, matchId, deviceId, version.current))
+  const askToTake = () => void moveScoring(async () => {
+    const r = await askTakeOver(scope, matchId)
+    if (r.ok) setSt((x) => (x ? { ...x, request: { id: '', status: 'pending' } } : x))
+    return r
+  })
+  const takeOver = () => void moveScoring(() => takeOverScoring(scope, matchId))
+
   async function show() {
     if (busy) return
     setBusy(true)
@@ -374,7 +444,8 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
         <p className="meta console-date">{formatDate(day)}</p>
         {onAir && <p className="console-air body-strong">● On the stream</p>}
       </header>
-      {!c.holder && c.held && <p className="body-strong" role="status">Another phone is scoring this match.</p>}
+      {!c.holder && c.held && <Following st={st} scorer={scorer} canAsk={running} busy={busy} onAsk={askToTake}
+        onTake={() => setAsk({ title: `Take over scoring from ${st?.holderLabel ?? "an organiser's phone"}?`, before: `Scoring on ${st?.holderLabel ?? "an organiser's phone"}`, after: 'Scoring on this phone', action: 'Take over scoring', run: takeOver })} />}
       <Problem text={problem} />
       <p className="meta" role="status" aria-live="polite">{notice}</p>
       {airQueued && !onAir && <p className="meta" role="status">Goes on the stream when the signal returns.</p>}
@@ -383,7 +454,8 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
       {c.teams.length < 2 && <p className="body">This Match has no Teams yet.</p>}
       {ready && home && away && (
         <>
-          <Scoreboard c={view} home={home} away={away} kits={kits} canCorrect={c.holder && running} onCorrect={(ms) => void clockStep('set', ms)} />
+          <Scoreboard c={view} home={home} away={away} kits={kits} canCorrect={c.holder && running} onCorrect={(ms) => void clockStep('set', ms)}
+            onHandOver={c.holder && running ? () => setHandOpen(true) : undefined} />
           {live && !fin && <GoalButtons home={home} away={away} kits={kits} onGoal={(t) => setPicker({ team: t.teamId })} />}
           {live && !fin && <EventButtons rules={c.rules} onPick={(ev) => setPicker({ ev })} />}
           {c.holder && running && fin && <PrimaryButton label="Finish match" onClick={() => setFin({ ...fin, step: 'sheet' })} />}
@@ -433,6 +505,7 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
       )}
       <EventEditors c={c} home={home!} away={away!} editing={editing} onClose={() => setEditing(null)} onAssist={(id) => setPicker({ assist: id })} picksOf={picksOf}
         setProblem={setProblem} ask={setAsk} change={change} takeAway={(id) => void takeAway(id)} />
+      <HandOverSheet open={handOpen} devices={st?.mine ? st.devices : []} blocked={entries.length > 0} onPick={handOver} onClose={() => setHandOpen(false)} />
       <ConfirmSheet open={!!ask} title={ask?.title ?? ''} before={ask?.before ?? ''} after={ask?.after ?? ''} actionLabel={ask?.action ?? ''} destructive={ask?.destructive}
         note="This is logged." onClose={() => setAsk(null)} onConfirm={() => ask?.run()} />
       {(scorer ? c.holder : true) && c.match.status !== 'finished' && c.match.seasonStatus === 'started' && c.teams.length === 2 && !onAir && !airQueued && (

@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router'
 import { reportError } from './domain/report'
 import { AuthCallback } from './features/auth/AuthCallback'
 import { CheckEmail } from './features/auth/CheckEmail'
@@ -16,6 +16,7 @@ import { Settings } from './features/home/Settings'
 import { Activity } from './features/home/Activity'
 import { CoOrganisers } from './features/home/CoOrganisers'
 import { Scorers } from './features/home/Scorers'
+import { TakeoverPrompt } from './features/home/TakeoverPrompt'
 import { Invite } from './features/auth/Invite'
 import { Register } from './features/register/Register'
 import { Score } from './features/score/Score'
@@ -59,6 +60,16 @@ function PageSaveStatus() {
   return /^\/(t\/[^/]+(\/settings|\/teams\/[^/]+)?|register|score)\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
 }
 
+/** Every Organiser page of a Tournament (the scoring console too): the pages and, over them, a Scorer phone's ask to take over scoring (Story 4.8). */
+function TournamentShell() {
+  return (
+    <>
+      <TakeoverPrompt />
+      <Outlet />
+    </>
+  )
+}
+
 function Crash(): ReactNode {
   throw new Error('Test crash from /__crash for test@example.com, 9800000001')
 }
@@ -86,15 +97,17 @@ export function App() {
             <Route element={<RequireVerified />}>
               <Route path="/new" element={<NewTournament />} />
               <Route path="/t/:tournamentId/setup/:step" element={<SetupStep />} />
-              <Route path="/t/:tournamentId/m/:matchId" element={<MatchDetail />} />
-              <Route path="/t/:tournamentId/score/:matchId" element={<Console />} />
-              <Route path="/t/:tournamentId" element={<Home />} />
-              <Route path="/t/:tournamentId/teams/:teamId" element={<Home />} />
-              <Route path="/t/:tournamentId/settings" element={<Settings />} />
-              <Route path="/t/:tournamentId/settings/co-organisers" element={<CoOrganisers />} />
-              <Route path="/t/:tournamentId/settings/activity" element={<Activity />} />
-              <Route path="/t/:tournamentId/settings/scorers" element={<Scorers />} />
-              <Route path="/t/:tournamentId/settings/:section" element={<SettingsSection />} />
+              <Route element={<TournamentShell />}>
+                <Route path="/t/:tournamentId/m/:matchId" element={<MatchDetail />} />
+                <Route path="/t/:tournamentId/score/:matchId" element={<Console />} />
+                <Route path="/t/:tournamentId" element={<Home />} />
+                <Route path="/t/:tournamentId/teams/:teamId" element={<Home />} />
+                <Route path="/t/:tournamentId/settings" element={<Settings />} />
+                <Route path="/t/:tournamentId/settings/co-organisers" element={<CoOrganisers />} />
+                <Route path="/t/:tournamentId/settings/activity" element={<Activity />} />
+                <Route path="/t/:tournamentId/settings/scorers" element={<Scorers />} />
+                <Route path="/t/:tournamentId/settings/:section" element={<SettingsSection />} />
+              </Route>
             </Route>
           </Route>
           {crashTest && <Route path="/__crash" element={<Crash />} />}
