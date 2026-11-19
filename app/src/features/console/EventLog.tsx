@@ -1,15 +1,29 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { dividerText, eventText, scorerName, type Console, type ConsoleTeam, type EventKind, type MatchEvent, type SquadPlayer } from '../../domain/console'
 import { Sheet } from '../../ui/Sheet'
 
 const icons: Record<EventKind, string> = { card: '🟨', foul: '✋', sub: '🔄', timeout: '⏸', missed_penalty: '🥅' }
 
+// The same query as the two-column layout in app.css, where the log scrolls on its own and so must take focus.
+const GRID = '(min-width: 600px) and (min-height: 500px) and (orientation: landscape)'
+function useScrolls() {
+  const [on, setOn] = useState(() => matchMedia(GRID).matches)
+  useEffect(() => {
+    const q = matchMedia(GRID)
+    const f = () => setOn(q.matches)
+    q.addEventListener('change', f)
+    return () => q.removeEventListener('change', f)
+  }, [])
+  return on
+}
+
 /** The Event log, newest first (Story 4.3 dividers, Story 4.4 goals). waiting: goals and changes still queued on this phone. */
 export function EventLog({ c, waiting, onEdit }: { c: Console; waiting: Set<string>; onEdit: ((e: MatchEvent) => void) | null }) {
+  const scrolls = useScrolls()
   const team = (e: MatchEvent) => c.teams.find((t) => t.teamId === e.teamId)
   const rows = c.events.filter((e) => e.kind === 'goal' || e.teamId || dividerText(e, c.rules))
   return (
-    <section aria-labelledby="event-log">
+    <section className="event-log-panel" aria-labelledby="event-log" tabIndex={scrolls ? 0 : undefined}>
       <h2 id="event-log" className="body-strong">Event log</h2>
       <ul className="event-log">
         {rows.map((e) => {

@@ -112,3 +112,5 @@ jobs:
         run: npm run check:offline
       - name: Hand over and take over scoring (Story 4.8)
         run: npm run check:handover
+      - name: Console layouts and sunlight accessibility (Story 4.9)
+        run: npm run check:console-a11y

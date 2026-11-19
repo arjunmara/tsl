@@ -145,9 +145,8 @@ try {
   const period = await op.getByRole('button', { name: 'End the match', exact: true }).boundingBox()
   const wide = await box('.clock-controls')
   assert.ok(Math.abs(period.width - wide.width) < 2, 'period button is full width')
-  const lastEvent = Math.max(...evb.map((b) => b.y + b.height))
   const resume = await button(op, 'Resume clock').boundingBox()
-  assert.ok(period.y - (resume.y + resume.height) >= 24 - 1 && period.y > lastEvent, 'period button 24px below its own row')
+  assert.ok(period.y - (resume.y + resume.height) >= 24 - 1 && period.y + period.height <= goal.y, 'period button 24px below its own row, above the GOAL buttons (Story 4.9 order)')
 
   // Cancel, Escape and outside record nothing.
   await button(op, 'Record card').click()

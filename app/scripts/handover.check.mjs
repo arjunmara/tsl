@@ -42,6 +42,8 @@ const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers
 // The one Match: live, held by `holder` ('bikash', 'ana' or 'org'). requests: asks by phone. rows: what the Organiser's Match list holds.
 const mock = { down: null, prev: null, movedAt: 0, goals: [], calls: [], holder: 'bikash', version: 4, requests: [], rows: [], inflight: 0, maxInflight: 0, nextReq: 1 }
 const calls = (name) => mock.calls.filter((c) => c.cmd === name)
+// A tap sends its command a moment later: wait up to 5 s for the count.
+const called = async (name, n) => { for (let i = 0; i < 50 && calls(name).length < n; i++) await new Promise((r) => setTimeout(r, 100)); assert.equal(calls(name).length, n, `${name} sent ${calls(name).length} times`) }
 const label = (who) => (who === 'org' ? null : LABEL[who])
 const askStatus = (r) => (r.status === 'pending' && r.expires < Date.now() ? 'expired' : r.status)
 // A move changes no version; the old holder keeps a grace of 3 s for changes entered before the move (the server's is an hour).
@@ -210,7 +212,7 @@ try {
   await text(op, "Bikash's phone asks to take over scoring of RTM v RE8 from Ana's phone.").waitFor({ timeout: 6000 })
   for (const name of ["Let Bikash's phone score", "Keep Ana's phone"]) assert.ok((await button(op, name).boundingBox()).height >= 64, `${name} is under 64px`)
   await button(op, "Keep Ana's phone").click()
-  assert.equal(calls('decline_take_over').length, 1)
+  await called('decline_take_over', 1)
   await text(bp, "The organiser said no. Ana's phone keeps scoring.").waitFor({ timeout: 4500 })
   await text(op, "Bikash's phone asks to take over scoring of RTM v RE8 from Ana's phone.").waitFor({ state: 'detached', timeout: 6000 })
   await gone(ap, "Scoring on Bikash's phone.")
@@ -220,7 +222,7 @@ try {
   await text(bp, 'Waiting for an organiser to approve.').waitFor()
   await button(op, "Let Bikash's phone score").waitFor({ timeout: 6000 })
   await button(op, "Let Bikash's phone score").click()
-  assert.equal(calls('approve_take_over').length, 1)
+  await called('approve_take_over', 1)
   await button(bp, 'Pause clock').or(button(bp, 'Resume clock')).waitFor({ timeout: 4500 })
   await text(ap, "Scoring on Bikash's phone.").waitFor({ timeout: 4500 })
 
@@ -247,7 +249,7 @@ try {
   await text(op, "Take over scoring from Bikash's phone?").waitFor()
   assert.equal(calls('take_over_scoring').length, 0, 'took over before confirming')
   await op.getByRole('dialog').getByRole('button', { name: 'Take over scoring', exact: true }).click()
-  assert.equal(calls('take_over_scoring').length, 1)
+  await called('take_over_scoring', 1)
   await text(bp, "Scoring on an organiser's phone.").waitFor({ timeout: 4500 })
   await text(ap, "Scoring on an organiser's phone.").waitFor({ timeout: 4500 })
   await text(op, "Scoring on Bikash's phone.").waitFor({ state: 'detached' })

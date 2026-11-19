@@ -952,14 +952,80 @@
   margin: 0;
 }
 
+/* Console layouts and sunlight (Story 4.9). Phone: one column (Scoreboard, Clock, GOAL, Event buttons, Save status, Event log). */
+:root {
+  --console-toast-room: 11rem;
+}
+.console:focus {
+  outline: none;
+}
+.console-body,
+.console-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  min-width: 0;
+}
+.console .save-bar {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+/* Every console control is at least 64px, wraps its words and never clips a name. */
+.console button,
+.takeover-prompt button,
+.console .ui-save-toggle,
+.console .ui-input {
+  min-height: 64px;
+  min-width: 64px;
+  overflow-wrap: anywhere;
+}
+.console .goal-button,
+.console .picker-tile[aria-pressed='true'] {
+  color: var(--console-on-action);
+}
+.console .goal-button {
+  min-height: 6rem;
+}
+.console .goal-button,
+.console .picker-tile[aria-pressed='true'],
+.console .ui-primary:not(:disabled),
+.takeover-prompt .ui-primary:not(:disabled) {
+  border-color: var(--ink);
+}
+.console .ui-sheet[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+/* Tablet landscape: the Scoreboard and every control on the left, the Event log on the right with its own scroll. */
+@media (min-width: 600px) and (min-height: 500px) and (orientation: landscape) {
+  .console-body {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--spacing-4);
+    align-items: start;
+  }
+  .event-log-panel {
+    position: sticky;
+    top: var(--spacing-3);
+    max-height: calc(100dvh - var(--console-toast-room) - var(--spacing-3));
+    overflow-y: auto;
+  }
+}
+
 /* Scoring console (Story 4.2): full screen, no App bar or Tab bar; a strip on top, then the pre-match step. */
 .console {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-3);
   min-height: 100dvh;
-  padding: var(--spacing-3) var(--spacing-4);
+  /* The bottom 11rem is kept for the Undo toast, empty or not, so it never covers the last control. */
+  padding: var(--spacing-3) var(--spacing-4) var(--console-toast-room);
   box-sizing: border-box;
+}
+html:has(.console) {
+  scroll-padding-bottom: var(--console-toast-room);
 }
 .console-strip {
   display: flex;
@@ -980,15 +1046,31 @@
 }
 /* Scoreboard and clock (Story 4.3): home, score, away; the clock and period in action ink below. */
 .scoreboard {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
 }
 .scoreboard-grid {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
   gap: var(--spacing-2);
+}
+.scoreboard-score {
+  grid-column: 1 / -1;
+  order: -1;
+  font-size: clamp(var(--display-xl-font-size), 10vw, 6.5rem);
+}
+/* Home, score, away on one row once the card is wide enough (em: it widens its threshold with the text size). */
+@container (min-width: 14em) {
+  .scoreboard-grid {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+  .scoreboard-score {
+    grid-column: auto;
+    order: 0;
+  }
 }
 .scoreboard-team {
   display: flex;
@@ -1033,6 +1115,9 @@
   background: currentColor;
 }
 .event-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1065,6 +1150,7 @@
 }
 .prematch-player {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-3);
   min-height: 48px;
@@ -1074,7 +1160,7 @@
   text-align: right;
 }
 .prematch-name {
-  flex: 1;
+  flex: 1 1 8rem;
   overflow-wrap: anywhere;
 }
 .prematch-tick {
@@ -1108,7 +1194,7 @@
 /* Goals (Story 4.4): two GOAL buttons, the Player picker, the Undo toast and the goal rows of the Event log. */
 .goal-buttons {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
   gap: var(--spacing-3);
 }
 .goal-button {
@@ -1143,7 +1229,7 @@
 }
 .picker-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(8rem, 100%), 1fr));
   gap: var(--spacing-2);
   margin: 0;
   padding: 0;
@@ -1167,37 +1253,36 @@
   flex-direction: column;
   gap: var(--spacing-2);
   padding: var(--spacing-3);
-  border: 2px solid var(--line);
+  border: 2px solid var(--ink-muted);
   border-radius: var(--rounded-md);
-  background: var(--surface);
-  box-shadow: 0 4px 16px rgb(10 26 63 / 0.3);
 }
 .undo-toast p {
   margin: 0;
 }
 .undo-toast-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-2);
 }
 .undo-toast-actions .ui-button {
-  flex: 1;
-  min-height: 4rem;
+  flex: 1 1 6rem;
 }
 .event-goal {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-2);
   min-height: 3rem;
 }
 .event-goal-text {
-  flex: 1;
+  flex: 1 1 8rem;
   min-width: 0;
 }
 
 /* Cards, fouls, substitutions, timeouts and power play (Story 4.5). */
 .event-buttons {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
   gap: var(--spacing-2);
 }
 .event-button {

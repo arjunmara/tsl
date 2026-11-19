@@ -53,11 +53,11 @@ function ScreenBoundary({ children }: { children: ReactNode }) {
 // in its message must not reach the log.
 const crashTest = import.meta.env.DEV || new URLSearchParams(location.search).has('crashtest')
 /**
- * The page-wide Save status, except where a screen shows it itself: the Tournament home, an open Team and the Settings list (in the App bar)
- * and the Registration link form (only while it's open).
+ * The page-wide Save status, except where a screen shows it itself: the Tournament home, an open Team and the Settings list (in the App bar),
+ * the Registration link form (only while it's open) and the scoring console (inside it, before the Event log).
  */
 function PageSaveStatus() {
-  return /^\/(t\/[^/]+(\/settings|\/teams\/[^/]+)?|register|score)\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
+  return /^\/(t\/[^/]+(\/settings|\/teams\/[^/]+|\/score\/[^/]+)?|register|score(\/[^/]+)?)\/?$/.test(useLocation().pathname) ? null : <SaveStatusBar />
 }
 
 /** Every Organiser page of a Tournament (the scoring console too): the pages and, over them, a Scorer phone's ask to take over scoring (Story 4.8). */

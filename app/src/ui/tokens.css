@@ -22,6 +22,9 @@
   --saved: #12823b;
   --live: #d71920;
 
+  /* Console only (Story 4.9): text on the orange fill at 7:1 in sunlight; the same in both themes. */
+  --console-on-action: #050d22;
+
   /* Dark theme (TSL navy) */
   --bg-dark: #0a1a3f;
   --surface-dark: #12285c;

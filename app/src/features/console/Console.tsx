@@ -19,6 +19,7 @@ import { GoalButtons } from './GoalButtons'
 import { Following, HandOverSheet } from './Handover'
 import { Picker, type PickGroup } from './Picker'
 import { PreMatch, startDraft, type Drafts } from './PreMatch'
+import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { Scoreboard } from './Scoreboard'
 import { UndoToast } from './UndoToast'
 
@@ -206,11 +207,12 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
 
   const leave = () => navigate(scorer ? { pathname: '/score', hash } : `/t/${tournamentId}`, { state: { tab: 'matches', note: LEFT } })
 
-  if (c === null) return <main className="console" aria-busy="true"><p className="body">Opening the match…</p></main>
+  if (c === null) return <main className="console" aria-busy="true"><SaveStatusBar /><p className="body">Opening the match…</p></main>
   if (c === 'none') return <Unavailable />
   if (typeof c === 'string') {
     return (
-      <main className="console">
+      <main className="console" tabIndex={-1}>
+        <SaveStatusBar />
         <Problem text={c === 'offline' ? messages.console_unopened : messages.console_unknown} />
         <SecondaryButton label="Try opening the match again" onClick={() => (setC(null), setAttempt((n) => n + 1))} />
         <SecondaryButton label="Leave console" onClick={leave} />
@@ -437,7 +439,7 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
   }
 
   return (
-    <main className="console">
+    <main className="console" tabIndex={-1}>
       <header className="console-strip">
         <SecondaryButton label="Leave console" onClick={leave} />
         <h1 className="title console-title">{ready ? `${home.code} v ${away.code}` : 'Match'}</h1>
@@ -446,6 +448,7 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
       </header>
       {!c.holder && c.held && <Following st={st} scorer={scorer} canAsk={running} busy={busy} onAsk={askToTake}
         onTake={() => setAsk({ title: `Take over scoring from ${st?.holderLabel ?? "an organiser's phone"}?`, before: `Scoring on ${st?.holderLabel ?? "an organiser's phone"}`, after: 'Scoring on this phone', action: 'Take over scoring', run: takeOver })} />}
+      {!(ready && home && away) && <SaveStatusBar />}
       <Problem text={problem} />
       <p className="meta" role="status" aria-live="polite">{notice}</p>
       {airQueued && !onAir && <p className="meta" role="status">Goes on the stream when the signal returns.</p>}
@@ -454,10 +457,10 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
       {c.teams.length < 2 && <p className="body">This Match has no Teams yet.</p>}
       {ready && home && away && (
         <>
+          <div className="console-body">
+          <div className="console-controls">
           <Scoreboard c={view} home={home} away={away} kits={kits} canCorrect={c.holder && running} onCorrect={(ms) => void clockStep('set', ms)}
             onHandOver={c.holder && running ? () => setHandOpen(true) : undefined} />
-          {live && !fin && <GoalButtons home={home} away={away} kits={kits} onGoal={(t) => setPicker({ team: t.teamId })} />}
-          {live && !fin && <EventButtons rules={c.rules} onPick={(ev) => setPicker({ ev })} />}
           {c.holder && running && fin && <PrimaryButton label="Finish match" onClick={() => setFin({ ...fin, step: 'sheet' })} />}
           {c.holder && running && !fin && (
             <div className="clock-controls">
@@ -472,7 +475,15 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
                 : <SecondaryButton key={b.label} label={b.label} onClick={() => void clockStep('next')} />)}</div>
             </div>
           )}
+          {live && !fin && <GoalButtons home={home} away={away} kits={kits} onGoal={(t) => setPicker({ team: t.teamId })} />}
+          {toastEvent && live && <UndoToast key={toastEvent.id} label={toastEvent.kind === 'goal' ? 'Goal recorded' : 'Event recorded'} text={toastText ?? ''}
+            onUndo={() => void takeAway(toastEvent.id)}
+            onAddAssist={toastEvent.kind !== 'goal' || toastEvent.ownGoal ? null : () => (setToast(null), setPicker({ assist: toastEvent.id }))} onExpire={() => setToast(null)} />}
+          {live && !fin && <EventButtons rules={c.rules} onPick={(ev) => setPicker({ ev })} />}
+          <SaveStatusBar />
+          </div>
           <EventLog c={c} waiting={waiting} onEdit={live ? (e) => setEditing(e.id) : null} />
+          </div>
         </>
       )}
       {ready && drafts && c.match.status === 'scheduled' && (
@@ -480,9 +491,6 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
           onSwap={() => (setConfirmed(false), setSwapped((s) => !s))} onConfirm={() => void confirm()} />
       )}
       <p className="ui-visually-hidden" role="status" aria-live="polite">{announce}</p>
-      {toastEvent && live && <UndoToast key={toastEvent.id} label={toastEvent.kind === 'goal' ? 'Goal recorded' : 'Event recorded'} text={toastText ?? ''}
-        onUndo={() => void takeAway(toastEvent.id)}
-        onAddAssist={toastEvent.kind !== 'goal' || toastEvent.ownGoal ? null : () => (setToast(null), setPicker({ assist: toastEvent.id }))} onExpire={() => setToast(null)} />}
       {flow && <Picker title={flow.title} groups={flow.groups} extras={flow.extras} onPick={flow.pick} onClose={() => setPicker(null)} />}
       <Picker title={flow ? null : pickTeam ? `Who scored for ${pickTeam.name}?` : assistTeam ? `Who assisted for ${assistTeam.name}?` : null}
         players={pickTeam ? squadOf(pickTeam) : squadOf(assistTeam).filter((p) => p.playerId !== assistEvent?.playerId)}

@@ -66,8 +66,8 @@ export function Sheet({ open, title, describedBy, dismissOutside, onClose, child
     shown.current = false
     const o = opener.current
     opener.current = null
-    // The opener may be gone (e.g. its row was deleted): fall back to main, else leave focus to the browser.
-    if (o?.isConnected) o.focus()
+    // The opener may be gone (e.g. its row was deleted, or its menu closed as the sheet opened, leaving the body): fall back to main, else leave focus to the browser.
+    if (o?.isConnected && o !== document.body) o.focus()
     else document.querySelector<HTMLElement>('main')?.focus()
     closeRef.current()
   }
