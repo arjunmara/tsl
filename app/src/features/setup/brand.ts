@@ -20,6 +20,12 @@ export const textColours = (): TextColours => ({ navy: token('--bg-dark'), white
 const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
 const toHex = (c: number[]) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')
 
+/** a moved t of the way towards b (both #rrggbb). */
+export const mix = (a: string, b: string, t: number) => toHex(channels(a).map((v, i) => v + (channels(b)[i]! - v) * t))
+/** a moved t of the way to black, or to white. */
+export const darken = (a: string, t: number) => toHex(channels(a).map((v) => v * (1 - t)))
+export const lighten = (a: string, t: number) => toHex(channels(a).map((v) => v + (255 - v) * t))
+
 function luminance(hex: string) {
   const [r = 0, g = 0, b = 0] = channels(hex).map((v) => {
     const s = v / 255

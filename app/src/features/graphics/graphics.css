@@ -7,7 +7,7 @@
   position: relative; box-sizing: border-box; width: 1080px; height: 1350px; padding: 96px 88px 88px; display: flex; flex-direction: column; align-items: center;
   text-align: center; overflow: hidden; font-variant-numeric: tabular-nums lining-nums;
 }
-.graphic-classic * { box-sizing: border-box; margin: 0; }
+.graphic-classic *, .graphic-player * { box-sizing: border-box; margin: 0; }
 .graphic-frame { position: absolute; inset: 28px; border: 3px solid; pointer-events: none; }
 .graphic-eyebrow { display: flex; align-items: center; gap: 24px; font: var(--graphic-label-font-weight) var(--graphic-label-font-size) / var(--graphic-label-line-height) var(--graphic-label-font-family); letter-spacing: var(--graphic-label-letter-spacing); text-transform: uppercase; }
 .graphic-logo { width: 88px; height: 88px; object-fit: contain; }
@@ -36,6 +36,27 @@
 .graphic-plate img { width: 64px; height: 64px; object-fit: contain; flex: none; }
 .graphic-plate span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .graphic-made { margin-top: 24px; font: 700 26px / 1.2 var(--graphic-label-font-family); letter-spacing: 3px; text-transform: uppercase; }
+
+/* The Player Template (Story 5.3): layers back to front by order in the markup; colours inline. */
+.graphic-player { position: relative; box-sizing: border-box; width: 1080px; height: 1350px; overflow: hidden; text-align: center; font-variant-numeric: tabular-nums lining-nums; }
+.graphic-glow { position: absolute; inset: 0; }
+.graphic-player .graphic-eyebrow { position: absolute; top: 64px; left: 0; right: 0; justify-content: center; }
+.graphic-player .graphic-round { position: absolute; top: 164px; left: 88px; right: 88px; margin: 0; font-size: 56px; line-height: 1.1; }
+.graphic-word { position: absolute; top: 300px; left: 50%; transform: translateX(-50%); white-space: nowrap; text-transform: uppercase;
+  font: var(--graphic-word-font-weight) 400px / var(--graphic-word-line-height) var(--graphic-word-font-family); letter-spacing: var(--graphic-word-letter-spacing); }
+/* Bottom-anchored; the shoulders fade over the outer 14% so the cut edge never shows. */
+.graphic-cutout { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); height: 1000px; width: auto; max-width: 100%;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, black 14%, black 86%, transparent 100%); mask-image: linear-gradient(90deg, transparent 0, black 14%, black 86%, transparent 100%); }
+.graphic-info { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 36px 88px 64px; }
+.graphic-tagrow { display: flex; align-items: center; gap: 24px; }
+.graphic-tag { padding: 8px 20px; font: var(--graphic-label-font-weight) 36px / 1.1 var(--graphic-label-font-family); letter-spacing: 4px; text-transform: uppercase; }
+.graphic-minute, .graphic-mini { font: var(--graphic-team-font-weight) 64px / 1 var(--graphic-team-font-family); }
+.graphic-pname { max-width: 100%; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; text-transform: uppercase;
+  font: var(--graphic-headline-font-weight) 96px / 1 var(--graphic-headline-font-family); }
+.graphic-pteam, .graphic-assist, .graphic-info .graphic-when { font: var(--graphic-fact-font-weight) var(--graphic-fact-font-size) / var(--graphic-fact-line-height) var(--graphic-fact-font-family); }
+.graphic-pteam { text-transform: uppercase; font-family: var(--graphic-team-font-family); }
+.graphic-info .graphic-sponsors { margin-top: 12px; }
+.graphic-info .graphic-made { margin-top: 12px; }
 
 .graphic-card { display: grid; gap: var(--spacing-3); }
 .graphic-card .graphic-thumb { max-width: 24rem; }
