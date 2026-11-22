@@ -9,16 +9,23 @@ import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { overlay, Unavailable, UUID } from '../setup/Setup'
 import { GraphicsTab } from '../graphics/GraphicsTab'
 import { Fixtures } from './Fixtures'
+import { Seasons } from './Seasons'
 import { FinishCard } from './FinishCard'
 import { StartCard } from './StartCard'
 import { statusLabel } from '../tournaments/MyTournaments'
 import { TeamPage } from './TeamPage'
 import { Teams } from './Teams'
 
-export type Head = { name: string; logoPath: string | null; logoBlob: Blob | null; season: SeasonSummary & { answers: SeasonAnswers; structure: Structure } }
+export type Head = {
+  name: string; logoPath: string | null; logoBlob: Blob | null; season: SeasonSummary & { answers: SeasonAnswers; structure: Structure }
+  /** Every Season, newest first. */
+  seasons: SeasonSummary[]
+}
 
 // The last server read per Tournament, so the home opens offline after one visit in this page load.
 const lastHead = new Map<string, Head>()
+/** Forgets the last read of the Tournament (a new Season makes it stale). */
+export const forgetHead = (id: string) => void lastHead.delete(id)
 
 /** The Tournament's name and logo (with this device's pending changes laid over) and its latest Season. */
 export async function readHead(id: string): Promise<Head | 'missing' | 'offline' | 'unknown'> {
@@ -27,14 +34,14 @@ export async function readHead(id: string): Promise<Head | 'missing' | 'offline'
   if ('code' in r) head = r.code === 'offline' ? lastHead.get(id) : undefined
   else if (r.tournament?.season) {
     const t = r.tournament
-    head = { name: t.name, logoPath: t.logoPath, logoBlob: null, season: t.season! }
+    head = { name: t.name, logoPath: t.logoPath, logoBlob: null, season: t.season!, seasons: t.seasons }
     lastHead.set(id, head)
   } else return 'missing'
   if (!head) return 'code' in r ? r.code : 'unknown'
   const queued = await queuedFor(id)
   const v = overlay({ name: head.name, primary: '', secondary: '', logoPath: head.logoPath, logoBlob: head.logoBlob }, queued)
   // A finished step still waiting to send counts, as in the wizard.
-  const step = Math.max(head.season.setupStep, ...queued.filter((e) => e.name === 'set_setup_step').map((e) => Number(e.args.step) || 0))
+  const step = Math.max(head.season.setupStep, ...queued.filter((e) => e.name === 'set_setup_step' && e.args.season_id === head.season.id).map((e) => Number(e.args.step) || 0))
   // Season answers still waiting to send count too (the Teams tab needs the consent statement and dates).
   const answers = { ...head.season.answers }
   for (const e of queued) {
@@ -153,8 +160,7 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
               <details className="season-switch">
                 <summary className="meta">Season {h.season.number} · {statusLabel[h.season.status]} <span aria-hidden="true">▾</span></summary>
                 <div className="account-panel">
-                  <p className="body">Season {h.season.number} is this Tournament's current Season.</p>
-                  <p className="meta">Past Seasons and new Seasons come in a later update.</p>
+                  <Seasons tournamentId={tournamentId} seasons={h.seasons} />
                 </div>
               </details>
             </div>

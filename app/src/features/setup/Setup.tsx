@@ -1,5 +1,5 @@
 import { useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Navigate, useLocation, useNavigate, useParams } from 'react-router'
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { forgetRefused, queuedFor, send, type OutboxEntry, type Upload } from '../../domain/commands'
 import { messageFor, messages } from '../../domain/messages'
 import {
@@ -13,7 +13,7 @@ import { Problem } from '../auth/Screen'
 import { resizeImage } from '../../domain/image'
 import { brandDefaults, readable, textColours } from './brand'
 import { StepFour } from './Format'
-import { Frame, SeasonStarted, SettingsMode, useLeave } from './Frame'
+import { Frame, PastSeason, SeasonStarted, SettingsMode, useLeave } from './Frame'
 import { StepFive, StepSix } from './LineupStructure'
 import { overlaySponsors, StepSeven } from './Sponsors'
 import { StepThree, StepTwo } from './RulesDates'
@@ -169,14 +169,28 @@ function overlayAnswers(base: SeasonAnswers, queued: OutboxEntry[]): SeasonAnswe
 // The last server read per Tournament: offline, the next step shows it (each step remounts on navigation).
 // ponytail: kept for this page load only; a reload offline shows "Can't reach the server".
 const lastRead = new Map<string, Base>()
+/** Forgets the device's last read of the Tournament (a new Season makes it stale). */
+export const forgetRead = (tournamentId: string) => void lastRead.delete(tournamentId)
+// Pending entries that belong to this Season: those naming another Season are not its edits.
+const ofSeason = (queued: OutboxEntry[], seasonId: string) => queued.filter((e) => e.args.season_id === undefined || e.args.season_id === seasonId)
 
 function LoadStep(props: { tournamentId: string; step: number }) {
   const [started, setStarted] = useState<false | 'started' | 'finished'>(false)
-  return <SeasonStarted.Provider value={started}><LoadStepBody {...props} onStarted={setStarted} /></SeasonStarted.Provider>
+  // A ?season= Season is locked (0) until its read says whether it is a past one.
+  const [past, setPast] = useState<number | null>(useSearchParams()[0].get('season') ? 0 : null)
+  return (
+    <SeasonStarted.Provider value={started}>
+      <PastSeason.Provider value={past}><LoadStepBody {...props} onStarted={setStarted} onPast={setPast} /></PastSeason.Provider>
+    </SeasonStarted.Provider>
+  )
 }
 
-function LoadStepBody({ tournamentId, step, onStarted }: { tournamentId: string; step: number; onStarted: (started: false | 'started' | 'finished') => void }) {
+function LoadStepBody({ tournamentId, step, onStarted, onPast }: {
+  tournamentId: string; step: number; onStarted: (started: false | 'started' | 'finished') => void; onPast: (number: number | null) => void
+}) {
   const settings = useContext(SettingsMode)
+  // ?season=<id> in Settings: that past Season, read-only.
+  const seasonParam = useSearchParams()[0].get('season')
   const [loaded, setLoaded] = useState<Loaded | 'missing' | null>(null)
   const [problem, setProblem] = useState<{ step: number; text: string } | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -189,10 +203,10 @@ function LoadStepBody({ tournamentId, step, onStarted }: { tournamentId: string;
     const presetsRead = formatPresets()
     let presets: FormatPreset[] = []
     // Step 7 also lays the pending Sponsor commands over the Season's Sponsors (none for a Season not on the server).
-    const show = (b: Base, queued: OutboxEntry[], sponsors: Sponsor[] = []) => live && setLoaded({
-      ...overlaySponsors(sponsors, queued, b.seasonId), step, seasonId: b.seasonId, initial: overlay(b.values, queued), answers: overlayAnswers(b.answers, queued),
-      settings: overlaySettings(b.settings, queued, presets), lineup: overlayCommand(b.lineup, queued, 'set_lineup_rules'),
-      structure: overlayCommand(b.structure, queued, 'set_structure'), presets, setupStep: Math.max(b.setupStep, queuedStep(queued)),
+    const show = (b: Base, all: OutboxEntry[], sponsors: Sponsor[] = []) => live && setLoaded({
+      ...overlaySponsors(sponsors, ofSeason(all, b.seasonId), b.seasonId), step, seasonId: b.seasonId, initial: overlay(b.values, all), answers: overlayAnswers(b.answers, ofSeason(all, b.seasonId)),
+      settings: overlaySettings(b.settings, ofSeason(all, b.seasonId), presets), lineup: overlayCommand(b.lineup, ofSeason(all, b.seasonId), 'set_lineup_rules'),
+      structure: overlayCommand(b.structure, ofSeason(all, b.seasonId), 'set_structure'), presets, setupStep: Math.max(b.setupStep, queuedStep(ofSeason(all, b.seasonId))),
     })
     void (async () => {
       if (step === 4 || step === 5) {
@@ -206,17 +220,17 @@ function LoadStepBody({ tournamentId, step, onStarted }: { tournamentId: string;
       const defaults: Values = { name: '', primary: d.primary, secondary: d.secondary, logoPath: null, logoBlob: null }
       const pending = await queuedFor(tournamentId)
       const create = pending.find((e) => e.name === 'create_tournament')
-      if (create) {
+      if (create && !seasonParam) {
         // Not on the server yet (or on its way): no need to wait for a read that may not answer offline.
         // Its Season starts at version 1, even if the page closed before the create's first answer.
         const seasonId = String(create.args.season_id)
         await noteNewSeason(seasonId)
         return show({ seasonId, values: defaults, answers: noAnswers, settings: noSettings, lineup: NEW_LINEUP, structure: NEW_STRUCTURE, setupStep: 0 }, pending)
       }
-      const r = await tournamentSetup(tournamentId)
+      const r = await tournamentSetup(tournamentId, seasonParam ?? undefined)
       if (!live) return
       if ('code' in r) {
-        const last = lastRead.get(tournamentId)
+        const last = seasonParam ? undefined : lastRead.get(tournamentId)
         if (r.code === 'offline' && last) {
           const sp = step === 7 ? await seasonSponsors(last.seasonId) : { sponsors: [] }
           if (!live) return
@@ -227,6 +241,10 @@ function LoadStepBody({ tournamentId, step, onStarted }: { tournamentId: string;
       }
       const t = r.tournament
       if (!t || !t.season) return setLoaded('missing')
+      // An unknown ?season= (or another Tournament's) is not found, never the current Season.
+      if (seasonParam && t.season.id !== seasonParam) return setLoaded('missing')
+      const past = !!seasonParam && t.season.number < Math.max(...t.seasons.map((x) => x.number))
+      onPast(past ? t.season.number : null)
       onStarted(t.season.status === 'started' || t.season.status === 'finished' ? t.season.status : false)
       let sponsors: Sponsor[] = []
       if (step === 7) {
@@ -243,13 +261,14 @@ function LoadStepBody({ tournamentId, step, onStarted }: { tournamentId: string;
       // Entries pending before the read and gone after it may have been applied after the read answered: count
       // both lists, so neither a value nor a finished step is lost in that gap.
       const after = await queuedFor(tournamentId)
+      if (past) return show(base, [], sponsors)
       lastRead.set(tournamentId, base)
       show(base, [...new Map([...pending, ...after].map((e) => [e.seq, e])).values()].sort((a, b) => a.seq - b.seq), sponsors)
     })()
     return () => {
       live = false
     }
-  }, [tournamentId, step, attempt, onStarted])
+  }, [tournamentId, step, attempt, onStarted, onPast, seasonParam])
 
   const back = useLeave(tournamentId, step)
   if (loaded === 'missing') return step === 1 || settings ? <Unavailable /> : <Navigate to={`/t/${tournamentId}/setup/1`} replace />

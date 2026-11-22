@@ -53,6 +53,8 @@ export type Template = (typeof TEMPLATES)[number]
 export type TournamentSetup = {
   template: Template; id: string; name: string; brandPrimary: string | null; brandSecondary: string | null; logoPath: string | null; version: number
   season: (SeasonSummary & { answers: SeasonAnswers; settings: MatchSettings; lineup: LineupRules; structure: Structure }) | null
+  /** Every Season of the Tournament, newest first. */
+  seasons: SeasonSummary[]
 }
 
 type SeasonRow = { id: string; number: number; status: SeasonStatus; setup_step?: number; version?: number }
@@ -68,9 +70,9 @@ const BUCKET = 'tournament-assets'
 export const logoUrl = (path: string) => supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
 export const assetBucket = BUCKET
 
+const summary = (s: SeasonRow): SeasonSummary => ({ id: s.id, number: s.number, status: s.status, setupStep: s.setup_step ?? 0 })
 const latest = (seasons: SeasonRow[]): SeasonSummary | null =>
-  seasons.reduce<SeasonSummary | null>((a, s) => (!a || s.number > a.number
-    ? { id: s.id, number: s.number, status: s.status, setupStep: s.setup_step ?? 0 } : a), null)
+  seasons.reduce<SeasonSummary | null>((a, s) => (!a || s.number > a.number ? summary(s) : a), null)
 
 /** A Sponsor as app.sponsor holds it, keyed as the commands name its fields. */
 export type Sponsor = { id: string; caption: string; logo_path: string; ad_paths: string[] }
@@ -134,8 +136,8 @@ export async function myTournaments(): Promise<{ tournaments: TournamentSummary[
   }
 }
 
-/** One of the caller's Tournaments for the setup wizard; tournament null when it isn't on the server (yet). */
-export async function tournamentSetup(id: string): Promise<{ tournament: TournamentSetup | null } | { code: 'offline' | 'unknown' }> {
+/** One of the caller's Tournaments for the setup wizard (its latest Season, or seasonId's); tournament null when it isn't on the server (yet). */
+export async function tournamentSetup(id: string, seasonId?: string): Promise<{ tournament: TournamentSetup | null } | { code: 'offline' | 'unknown' }> {
   try {
     const { data, error, status } = await supabase.schema('app').from('tournament')
       .select('id, name, brand_primary, brand_secondary, logo_path, version, template, season(id, number, status, setup_step, version, description, rules, photo_consent, starts_on, ends_on, registration_deadline, venue, ' +
@@ -144,13 +146,14 @@ export async function tournamentSetup(id: string): Promise<{ tournament: Tournam
     if (error) return failed(status)
     const t = (data as unknown as Row[]).find((r) => r.id === id)
     if (t && Number.isInteger(t.version)) await noteVersion(t.id, t.version!)
-    const s = t && latest(t.season)
+    const s = t && (seasonId && t.season.find((x) => x.id === seasonId) ? summary(t.season.find((x) => x.id === seasonId)!) : latest(t.season))
     const row = s && t.season.find((x) => x.id === s.id)
     if (row && Number.isInteger(row.version)) await noteVersion(row.id, row.version!)
     return {
       tournament: t ? {
         id: t.id, name: t.name, template: TEMPLATES.find((x) => x === t.template) ?? 'classic', brandPrimary: t.brand_primary ?? null, brandSecondary: t.brand_secondary ?? null,
         logoPath: t.logo_path ?? null, version: t.version ?? 1,
+        seasons: [...t.season].sort((a, b) => b.number - a.number).map(summary),
         season: s && row ? {
           ...s, answers: Object.fromEntries(ANSWERS.map((k) => [k, row[k] ?? ''])) as SeasonAnswers,
           settings: Object.fromEntries(SETTINGS.map((k) => [k, row[k] ?? null])) as MatchSettings,

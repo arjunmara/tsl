@@ -9,6 +9,7 @@ import { RequireSession, RequireVerified, SessionProvider } from './features/aut
 import { SignIn, SignInCode } from './features/auth/SignIn'
 import { SignUp } from './features/auth/SignUp'
 import { MyTournaments } from './features/tournaments/MyTournaments'
+import { SeasonsPage } from './features/home/Seasons'
 import { NewTournament, SettingsSection, SetupStep } from './features/setup/Setup'
 import { Home } from './features/home/Home'
 import { MatchDetail } from './features/home/MatchDetail'
@@ -109,6 +110,7 @@ export function App() {
                 <Route path="/t/:tournamentId/settings/co-organisers" element={<CoOrganisers />} />
                 <Route path="/t/:tournamentId/settings/activity" element={<Activity />} />
                 <Route path="/t/:tournamentId/settings/scorers" element={<Scorers />} />
+                <Route path="/t/:tournamentId/settings/seasons" element={<SeasonsPage />} />
                 <Route path="/t/:tournamentId/settings/graphics" element={<TemplatePicker />} />
                 <Route path="/t/:tournamentId/settings/:section" element={<SettingsSection />} />
               </Route>

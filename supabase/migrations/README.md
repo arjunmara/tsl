@@ -664,3 +664,11 @@ change shows in the Activity log). Steps: paste `0039_template.sql` into the SQL
 Apply after 0039 and before the app deploy with Gradient and Spotlight (test first, then live). It widens the check on `app.tournament.template` and the command
 `set_template` to `classic`, `split`, `minimal`, `gradient` and `spotlight`; any other value is still `template_invalid`. Steps: paste `0040_more_templates.sql`
 into the SQL Editor and run it. Check: `select pg_get_constraintdef(oid) from pg_constraint where conname = 'tournament_template_check'` lists `gradient` and `spotlight`.
+
+## Apply 0041_new_season.sql (Story 6.1)
+
+Apply after 0040 and before the app deploy with "Start new season" (test first, then live). It adds the command `new_season` (any Organiser of the Tournament). When the
+Tournament's latest Season is finished it inserts the next-numbered Season in setup with `setup_step` 2 and every setup answer copied (description, rules, photo
+consent, venue, Format, Line-up rules, Structure), dates empty, and copies the Sponsors as new rows (the image files are shared). Teams, Squads, Fixtures, draw
+slots, scorer tokens and awards are not copied, and the old Season is untouched. A Season still running is `season_running`; a reused `season_id` is `already_exists`.
+Steps: paste `0041_new_season.sql` into the SQL Editor and run it. Check: `select proname from pg_proc where proname = 'new_season'` returns one row.

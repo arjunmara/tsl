@@ -30,6 +30,7 @@ export const messages = {
   in_progress: 'This change is still being saved. Wait a moment, then reload.',
   name_invalid: 'Names must be 1 to 80 characters.',
   already_exists: 'This was already created. Reload to see it.',
+  season_running: 'The latest Season is still running. Finish it before starting the next one.',
   season_setup: "This can't change while the season is in setup.",
   season_registration: "This can't change once registration has opened.",
   season_started: "This can't change once the season has started.",

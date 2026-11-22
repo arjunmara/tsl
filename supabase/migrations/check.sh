@@ -3457,4 +3457,34 @@ for t in gradient spotlight; do q "update app.tournament set template = '$t' whe
 out=$(as anon "select app.set_template('$(cmd 4107)', '$T15', 'split', 1)" 2>&1 || true)
 [[ $out == *"permission denied for function"* ]] || fail "anon: can execute set_template: $out"
 
+# --- New Season (Story 6.1): copy the last finished Season's answers and Sponsors; refuse while it runs.
+TN=11111111-0000-4000-8000-0000000001a0 SN1=21111111-0000-4000-8000-0000000001a0 SN2=21111111-0000-4000-8000-0000000001a1 SN3=21111111-0000-4000-8000-0000000001a2
+create $A 4200 $TN $SN1 'Copy Cup' >/dev/null
+q "update app.season set description='d', rules='r', photo_consent='p', venue='Hall', format_preset=(select key from app.format_preset limit 1), periods=2, period_minutes=15, clock='running',
+   half_time_minutes=5, extra_time=true, extra_time_periods=2, extra_time_minutes=5, shootout=true, substitutions='limited', max_substitutions=6, foul_warning=5, timeouts_per_period=1,
+   power_play_minutes=2, starters=5, max_bench=7, staff_roles='{manager,physio}', structure='groups_knockout', group_count=2, teams_per_group=4, qualifiers_per_group=2,
+   points_win=3, points_draw=1, points_loss=0, tiebreaks='{goal_difference,goals_scored}', setup_step=7, starts_on='2026-01-01', ends_on='2026-02-01', registration_deadline='2026-01-01',
+   fixtures_published_at=now(), scorer_token_hash=repeat('a', 64) where id='$SN1';
+   insert into app.sponsor (id, tournament_id, season_id, logo_path, ad_paths, caption, sort) values
+   ('51111111-0000-4000-8000-0000000001a0', '$TN', '$SN1', '$TN/l1.png', '{$TN/a1.png}', 'One', 0), ('51111111-0000-4000-8000-0000000001a1', '$TN', '$SN1', '$TN/l2.png', '{}', 'Two', 1)" >/dev/null
+ns() { as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.new_season('$(cmd "$2")', '$TN', '$3') r"; }
+[ "$(ns $A 4201 $SN2)|$(q "select count(*) from app.season where tournament_id='$TN'")" = "season_running|1" ] || fail "new season: allowed while the latest Season is in setup"
+msg=$(as $A "select r->>'message' from app.new_season('$(cmd 4201)', '$TN', '$SN2') r")
+[ "$msg" = "Season 1 is still running. Finish it before starting Season 2." ] || fail "new season: running message: $msg"
+q "update app.season set status='registration' where id='$SN1'; update app.season set status='started' where id='$SN1'; update app.season set status='finished' where id='$SN1'" >/dev/null
+sv=$(q "select version from app.season where id='$SN1'"); spv=$(q "select string_agg(version::text, ',') from app.sponsor where season_id='$SN1'")
+[ "$(ns $B 4202 $SN2)|$(as anon "select 1 from app.new_season('$(cmd 4202)', '$TN', '$SN2')" 2>&1 | grep -c 'permission denied')|$(q "select count(*) from app.season where tournament_id='$TN'")" = "not_authorized|1|1" ] || fail "new season: non-member or anon"
+r=$(as $A "select app.new_season('$(cmd 4203)', '$TN', '$SN2')")
+[ "$(q "select (r->>'ok')||(r->>'number')||(r->>'version')||(r->>'season_id') from (select '$r'::jsonb r) x")" = "true21$SN2" ] || fail "new season: result $r"
+cols="description, rules, photo_consent, venue, format_preset, periods, period_minutes, clock, half_time_minutes, extra_time, extra_time_periods, extra_time_minutes, shootout, substitutions, max_substitutions, foul_warning, timeouts_per_period, power_play_minutes, starters, max_bench, staff_roles, structure, group_count, teams_per_group, qualifiers_per_group, points_win, points_draw, points_loss, tiebreaks"
+[ "$(q "select count(*) from app.season a, app.season b where a.id='$SN1' and b.id='$SN2' and row($(echo "$cols" | sed -E 's/[a-z_]+/a.&/g')) is not distinct from row($(echo "$cols" | sed -E 's/[a-z_]+/b.&/g'))")" = 1 ] || fail "new season: a setup answer was not copied"
+[ "$(q "select status||setup_step||version||coalesce(starts_on::text,'-')||coalesce(ends_on::text,'-')||coalesce(registration_deadline::text,'-')||coalesce(fixtures_published_at::text,'-')||coalesce(scorer_token_hash,'-') from app.season where id='$SN2'")" = "setup21-----" ] || fail "new season: state or dates copied"
+[ "$(q "select count(*) from app.sponsor a join app.sponsor b on b.season_id='$SN2' and b.caption=a.caption and b.logo_path=a.logo_path and b.ad_paths=a.ad_paths and b.sort=a.sort and b.id<>a.id where a.season_id='$SN1'")|$(q "select count(*) from app.sponsor where season_id='$SN2'")" = "2|2" ] || fail "new season: Sponsors not copied as new rows"
+[ "$(q "select version from app.season where id='$SN1'")|$(q "select string_agg(version::text, ',') from app.sponsor where season_id='$SN1'")|$(q "select count(*) from app.team where season_id='$SN2'")" = "$sv|$spv|0" ] || fail "new season: source changed or Teams copied"
+[ "$(ns $A 4203 $SN2)|$(q "select count(*) from app.season where tournament_id='$TN'")" = "ok|2" ] || fail "new season: repeat command id wrote again"
+[ "$(ns $A 4204 $SN2)|$(ns $A 4205 $SN3)|$(q "select count(*) from app.season where tournament_id='$TN'")" = "already_exists|season_running|2" ] || fail "new season: second Season while the latest runs, or reused id"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 4203)' and actor='$A' and table_name='season' and op='insert'")" = 1 ] || fail "new season: not logged"
+out=$(as anon "select app.new_season('$(cmd 4206)', '$TN', '$SN3')" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute new_season: $out"
+
 echo ok

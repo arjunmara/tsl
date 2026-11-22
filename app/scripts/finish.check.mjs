@@ -111,7 +111,7 @@ try {
     await page.getByRole('dialog', { name: 'Finish Season 7?' }).getByRole('button', { name: 'Finish season', exact: true }).click()
     await page.locator('.finish-card').waitFor({ state: 'detached' })
     assert.equal(finishes(mock).length, 1)
-    await page.getByText('Season 7 · Finished').waitFor()
+    await page.locator('header.home-bar summary').getByText('Season 7 · Finished').waitFor()
     await text(page, "This can't change because the season has finished.").first().waitFor()
     // Settings: setup sections are locked, the description too.
     await page.getByRole('button', { name: 'Open settings' }).click()
@@ -133,7 +133,7 @@ try {
   // --- Finished Season: no card, no Arrange.
   {
     const { context, page } = await fresh({ status: 'finished' })
-    await page.getByText('Season 7 · Finished').waitFor()
+    await page.locator('header.home-bar summary').getByText('Season 7 · Finished').waitFor()
     assert.equal(await page.locator('.finish-card').count(), 0)
     assert.equal(await button(page, 'Arrange fixtures').count(), 0)
     await context.close()

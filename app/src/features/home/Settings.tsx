@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { backIcon, IconButton, SecondaryButton } from '../../ui/Button'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { STEPS } from '../setup/Frame'
@@ -15,6 +15,9 @@ export function Settings() {
 
 function SettingsList({ tournamentId }: { tournamentId: string }) {
   const navigate = useNavigate()
+  // ?season=: a past Season's settings, read-only.
+  const season = useSearchParams()[0].get('season')
+  const q = season ? `?season=${season}` : ''
   // Only a Tournament not on the server (or not the caller's) is refused; offline the list still opens.
   const [missing, setMissing] = useState(false)
   useEffect(() => {
@@ -36,9 +39,16 @@ function SettingsList({ tournamentId }: { tournamentId: string }) {
         {SECTIONS.map(([k, step, label]) => (
           <li key={k} className="card">
             <h2 className="body-strong">{STEPS[step - 1]}</h2>
-            <SecondaryButton label={label} onClick={() => navigate(`/t/${tournamentId}/settings/${k}`, { state: { fromList: true } })} />
+            <SecondaryButton label={label} onClick={() => navigate(`/t/${tournamentId}/settings/${k}${q}`, { state: { fromList: true } })} />
           </li>
         ))}
+        {!season && (
+          <li className="card">
+            <h2 className="body-strong">Seasons</h2>
+            <SecondaryButton label="Open Seasons" onClick={() => navigate(`/t/${tournamentId}/settings/seasons`)} />
+          </li>
+        )}
+        {!season && <>
         <li className="card">
           <h2 className="body-strong">Co-organisers</h2>
           <SecondaryButton label="Manage co-organisers" onClick={() => navigate(`/t/${tournamentId}/settings/co-organisers`)} />
@@ -55,6 +65,7 @@ function SettingsList({ tournamentId }: { tournamentId: string }) {
           <h2 className="body-strong">Activity log</h2>
           <SecondaryButton label="Open the Activity log" onClick={() => navigate(`/t/${tournamentId}/settings/activity`)} />
         </li>
+        </>}
       </ul>
     </main>
   )

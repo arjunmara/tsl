@@ -52,7 +52,7 @@ async function fresh({ viewport = { width: 390, height: 844 }, setupStep = 3, bl
   const json = (route, data) => route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(data) })
   await context.route(`${SUPA}/auth/v1/**`, (route) =>
     route.request().method() === 'OPTIONS' ? route.fulfill({ status: 204, headers: cors }) : json(route, session()))
-  await context.route(`${SUPA}/rest/v1/**`, (route) => {
+  await context.route(`${SUPA}/rest/v1/**`, async (route) => {
     const req = route.request()
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
     if (mock.down) return route.abort('internetdisconnected')
@@ -66,6 +66,16 @@ async function fresh({ viewport = { width: 390, height: 844 }, setupStep = 3, bl
     const a = JSON.parse(req.postData())
     const cmd = path.replace('/rest/v1/rpc/', '')
     mock.calls.push({ ...a, cmd })
+    if (cmd === 'new_season' && mock.failNext) {
+      mock.failNext = false
+      return route.fulfill({ status: 500, headers: cors, contentType: 'application/json', body: '{"message":"boom"}' })
+    }
+    if (cmd === 'new_season') {
+      if (mock.delay) await new Promise((r) => setTimeout(r, mock.delay))
+      const t = mock.rows.find((x) => x.id === a.tournament_id)
+      const src = t.season.reduce((m, x) => (x.number > m.number ? x : m))
+      t.season.push({ ...src, id: a.season_id, number: src.number + 1, status: 'setup', setup_step: 2, version: 1, starts_on: null, ends_on: null, registration_deadline: null })
+    }
     const row = a.season_id ? mock.rows.flatMap((t) => t.season).find((s) => s.id === a.season_id) : mock.rows.find((t) => t.id === a.tournament_id)
     if (row && cmd !== 'set_setup_step') {
       row.version++
@@ -128,7 +138,9 @@ try {
     await panel.getByRole('button', { name: 'Continue setup' }).waitFor()
     // Season switcher opens and says what it holds.
     await bar.locator('summary').click()
-    await bar.getByText("Season 1 is this Tournament's current Season.", { exact: true }).waitFor()
+    await bar.getByText('Season 1 · Setup · current', { exact: true }).waitFor()
+    assert.ok(await button(page, 'Start new season').isDisabled(), 'Start new season enabled while Season 1 is in setup')
+    await bar.getByText('Season 1 is still running. Finish it before starting Season 2.', { exact: true }).waitFor()
     await noScroll(page, 390)
     // Phone: the Tab bar sits right under the App bar.
     const [hb, tb] = [await bar.boundingBox(), await page.getByRole('tablist').boundingBox()]
@@ -194,7 +206,7 @@ try {
     await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
     const list = await page.locator('.home-list .ui-button').allTextContents()
     assert.deepEqual(list, ['Change name and logo', 'Change description and rules', 'Change dates', 'Change Format', 'Change Line-up rules',
-      'Change Structure', 'Change Sponsors', 'Manage co-organisers', 'Manage Scorers', 'Choose a graphics template', 'Open the Activity log'])
+      'Change Structure', 'Change Sponsors', 'Open Seasons', 'Manage co-organisers', 'Manage Scorers', 'Choose a graphics template', 'Open the Activity log'])
     await button(page, 'Change Structure').click()
     await page.getByRole('heading', { name: 'Settings · Structure' }).waitFor()
     assert.equal(await button(page, 'Next').count(), 0, 'Next shown in Settings')
@@ -313,6 +325,54 @@ try {
     await context.setOffline(false)
     await button(page, 'Try loading again').click()
     await page.getByRole('tab', { name: 'Matches' }).waitFor()
+    await context.close()
+  }
+
+  // --- New Season (Story 6.1): switcher lists Seasons newest first; Cancel sends nothing; confirm sends exactly one new_season and
+  // opens the wizard at Dates, empty; a past Season opens read-only; Settings -> Seasons lists the same order.
+  {
+    const { context, page, mock } = await fresh()
+    const t = mock.rows[0]
+    Object.assign(t.season[0], { status: 'finished', setup_step: 7, format_preset: 'futsal', description: 'Last year', starts_on: '2026-01-01', ends_on: '2026-02-01', registration_deadline: '2026-01-01' })
+    await page.goto(base + `/t/${T}`)
+    const bar = page.locator('header.home-bar')
+    await bar.locator('summary').click()
+    await button(page, 'Start new season').click()
+    await page.getByRole('heading', { name: 'Copy branding, rules, Format and Structure from Season 1?' }).waitFor()
+    await button(page, 'Cancel').click()
+    assert.equal(calls(mock, 'new_season').length, 0, 'Cancel sent new_season')
+    // A server error keeps the ids: the retry sends the same command and Season ids.
+    mock.failNext = true
+    await button(page, 'Start new season').click()
+    await button(page, 'Copy and continue').click()
+    await until(page, async () => calls(mock, 'new_season').length === 1, 'first new_season')
+    await page.getByText('Something went wrong. Try again.').waitFor()
+    mock.delay = 800
+    await button(page, 'Start new season').click()
+    await button(page, 'Copy and continue').click()
+    await page.getByText('Starting Season 2…', { exact: true }).waitFor()
+    assert.ok(await button(page, 'Start new season').isDisabled(), 'Start new season enabled while busy')
+    await page.waitForURL((u) => u.pathname === `/t/${T}/setup/3`)
+    const [c1, c2] = calls(mock, 'new_season')
+    assert.equal(calls(mock, 'new_season').length, 2, 'new_season not sent once per try')
+    assert.deepEqual([c2.command_id, c2.season_id], [c1.command_id, c1.season_id], 'retry used new ids')
+    await page.getByRole('heading', { name: 'Step 3 of 7 · Dates' }).waitFor()
+    assert.equal(await page.getByLabel('Season starts').inputValue(), '', 'dates copied')
+    assert.equal(t.season[0].version, 1, 'source Season changed')
+    await page.goto(base + `/t/${T}/settings/rules?season=${T3}`)
+    await page.getByText("This tournament isn't available.", { exact: true }).waitFor()
+    await page.goto(base + `/t/${T}/settings/seasons`)
+    await page.getByRole('heading', { name: 'Seasons', exact: true }).waitFor()
+    assert.deepEqual(await page.locator('.home-list h2').allTextContents(), ['Season 2 · Setup · current', 'Season 1 · Finished'])
+    await button(page, 'Open Season 1 settings').click()
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
+    assert.equal(await button(page, 'Manage Scorers').count(), 0, 'Tournament-level rows shown for a past Season')
+    await button(page, 'Change description and rules').click()
+    await page.getByText('Season 1 · Finished · read-only', { exact: true }).waitFor()
+    assert.ok((await page.locator('fieldset.wizard-fields').evaluateAll((f) => f.every((x) => x.disabled))), 'past Season editable')
+    assert.equal(await page.getByLabel('Description').inputValue(), 'Last year')
+    await button(page, 'Back to settings').click()
+    await page.waitForURL((u) => u.search.includes('season='))
     await context.close()
   }
 

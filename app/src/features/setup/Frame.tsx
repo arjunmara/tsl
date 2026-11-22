@@ -10,13 +10,17 @@ export const SettingsMode = createContext(false)
 /** True once the Season has started: steps 2 to 6 (rules, dates, Format, Line-up rules, Structure) lock, but the description in step 2 saves; name, logo and Sponsors stay open. */
 export const SeasonStarted = createContext<false | 'started' | 'finished'>(false)
 
+/** The number of a past Season being viewed (Settings, ?season=): everything in it is read-only. */
+export const PastSeason = createContext<number | null>(null)
+
 /** Where Back goes from this step: the previous step (step 1: My tournaments), or Settings in a Settings section. */
 export function useLeave(tournamentId: string, step: number) {
   const navigate = useNavigate()
   const settings = useContext(SettingsMode)
   // Opened from the Settings list (pushed): step back to it, so the browser's Back doesn't find a second copy.
   const fromList = (useLocation().state as { fromList?: boolean } | null)?.fromList
-  return () => (settings && fromList ? navigate(-1) : navigate(settings ? `/t/${tournamentId}/settings` : step === 1 ? '/' : `/t/${tournamentId}/setup/${step - 1}`, { replace: true }))
+  const search = useLocation().search
+  return () => (settings && fromList ? navigate(-1) : navigate(settings ? `/t/${tournamentId}/settings${search}` : step === 1 ? '/' : `/t/${tournamentId}/setup/${step - 1}`, { replace: true }))
 }
 
 /**
@@ -31,12 +35,13 @@ export function Frame({ step, onBack, onNext, backLabel, nextLabel = 'Next', chi
   const season = useContext(SeasonStarted)
   const locked = !!season && ((step >= 2 && step <= 6) || (season === 'finished' && step === 7))
   // Steps 2 and 3 stay open for one field after start (the description, the venue); the rest locks inside the step.
-  const wholeStep = locked && ((step !== 2 && step !== 3) || season === 'finished')
+  const past = useContext(PastSeason)
+  const wholeStep = past !== null || (locked && ((step !== 2 && step !== 3) || season === 'finished'))
   if (settings) {
     return (
       <main className="wizard" onSubmitCapture={(e) => (e.preventDefault(), e.stopPropagation())}>
         <h1 className="title">Settings · {STEPS[step - 1]}</h1>
-        {locked && <p className="body">{season === 'finished' ? messages.season_finished : step === 2 ? messages.rules_locked : step === 3 ? messages.dates_locked : messages.season_started}</p>}
+        {past ? <p className="body">Season {past} · Finished · read-only</p> : locked && <p className="body">{season === 'finished' ? messages.season_finished : step === 2 ? messages.rules_locked : step === 3 ? messages.dates_locked : messages.season_started}</p>}
         <fieldset disabled={wholeStep} className="wizard-fields">{children}</fieldset>
         <div className="wizard-bar">
           <div className="wizard-bar-inner">
