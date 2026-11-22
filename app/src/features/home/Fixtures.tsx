@@ -12,6 +12,7 @@ import { ConfirmSheet } from '../../ui/ConfirmSheet'
 import { StatusPill } from '../../ui/StatusPill'
 import { Problem } from '../auth/Screen'
 import { useOnline } from '../app/online'
+import { PackLink } from '../graphics/Pack'
 import { Draw, useDraw } from './Draw'
 import type { Head } from './Home'
 import { Standings, useStandings } from './Standings'
@@ -225,6 +226,7 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
           <svg className="match-chevron" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"
             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
         </button>
+        {m.status === 'finished' && <PackLink tournamentId={tournamentId} matchId={m.id} />}
         {scorable(m) && <PrimaryButton label="Score this match" onClick={() => navigate(`/t/${tournamentId}/score/${m.id}`)} />}
       </li>
     )

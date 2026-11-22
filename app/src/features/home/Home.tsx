@@ -7,6 +7,7 @@ import { backIcon, IconButton, PrimaryButton, SecondaryButton } from '../../ui/B
 import { Problem } from '../auth/Screen'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { overlay, Unavailable, UUID } from '../setup/Setup'
+import { PackList } from '../graphics/Pack'
 import { Fixtures } from './Fixtures'
 import { FinishCard } from './FinishCard'
 import { StartCard } from './StartCard'
@@ -211,8 +212,7 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
             ) : <Teams tournamentId={tournamentId} head={h} onSeasonChange={() => setAttempt((n) => n + 1)} />)}
             {tab === 'graphics' && (
               <>
-                <p className="body">Each Graphic says what it needs before it can be made.</p>
-                <p className="meta">Graphics come in a later update.</p>
+                <PackList tournamentId={tournamentId} seasonId={h.season.id} />
               </>
             )}
           </section>

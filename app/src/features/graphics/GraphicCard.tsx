@@ -1,7 +1,6 @@
 import { domToBlob } from 'modern-screenshot'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react'
-import { caption, graphicFile, resultData, type PlayerData, type ResultData } from '../../domain/graphics'
-import type { Match } from '../../domain/matches'
+import { caption, graphicFile, type PlayerData, type ResultData } from '../../domain/graphics'
 import { messages } from '../../domain/messages'
 import { PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { Problem } from '../auth/Screen'
@@ -22,7 +21,30 @@ async function makePng(node: HTMLElement): Promise<Blob> {
   return png
 }
 
-type ViewProps<D> = {
+/** Whether the share sheet takes these files (canShare is missing on some browsers and can throw for files). */
+export function canShareFiles(files: File[]): boolean {
+  try {
+    return !!navigator.canShare?.({ files })
+  } catch {
+    return false
+  }
+}
+
+export function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob)
+  const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  document.body.append(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
+/** What a card tells the pack: its PNG, 'failed', or null while it has none (Story 5.4). */
+export type CardState = Blob | 'failed' | null
+/** Pack cards render one at a time in pack order: canRender holds a card back until the ones before it have a PNG or a failure. */
+export type PackProps = { canRender?: boolean; onState?: (s: CardState) => void }
+
+type ViewProps<D> = PackProps & {
   heading: string; data: D | null; problem: string | null; text: string; file: string; retryLabel: string; shareLabel: string; downloadLabel: string
   onRetry: () => void; children: (ref: Ref<HTMLDivElement>, data: D) => ReactNode
 }
@@ -31,7 +53,7 @@ type ViewProps<D> = {
  * A Graphic card (Stories 5.1, 5.3): a 4:5 thumbnail of the Template, Share (Primary) and Download (Secondary). The PNG is made on this phone as soon as
  * the data is in, so a tap can share at once; nothing is uploaded or stored.
  */
-function GraphicView<D>({ heading, data, problem: dataProblem, text, file: fileName, retryLabel, shareLabel, downloadLabel, onRetry, children }: ViewProps<D>) {
+function GraphicView<D>({ heading, data, problem: dataProblem, text, file: fileName, retryLabel, shareLabel, downloadLabel, onRetry, children, canRender = true, onState }: ViewProps<D>) {
   const [made, setMade] = useState<{ k: string; text: string } | null>(null)
   const [done, setDone] = useState<{ k: string; b: Blob } | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -48,14 +70,17 @@ function GraphicView<D>({ heading, data, problem: dataProblem, text, file: fileN
   // A render failure belongs to the content it failed on.
   const problem = dataProblem ?? (made?.k === key ? made.text : null)
   useEffect(() => {
-    if (!data || !node.current) return
+    if (!data || !node.current || !canRender) return
     let live = true
     makePng(node.current).then((b) => live && setDone({ k: key, b }), () => live && setMade({ k: key, text: messages.graphic_failed }))
     return () => {
       live = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- data is read through its JSON key
-  }, [key, attempt])
+  }, [key, attempt, canRender])
+
+  const state: CardState = png ?? (problem ? 'failed' : null)
+  useEffect(() => onState?.(state), [state]) // eslint-disable-line react-hooks/exhaustive-deps -- tell the pack when the state changes, not when its callback does
 
   useLayoutEffect(() => {
     const el = thumb.current
@@ -69,14 +94,7 @@ function GraphicView<D>({ heading, data, problem: dataProblem, text, file: fileN
 
   const file = () => new File([png!], fileName, { type: 'image/png' })
 
-  function save() {
-    const url = URL.createObjectURL(png!)
-    const a = Object.assign(document.createElement('a'), { href: url, download: fileName })
-    document.body.append(a)
-    a.click()
-    a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 10000)
-  }
+  const save = () => saveBlob(png!, fileName)
 
   async function saveAndCopy() {
     save()
@@ -94,13 +112,7 @@ function GraphicView<D>({ heading, data, problem: dataProblem, text, file: fileN
     setNotice('')
     setWords('')
     const f = file()
-    let can = false
-    try {
-      can = !!navigator.canShare?.({ files: [f] })
-    } catch {
-      // canShare can throw for files: treat it as no share sheet.
-    }
-    if (can) {
+    if (canShareFiles([f])) {
       try {
         await navigator.share({ files: [f], text })
       } catch (e) {
@@ -137,44 +149,20 @@ function GraphicView<D>({ heading, data, problem: dataProblem, text, file: fileN
   )
 }
 
-/** The Result Graphic card of a finished Match (Story 5.1). */
-export function GraphicCard({ tournamentId, seasonId, match }: { tournamentId: string; seasonId: string; match: Match }) {
-  const [data, setData] = useState<ResultData | null>(null)
-  const [problem, setProblem] = useState<string | null>(null)
-  const [attempt, setAttempt] = useState(0)
-  const shown = useRef('')
-
-  useEffect(() => {
-    let live = true
-    void resultData(tournamentId, seasonId, match).then((r) => {
-      if (!live) return
-      if ('code' in r) return setProblem(r.code === 'offline' ? messages.offline : messages.graphic_failed)
-      setProblem(null)
-      // Only new content needs a new PNG.
-      const k = JSON.stringify(r)
-      if (k === shown.current) return
-      shown.current = k
-      setData(r)
-    })
-    return () => {
-      live = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- read again when the Match changes, not on every new object
-  }, [tournamentId, seasonId, match.id, match.version, match.hg, match.ag, match.homePens, match.awayPens, match.kickOff, attempt])
-
+/** The Result Graphic card of a finished Match (Story 5.1), first in the pack. */
+export function ResultCard({ data, onRetry, ...pack }: { data: ResultData; onRetry: () => void } & PackProps) {
   return (
-    <GraphicView heading="Result Graphic" data={data} problem={problem} text={data ? caption(data) : ''} file={data ? graphicFile(data) : 'graphic.png'}
-      retryLabel="Try making the graphic again" shareLabel="Share this Graphic" downloadLabel="Download this Graphic"
-      onRetry={() => (shown.current = '', setData(null), setProblem(null), setAttempt((n) => n + 1))}>
+    <GraphicView {...pack} heading="Result Graphic" data={data} problem={null} text={caption(data)} file={graphicFile(data)}
+      retryLabel="Try making the graphic again" shareLabel="Share this Graphic" downloadLabel="Download this Graphic" onRetry={onRetry}>
       {(ref, d) => <Classic ref={ref} data={d} />}
     </GraphicView>
   )
 }
 
-/** One Player Graphic card (a goal, Man of the Match or Fair Player) under the Result card. */
-export function PlayerCard({ data, onRetry }: { data: PlayerData; onRetry: () => void }) {
+/** One Player Graphic card (a goal, card, missed penalty, Man of the Match or Fair Player). */
+export function PlayerCard({ data, onRetry, ...pack }: { data: PlayerData; onRetry: () => void } & PackProps) {
   return (
-    <GraphicView heading={data.title.replace(/^./, (c) => c.toUpperCase())} data={data} problem={null} text={data.caption} file={data.file}
+    <GraphicView {...pack} heading={data.title.replace(/^./, (c) => c.toUpperCase())} data={data} problem={null} text={data.caption} file={data.file}
       retryLabel={`Try making the ${data.title} again`} shareLabel={`Share the ${data.title}`} downloadLabel={`Download the ${data.title}`} onRetry={onRetry}>
       {(ref, d) => <Player ref={ref} data={d} />}
     </GraphicView>

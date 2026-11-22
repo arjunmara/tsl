@@ -12,6 +12,7 @@ import { MyTournaments } from './features/tournaments/MyTournaments'
 import { NewTournament, SettingsSection, SetupStep } from './features/setup/Setup'
 import { Home } from './features/home/Home'
 import { MatchDetail } from './features/home/MatchDetail'
+import { PackPage } from './features/graphics/Pack'
 import { Settings } from './features/home/Settings'
 import { Activity } from './features/home/Activity'
 import { CoOrganisers } from './features/home/CoOrganisers'
@@ -99,6 +100,7 @@ export function App() {
               <Route path="/t/:tournamentId/setup/:step" element={<SetupStep />} />
               <Route element={<TournamentShell />}>
                 <Route path="/t/:tournamentId/m/:matchId" element={<MatchDetail />} />
+                <Route path="/t/:tournamentId/m/:matchId/pack" element={<PackPage />} />
                 <Route path="/t/:tournamentId/score/:matchId" element={<Console />} />
                 <Route path="/t/:tournamentId" element={<Home />} />
                 <Route path="/t/:tournamentId/teams/:teamId" element={<Home />} />

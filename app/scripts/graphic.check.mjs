@@ -35,6 +35,7 @@ const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 
 const goal = (id, team, player, minute, extra = {}) => ({ id, kind: 'goal', period: 1, minute, entered_at: new Date(Date.now() - 600000 + minute * 1000).toISOString(), home: null, away: null,
   team_id: team, player_id: player, assist_id: null, own_goal: false, version: 1, ...extra })
+const ev = (id, kind, team, player, minute, extra = {}) => goal(id, team, player, minute, { kind, ...extra })
 const g = (n) => `e${n}000000-0000-4000-8000-000000000000`
 // M1: 3-2 with an own goal and an unknown scorer (newest first, as the server sends them). M2: 2-2, shootout 4-3.
 const events = {
@@ -42,6 +43,10 @@ const events = {
   [mid(3)]: Array.from({ length: 12 }, (_, i) => goal(`e${20 - i}000000-0000-4000-8000-000000000000`, tid(1), pid(1, (i % 3) + 1), 12 - i)),
   // M4: 3-1. Consented cut-out (Roshan, with an assist), an own goal, an unknown scorer, and a scorer without consent.
   [mid(4)]: [goal(g(14), tid(1), pid(1, 2), 33), goal(g(13), tid(2), null, 27), goal(g(12), tid(1), null, 20, { own_goal: true }), goal(g(11), tid(1), pid(1, 9), 12, { assist_id: pid(1, 2) })],
+  // M5 (the full pack): 2 goals, a yellow, a red, a missed penalty, a card with no Player on record, both Awards. M6: nothing at all.
+  [mid(5)]: [ev(g(24), 'missed_penalty', tid(1), pid(1, 1), 25), ev(g(23), 'card', tid(2), null, 30, { card: 'yellow' }), ev(g(22), 'card', tid(2), pid(2, 2), 22, { card: 'red' }),
+    goal(g(21), tid(2), pid(2, 1), 17), ev(g(20), 'card', tid(1), pid(1, 3), 8, { card: 'yellow' }), goal(g(19), tid(1), pid(1, 2), 4)],
+  [mid(6)]: [],
   [mid(2)]: [goal(g(9), tid(2), pid(2, 3), 38), goal(g(8), tid(1), pid(1, 3), 30), goal(g(7), tid(2), pid(2, 1), 12), goal(g(6), tid(1), pid(1, 1), 3)],
 }
 const matches = [
@@ -49,6 +54,8 @@ const matches = [
   { n: 2, kick_off: '2033-11-14T10:00:00+05:45', hg: 2, ag: 2, home_pens: 4, away_pens: 3 },
   { n: 3, kick_off: null, hg: 12, ag: 0, home_pens: null, away_pens: null },
   { n: 4, kick_off: '2033-11-13T10:00:00+05:45', hg: 3, ag: 1, home_pens: null, away_pens: null },
+  { n: 5, kick_off: '2033-11-15T10:00:00+05:45', hg: 1, ag: 1, home_pens: null, away_pens: null },
+  { n: 6, kick_off: '2033-11-16T10:00:00+05:45', hg: 0, ag: 0, home_pens: null, away_pens: null },
 ].map((m) => ({ id: mid(m.n), stage: m.n === 1 ? 'group' : 'knockout', round: m.n === 1 ? 'Group A' : 'Final', label: null, ord: m.n, home_team_id: tid(1), away_team_id: tid(2),
   home_src: null, away_src: null, status: 'finished', version: 2, ...m }))
 const rules = { starters: 3, max_bench: 9, periods: 2, extra_time_periods: 0, period_minutes: 20, extra_time_minutes: 5, substitutions: 'rolling' }
@@ -59,7 +66,7 @@ function consoleFor(id, long, kits) {
   const teams = TEAMS.map((t, i) => ({ team_id: t.id, name: long ? `${t.name} ${LONG}`.slice(0, 80) : t.name, code: t.code, registered_kit: kits?.[i] ?? t.kit, side: i === 0 ? 'home' : 'away', squad: squad(i),
     lineup: { starters: [1, 2, 3].map((n) => pid(i + 1, n)), bench: [4, 5].map((n) => pid(i + 1, n)), kit_colour: kits?.[i] ?? t.kit, version: 1 } }))
   return { match: { id, season_id: S, tournament_id: T, stage: m.stage, round: m.round, label: null, kick_off: m.kick_off, status: 'finished', season_status: 'started', version: 2,
-    home_team_id: tid(1), away_team_id: tid(2), home_pens: m.home_pens, away_pens: m.away_pens, mom_player_id: id === mid(4) ? pid(1, 9) : null, fair_player_id: id === mid(4) ? pid(2, 9) : null },
+    home_team_id: tid(1), away_team_id: tid(2), home_pens: m.home_pens, away_pens: m.away_pens, mom_player_id: id === mid(4) ? pid(1, 9) : id === mid(5) ? pid(1, 2) : null, fair_player_id: id === mid(4) ? pid(2, 9) : id === mid(5) ? pid(2, 1) : null },
     rules, clock: frozen, score: { home: 0, away: 0 }, events: events[id], holder: true, held: true, on_air: false, teams }
 }
 
@@ -130,7 +137,7 @@ async function open({ variant = 'full', init = '', long = false, brand = null } 
 
 const button = (p, name) => p.getByRole('button', { name, exact: true })
 const status = (p) => p.locator('.graphic-card [role="status"]').first()
-const ready = async (p, n) => { await p.goto(`${base}/t/${T}/m/${mid(n)}`); await button(p, 'Download this Graphic').waitFor({ timeout: 30000 }) }
+const ready = async (p, n) => { await p.goto(`${base}/t/${T}/m/${mid(n)}/pack`); await button(p, 'Download this Graphic').waitFor({ timeout: 30000 }) }
 const alt = (p) => p.locator('.graphic-thumb').first().getAttribute('aria-label')
 const pngSize = (buf) => [buf.readUInt32BE(16), buf.readUInt32BE(20)]
 const download = async (p) => {
@@ -320,7 +327,7 @@ try {
   // Failure: the assertive message and a retry that works.
   {
     const { page: p } = await open({ init: () => { window.tslGraphicFail = true } })
-    await p.goto(`${base}/t/${T}/m/${mid(1)}`)
+    await p.goto(`${base}/t/${T}/m/${mid(1)}/pack`)
     const alert = p.locator('.graphic-card').first().getByRole('alert').filter({ hasText: "Couldn't make this Graphic. Try again." })
     await alert.waitFor({ timeout: 30000 })
     assert.equal(await button(p, 'Download this Graphic').count(), 0)
@@ -338,7 +345,7 @@ try {
   // Player Graphics (Story 5.3): goals in minute order then the Awards; a cut-out only through the consent gate; own and unknown goals text-only; captions, file names, size.
   {
     const { page: p, mock } = await open()
-    await p.goto(`${base}/t/${T}/m/${mid(4)}`)
+    await p.goto(`${base}/t/${T}/m/${mid(4)}/pack`)
     await p.waitForFunction(() => [...document.querySelectorAll('.graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 6, null, { timeout: 60000 })
     const cards = await p.locator('.graphic-card').evaluateAll((cs) => cs.map((c) => ({ head: c.querySelector('h2').textContent, alt: c.querySelector('.graphic-thumb').getAttribute('aria-label') })))
     assert.deepEqual(cards.map((c) => c.head), ['Result Graphic', 'Goal Graphic for Roshan Adhikari 12′', 'Goal Graphic for Own goal (RE8) 20′', 'Goal Graphic for Goal (Eight Eagles) 27′',
@@ -401,10 +408,128 @@ try {
     await p.context().close()
   }
 
+  // Post-match pack (Story 5.4): every Graphic in pack order, cards and missed penalties on the Player Template, captions, the combined caption, Share all in both modes.
+  {
+    const { page: p, mock } = await open()
+    await p.goto(`${base}/t/${T}/m/${mid(5)}/pack`)
+    await p.getByRole('button', { name: 'Share all Graphics' }).waitFor()
+    await p.waitForFunction(() => document.querySelectorAll('.graphic-card button').length >= 18 && !document.querySelector('.graphic-card [aria-busy="true"]'), null, { timeout: 90000 })
+    const cards = await p.locator('.graphic-card').evaluateAll((cs) => cs.map((c) => ({ head: c.querySelector('h2').textContent, alt: c.querySelector('.graphic-thumb').getAttribute('aria-label'),
+      word: c.querySelector('.graphic-word')?.textContent, tag: c.querySelector('.graphic-tag')?.textContent, name: c.querySelector('.graphic-pname')?.textContent, team: c.querySelector('.graphic-pteam')?.textContent ?? null })))
+    assert.deepEqual(cards.map((c) => c.head), ['Result Graphic', 'Goal Graphic for RTM Player 2 4′', 'Goal Graphic for RE8 Player 1 17′', 'Yellow card Graphic for RTM Player 3 8′',
+      'Red card Graphic for RE8 Player 2 22′', 'Yellow card Graphic for Yellow card (Eight Eagles) 30′', 'Missed penalty Graphic for Roshan Adhikari 25′'.replace('Roshan Adhikari', 'RTM Player 1'),
+      'Man of the Match Graphic for RTM Player 2', 'Fair Player Graphic for RE8 Player 1'])
+    const D = '\\w+ · \\w+ \\d+, 20\\d\\d BS \\(15 Nov 2033\\), Tamghas Arena\\.'
+    assert.match(cards[3].alt, new RegExp(`^Yellow card: RTM Player 3 \\(Red Tigers\\) 8′\\. Red Tigers v Eight Eagles, Final, Gulmi Cup\\. ${D}$`))
+    assert.match(cards[4].alt, new RegExp(`^Red card: RE8 Player 2 \\(Eight Eagles\\) 22′\\. Red Tigers v Eight Eagles, Final, Gulmi Cup\\. ${D}$`))
+    assert.match(cards[5].alt, new RegExp(`^Yellow card: Yellow card \\(Eight Eagles\\) 30′\\. Red Tigers v Eight Eagles, Final, Gulmi Cup\\. ${D}$`))
+    assert.match(cards[6].alt, new RegExp(`^Missed penalty: RTM Player 1 \\(Red Tigers\\) 25′\\. Red Tigers v Eight Eagles, Final, Gulmi Cup\\. ${D}$`))
+    assert.deepEqual([cards[3].word, cards[3].tag, cards[4].tag, cards[6].word, cards[6].tag], ['CARD', 'Yellow card', 'Red card', 'MISSED', 'Missed penalty'])
+    assert.deepEqual([cards[5].name, cards[5].team], ['Yellow card (Eight Eagles)', null], 'a card with no Player is text only')
+    assert.equal(await p.locator('.graphic-cutout').count(), 0, 'a cut-out without consent')
+    // Every kind has Graphics here, so no "why" line; the pack order is the page order.
+    assert.equal(await p.getByText(/^No (goals|cards|missed|Man|Fair)/).count(), 0)
+    assert.equal(await p.getByRole('button', { name: 'Share all Graphics' }).isEnabled(), true)
+    // Share all with a share sheet: one share, nine PNGs, one combined caption; cancelling shows nothing.
+    await p.evaluate(() => {
+      window.__shared = []
+      navigator.canShare = (d) => !!d.files?.length
+      navigator.share = async (d) => { window.__shared.push({ names: d.files.map((f) => f.name), types: d.files.map((f) => f.type), text: d.text }); if (window.__cancel) throw new DOMException('cancelled', 'AbortError') }
+    })
+    await button(p, 'Share all Graphics').click()
+    await p.waitForFunction(() => window.__shared.length === 1)
+    const s = await p.evaluate(() => window.__shared[0])
+    assert.equal(s.names.length, 9)
+    assert.ok(s.types.every((t) => t === 'image/png'))
+    assert.equal(s.names[0], 'RTM-v-RE8.png')
+    assert.equal(s.text, cards.map((c) => c.alt).join('\n\n'))
+    await p.evaluate(() => { window.__cancel = true })
+    await button(p, 'Share all Graphics').click()
+    await p.waitForFunction(() => window.__shared.length === 2)
+    assert.equal(await p.locator('main > .home-panel > [role="status"], .home-panel > [role="status"]').first().innerText(), '')
+    assert.equal(await p.getByText('Images saved', { exact: false }).count(), 0)
+    // No multi-share (a laptop): nine downloads, the combined caption copied.
+    await p.evaluate(() => { navigator.canShare = undefined })
+    const dl = []
+    p.on('download', (d) => dl.push(d.suggestedFilename()))
+    await button(p, 'Share all Graphics').click()
+    await p.getByText('Images saved. Caption copied.').waitFor()
+    for (let i = 0; i < 40 && dl.length < 9; i++) await new Promise((r) => setTimeout(r, 100))
+    assert.equal(new Set(dl).size, 9, `downloads: ${dl}`)
+    assert.equal(await p.evaluate(() => navigator.clipboard.readText()), s.text)
+    assert.deepEqual(mock.writes, [], 'a Storage upload or an app write')
+    assert.equal(mock.commands.length, 0)
+    await p.context().close()
+  }
+
+  // Pack: clipboard blocked -> the combined caption as selectable text.
+  {
+    const { page: p } = await open({ init: () => { Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('blocked')) } }) } })
+    await p.goto(`${base}/t/${T}/m/${mid(1)}/pack`)
+    await p.waitForFunction(() => document.querySelectorAll('.graphic-card button').length >= 12, null, { timeout: 90000 })
+    await button(p, 'Share all Graphics').click()
+    await p.getByText('Images saved. Copy the caption below.').waitFor()
+    assert.equal((await p.locator('.home-panel > .graphic-caption').innerText()).split('\n\n').length, 6)
+    await p.context().close()
+  }
+
+  // Empty kinds: the Result card and five "why" lines, in pack order.
+  {
+    const { page: p } = await open()
+    await p.goto(`${base}/t/${T}/m/${mid(6)}/pack`)
+    await button(p, 'Download this Graphic').waitFor({ timeout: 30000 })
+    assert.equal(await p.locator('.graphic-card').count(), 1)
+    assert.deepEqual(await p.locator('.home-panel > p.meta').allInnerTexts().then((t) => t.filter((x) => x.startsWith('No '))),
+      ['No goals in this Match', 'No cards in this Match', 'No missed penalties', 'No Man of the Match chosen', 'No Fair Player chosen'])
+    await p.context().close()
+  }
+
+  // One card fails: its own assertive message and retry, the cards after it still get made, Share all waits until the retry works.
+  {
+    const { page: p } = await open({ init: () => { window.__n = 0 } })
+    await p.addInitScript(() => { Object.defineProperty(window, 'tslGraphicFail', { configurable: true, get() { window.__n = (window.__n ?? 0) + 1; return window.__n === 3 && !window.__fixed } , set() {} }) })
+    await p.goto(`${base}/t/${T}/m/${mid(1)}/pack`)
+    await p.locator('.graphic-card [role="alert"]').waitFor({ timeout: 60000 })
+    await p.waitForFunction(() => [...document.querySelectorAll('.graphic-card button')].filter((b) => /^Download /.test(b.textContent)).length === 5, null, { timeout: 60000 })
+    assert.equal(await p.locator('.graphic-card [role="alert"]').count(), 1)
+    assert.equal(await button(p, 'Share all Graphics').isDisabled(), true)
+    await p.evaluate(() => { window.__fixed = true })
+    await p.getByRole('button', { name: /^Try making the .* again$/ }).click()
+    await p.waitForFunction(() => !document.querySelector('.graphic-card [role="alert"]') && document.querySelectorAll('.graphic-card button').length >= 12, null, { timeout: 60000 })
+    await p.waitForFunction(() => !document.querySelector('.ui-primary:disabled'), null, { timeout: 30000 })
+    await p.context().close()
+  }
+
+  // Order and freshness: PNGs are made one at a time, result first; a deleted goal is gone when the pack is opened again (nothing cached).
+  {
+    const { page: p } = await open()
+    await p.goto(`${base}/t/${T}/m/${mid(1)}/pack`)
+    await button(p, 'Download this Graphic').waitFor({ timeout: 30000 })
+    await p.waitForFunction(() => document.querySelectorAll('.graphic-card button').length >= 12, null, { timeout: 90000 })
+    assert.equal(await p.locator('.graphic-card').count(), 6)
+    const saved = events[mid(1)].splice(0, 1)
+    await p.goto(`${base}/t/${T}/m/${mid(1)}/pack`)
+    await p.waitForFunction(() => document.querySelectorAll('.graphic-card h2').length === 5, null, { timeout: 30000 })
+    events[mid(1)].unshift(...saved)
+    await p.context().close()
+  }
+
+  // Entry points: the finished Match card and the Match page link to the pack; the Graphics tab lists finished Matches, newest first.
+  {
+    const { page: p } = await open()
+    await p.goto(`${base}/t/${T}/m/${mid(4)}`)
+    const link = p.getByRole('link', { name: 'Open the post-match pack' })
+    await link.waitFor()
+    assert.equal(await p.locator('.graphic-card').count(), 0)
+    await link.click()
+    await p.waitForURL(`**/t/${T}/m/${mid(4)}/pack`)
+    await p.context().close()
+  }
+
   // Unset Awards leave no card: a Match without Man of the Match or Fair Player has only the goals (here 5 and the Result card).
   {
     const { page: p } = await open()
-    await p.goto(`${base}/t/${T}/m/${mid(1)}`)
+    await p.goto(`${base}/t/${T}/m/${mid(1)}/pack`)
     await p.waitForFunction(() => [...document.querySelectorAll('.graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 5, null, { timeout: 60000 })
     assert.equal(await p.locator('.graphic-card').count(), 6)
     assert.equal(await p.locator('.graphic-card').getByText(/Man of the Match|Fair Player/).count(), 0)
@@ -414,7 +539,7 @@ try {
   // Contrast: gold and white and the hard sweep; every Player text layer, the word and "Made with" included, on at least a 95% opaque fill read as its worst blend.
   for (const brand of COLOURS) {
     const { page: p, mock } = await open({ brand })
-    await p.goto(`${base}/t/${T}/m/${mid(4)}`)
+    await p.goto(`${base}/t/${T}/m/${mid(4)}/pack`)
     await p.waitForFunction(() => [...document.querySelectorAll('.graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 6, null, { timeout: 60000 })
     const layers = await audit(p, '.graphic-player')
     const names = new Set(layers.map((l) => l.cls))

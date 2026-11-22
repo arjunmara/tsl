@@ -72,7 +72,7 @@ function eventCommand(cmd, a) {
 
 const season = { id: S, number: 1, status: 'started', setup_step: 7, version: 3, description: '', rules: '', photo_consent: 'Photos may be posted.',
   starts_on: '2033-11-07', ends_on: '2033-11-21', registration_deadline: '2033-11-03', structure: 'groups_knockout', group_count: 2, teams_per_group: 4, qualifiers_per_group: 2 }
-async function page() {
+async function page(scorer = false) {
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 900 } })
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort())
   const json = (route, data) => route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(data) })
@@ -97,7 +97,13 @@ async function page() {
     }
     return json(route, { ok: true, code: null, message: 'ok' })
   })
-  await context.addInitScript((v) => localStorage.setItem('sb-fake-auth-token', v), JSON.stringify(session()))
+  if (scorer) {
+    // A Scorer's phone: its own anonymous session and device token (see console.check.mjs).
+    const anon = session()
+    anon.user = { ...anon.user, is_anonymous: true, email: undefined }
+    await context.addInitScript(([k, v]) => localStorage.setItem(k, v), ['tsl-score-auth', JSON.stringify(anon)])
+    await context.addInitScript(([k, v]) => localStorage.setItem(k, v), [`tsl-scorer-device:${'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcde'}`, '33333333-0000-4000-8000-000000000001'])
+  } else await context.addInitScript((v) => localStorage.setItem('sb-fake-auth-token', v), JSON.stringify(session()))
   const p = await context.newPage()
   await p.emulateMedia({ colorScheme: 'light' })
   return p
@@ -144,6 +150,8 @@ try {
   const e1 = calls('end_match')[0]
   assert.deepEqual([e1.match_id, e1.expected_version, e1.home_pens, e1.away_pens, e1.mom_player_id, e1.fair_player_id], [mid(1), 1, null, null, pid(1, 2), null])
   assert.ok(Math.abs(Date.parse(e1.at) - Date.now()) < 20000, 'at is the whistle')
+  // Story 5.4: the Organiser's Finish match goes on to the Post-match pack.
+  await op.waitForURL(`**/t/${T}/m/${mid(1)}/pack`)
 
   // Knockout 3-3: the shootout comes first and needs a winner.
   await whistle(op, 2, '3–3')
@@ -168,6 +176,47 @@ try {
   await dialog(op).getByRole('button', { name: 'Finish match', exact: true }).click()
   await sent('end_match', 3)
   assert.equal(calls('end_match')[2].home_pens, null)
+
+  // The Scorer console stays where it is after Finish match (no pack).
+  const sc = await page(true)
+  await sc.goto(`${base}/score/${mid(3)}#AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcde`)
+  await text(sc, 'RTM v RE8').waitFor()
+  await button(sc, 'End the match').click()
+  await dialog(sc).getByRole('button', { name: 'End the match', exact: true }).click()
+  await dialog(sc).getByRole('heading', { name: 'Finish the match' }).waitFor()
+  await dialog(sc).getByRole('button', { name: 'Finish match', exact: true }).click()
+  await sent('end_match', 4)
+  await sent('end_match', 4)
+  await new Promise((r) => setTimeout(r, 500))
+  assert.ok(new URL(sc.url()).pathname.startsWith(`/score/${mid(3)}`), `the Scorer left the console: ${sc.url()}`)
+
+  // Entry points: the finished Match card's link and the Graphics tab (newest first, "No finished Matches yet" when none).
+  await op.goto(`${base}/t/${T}`)
+  const packLinks = op.getByRole('link', { name: 'Open the post-match pack' })
+  await packLinks.first().waitFor()
+  assert.equal(await packLinks.count(), 1, 'a pack link on an unfinished Match')
+  await packLinks.click()
+  await op.waitForURL(`**/t/${T}/m/${mid(4)}/pack`)
+  const tabs = async () => {
+    await op.goto(`${base}/t/${T}`)
+    await op.getByRole('tab', { name: 'Graphics', exact: true }).click()
+  }
+  const saved = [matches[0], matches[1]].map((m) => ({ ...m }))
+  Object.assign(matches[0], { status: 'finished', hg: 2, ag: 1 })
+  Object.assign(matches[1], { status: 'finished', hg: 3, ag: 3 })
+  await tabs()
+  const entries = op.getByRole('link').filter({ hasText: / · / })
+  await entries.first().waitFor()
+  assert.deepEqual(await entries.allInnerTexts(), ['RTM 4–4 RE8 · Final', 'RTM 3–3 RE8 · Final', 'RTM 2–1 RE8 · Group A'])
+  assert.deepEqual(await entries.evaluateAll((l) => l.map((a) => new URL(a.href).pathname.split('/').slice(-2).join('/'))), [`${mid(4)}/pack`, `${mid(2)}/pack`, `${mid(1)}/pack`])
+  await entries.nth(2).click()
+  await op.waitForURL(`**/t/${T}/m/${mid(1)}/pack`)
+  matches.forEach((m) => { if (m.status === 'finished') m.status = 'live' })
+  await tabs()
+  await text(op, 'No finished Matches yet').waitFor()
+  Object.assign(matches[0], saved[0])
+  Object.assign(matches[1], saved[1])
+  matches[3].status = 'finished'
 
   // The Match page of a finished Match: FT result, Awards edit, corrections.
   await op.goto(`${base}/t/${T}/m/${mid(4)}`)

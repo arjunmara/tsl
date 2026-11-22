@@ -274,8 +274,10 @@ function Load({ tournamentId, matchId, scorer }: { tournamentId: string; matchId
       events: step.event ? [{ id: cid, kind: step.event, period: step.clock.period, minute: Math.floor(step.clock.elapsedMs / 60000), enteredAt: at.toISOString(),
         home: view.score.home, away: view.score.away }, ...x.events] : x.events } : x)
     const r = await send(clockCommand[op], { season_id: scope, match_id: matchId, expected_version: expected, at: at.toISOString(), ...(op === 'set' ? { elapsed_ms: ms } : {}), ...end?.args }, { scope: matchId, commandId: cid })
-    if (r.ok) return setFin(null)
-    if (r.code === 'queued') return (setFin(null), setNotice(messages.clock_queued), markWaited())
+    // Finish match (Organiser): on to the Post-match pack, whether it went through or is waiting for a signal.
+    const toPack = () => end && !scorer && navigate(`/t/${tournamentId}/m/${matchId}/pack`)
+    if (r.ok) return (setFin(null), toPack())
+    if (r.code === 'queued') return (setFin(null), setNotice(messages.clock_queued), markWaited(), toPack())
     if (held(r.code)) return setProblem(messageFor(r.code))
     if (r.commandId) void forgetRefused(r.commandId)
     await dropQueuedClock(matchId)
