@@ -1,0 +1,72 @@
+import { forwardRef, type CSSProperties } from 'react'
+import { platformName } from '../../domain/env'
+import type { ListData } from '../../domain/listGraphics'
+import { brandDefaults, readable, textColours } from '../setup/brand'
+import './graphics.css'
+
+/**
+ * The Classic list Template (Story 5.5): the Classic canvas, frame, eyebrow, footer, Sponsors and "Made with" around a list: the Draw's groups, a day's Matches or a table.
+ * ponytail: rows share the height left, so a list over ~10 rows (a league of 12+) clips; split it or shrink the type if one is ever needed.
+ */
+export const List = forwardRef<HTMLDivElement, { data: ListData }>(function List({ data }, ref) {
+  const ink = textColours()
+  const def = brandDefaults()
+  const field = readable(data.primary ?? def.primary, ink)
+  const accent = data.secondary ?? def.secondary
+  const dot = (kit: string | null) => <span className="graphic-dot" style={{ background: kit ?? ink.navy }} />
+  const b = data.body
+  const style: CSSProperties = { background: field.panel, color: field.text }
+  return (
+    <div ref={ref} className="graphic-classic graphic-list" style={style}>
+      <div className="graphic-frame" style={{ borderColor: accent }} />
+      <div className="graphic-eyebrow">
+        {data.logo && <img className="graphic-logo" src={data.logo} alt="" crossOrigin="anonymous" />}
+        <span>{data.tournament}</span>
+      </div>
+      <p className="graphic-round">{data.title}</p>
+      <div className="graphic-tick" style={{ background: accent }} />
+      <p className="graphic-when graphic-sub">{data.sub}</p>
+      <div className="graphic-rule" style={{ background: field.text, opacity: 0.4 }} />
+      <div className="graphic-listbody">
+        {b.kind === 'draw' && (
+          <div className="graphic-groups">
+            {b.groups.map((g) => (
+              <section key={g.title}>
+                <h3 className="graphic-gtitle">{g.title}</h3>
+                {g.teams.map((t) => <p key={t.code} className="graphic-line">{dot(t.kit)}<b>{t.code}</b><span>{t.name}</span></p>)}
+              </section>
+            ))}
+          </div>
+        )}
+        {b.kind === 'matches' && b.rows.map((r, i) => (
+          <p key={i} className="graphic-line graphic-match">
+            <span className="graphic-time">{r.time}</span><b className="graphic-home">{r.home}</b>
+            <span className="graphic-mid">{r.score ? `${r.score}${r.pens ? ` (${r.pens})` : ''}` : 'v'}</span><b className="graphic-away">{r.away}</b>
+            <span className="graphic-rnd">{r.round}</span>
+          </p>
+        ))}
+        {b.kind === 'table' && (
+          <>
+            <p className="graphic-line graphic-trow graphic-thead"><span>#</span><span>Team</span>{['P', 'W', 'D', 'L', 'GD', 'Pts'].map((h) => <span key={h}>{h}</span>)}</p>
+            {b.rows.map((r) => (
+              <p key={r.pos} className="graphic-line graphic-trow">
+                <span>{r.pos}</span><span className="graphic-tteam">{dot(r.kit)}<b>{r.code}</b></span>
+                {[r.p, r.w, r.d, r.l, r.gd, r.pts].map((v, i) => <span key={i}>{v}</span>)}
+              </p>
+            ))}
+            <p className="graphic-foot">{b.footnote}</p>
+          </>
+        )}
+      </div>
+      {data.foot.length > 0 && <p className="graphic-when">{data.foot.join('\n')}</p>}
+      {data.sponsors.length > 0 && (
+        <div className="graphic-sponsors">
+          {data.sponsors.map((x, i) => (
+            <div key={i} className="graphic-plate"><img src={x.logo} alt="" crossOrigin="anonymous" /><span>{x.name}</span></div>
+          ))}
+        </div>
+      )}
+      <p className="graphic-made">Made with {platformName}</p>
+    </div>
+  )
+})

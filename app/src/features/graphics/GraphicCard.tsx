@@ -1,10 +1,12 @@
 import { domToBlob } from 'modern-screenshot'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react'
 import { caption, graphicFile, type PlayerData, type ResultData } from '../../domain/graphics'
+import type { ListData } from '../../domain/listGraphics'
 import { messages } from '../../domain/messages'
 import { PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { Problem } from '../auth/Screen'
 import { Classic } from './Classic'
+import { List } from './List'
 import { Player } from './Player'
 
 const W = 1080
@@ -165,6 +167,16 @@ export function PlayerCard({ data, onRetry, ...pack }: { data: PlayerData; onRet
     <GraphicView {...pack} heading={data.title.replace(/^./, (c) => c.toUpperCase())} data={data} problem={null} text={data.caption} file={data.file}
       retryLabel={`Try making the ${data.title} again`} shareLabel={`Share the ${data.title}`} downloadLabel={`Download the ${data.title}`} onRetry={onRetry}>
       {(ref, d) => <Player ref={ref} data={d} />}
+    </GraphicView>
+  )
+}
+
+/** One list Graphic card (Official Draw, Fixtures, Results or a table), made from current data. */
+export function ListCard({ data, onRetry, ...pack }: { data: ListData; onRetry: () => void } & PackProps) {
+  return (
+    <GraphicView {...pack} heading={data.label} data={data} problem={null} text={data.caption} file={data.file}
+      retryLabel={`Try making the ${data.label} again`} shareLabel={`Share the ${data.label}`} downloadLabel={`Download the ${data.label}`} onRetry={onRetry}>
+      {(ref, d) => <List ref={ref} data={d} />}
     </GraphicView>
   )
 }

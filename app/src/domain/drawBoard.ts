@@ -1,6 +1,7 @@
 import type { OutboxEntry } from './commands'
 import type { Structure } from './tournaments'
 import type { Slot } from './draw'
+import type { Team } from './teams'
 
 /** The Draw as this device should show it: the read with this user's pending placements and send-backs laid over. */
 export function overlayDraw(base: Slot[], queued: OutboxEntry[], seasonId: string): Slot[] {
@@ -21,3 +22,6 @@ export function drawColumns(structure: Structure, approved: number): { grp: numb
   }
   return structure.structure === 'knockout' && approved > 0 ? [{ grp: 0, title: 'Bracket', size: approved }] : []
 }
+
+/** Whether every approved Team is placed in the Draw: the rule behind the board's "Draw complete" and the Official Draw. */
+export const drawComplete = (approved: Team[], slots: Slot[]) => approved.length > 0 && approved.every((t) => slots.some((s) => s.teamId === t.id))

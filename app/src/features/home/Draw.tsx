@@ -1,7 +1,7 @@
 import { useEffect, useState, type DragEvent } from 'react'
 import { forgetRefused, queuedFor, send, useOutbox } from '../../domain/commands'
 import { seasonDraw, type Slot } from '../../domain/draw'
-import { drawColumns, overlayDraw } from '../../domain/drawBoard'
+import { drawColumns, drawComplete, overlayDraw } from '../../domain/drawBoard'
 import { messageFor, messages } from '../../domain/messages'
 import type { Team } from '../../domain/teams'
 import { PrimaryButton, SecondaryButton } from '../../ui/Button'
@@ -39,7 +39,7 @@ export function useDraw(tournamentId: string, seasonId: string) {
  * The Matches tab's chit Draw (Story 3.1): approved Teams as chips, the Structure's slots as dashed boxes. Tap a chip then an
  * empty slot (or drag it); tap a placed Team to send it back. Each is its own command through the outbox.
  */
-export function Draw({ tournamentId, head: h, fallback }: { tournamentId: string; head: Head; fallback: string }) {
+export function Draw({ tournamentId, head: h, fallback, onOpenGraphics }: { tournamentId: string; head: Head; fallback: string; onOpenGraphics?: () => void }) {
   const { teams } = useTeams(tournamentId, h.season.id)
   const { slots, reload } = useDraw(tournamentId, h.season.id)
   const online = useOnline()
@@ -115,7 +115,7 @@ export function Draw({ tournamentId, head: h, fallback }: { tournamentId: string
     setBusy(false)
   }
 
-  const complete = approved.length > 0 && !chips.length
+  const complete = drawComplete(approved, slots)
   return (
     <div className="draw">
       <p role="status" aria-live="polite" className="body-strong">{notice}</p>
@@ -156,6 +156,7 @@ export function Draw({ tournamentId, head: h, fallback }: { tournamentId: string
             </button>
           ))}
         </div>
+        {complete && onOpenGraphics && h.season.structure.structure === 'groups_knockout' && <SecondaryButton label="Open the draw Graphic" onClick={onOpenGraphics} />}
       </section>
       {editable && chips.length > 0 && (
         <>

@@ -7,7 +7,7 @@ import { backIcon, IconButton, PrimaryButton, SecondaryButton } from '../../ui/B
 import { Problem } from '../auth/Screen'
 import { SaveStatusBar } from '../save-status/SaveStatusBar'
 import { overlay, Unavailable, UUID } from '../setup/Setup'
-import { PackList } from '../graphics/Pack'
+import { GraphicsTab } from '../graphics/GraphicsTab'
 import { Fixtures } from './Fixtures'
 import { FinishCard } from './FinishCard'
 import { StartCard } from './StartCard'
@@ -198,7 +198,7 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
                 {h.season.status === 'started' && (
                   <FinishCard tournamentId={tournamentId} seasonId={h.season.id} number={h.season.number} onFinished={() => setAttempt((n) => n + 1)} />
                 )}
-                <Fixtures tournamentId={tournamentId} head={h} fallback={matchesText[h.season.status]} />
+                <Fixtures tournamentId={tournamentId} head={h} fallback={matchesText[h.season.status]} onOpenGraphics={() => choose('graphics')} />
               </>
             ) : <p className="body">{matchesText[h.season.status]}</p>)}
             {tab === 'teams' && (teamId ? (
@@ -211,9 +211,7 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
               </div>
             ) : <Teams tournamentId={tournamentId} head={h} onSeasonChange={() => setAttempt((n) => n + 1)} />)}
             {tab === 'graphics' && (
-              <>
-                <PackList tournamentId={tournamentId} seasonId={h.season.id} />
-              </>
+              <GraphicsTab tournamentId={tournamentId} head={h} />
             )}
           </section>
         </>

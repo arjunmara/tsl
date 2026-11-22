@@ -72,14 +72,15 @@ function consoleFor(id, long, kits) {
 
 const browser = await chromium.launch({ channel: 'chrome' })
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
-const READS = new Set(['console_match', 'server_now', 'standings', 'match_sides', 'takeover_requests', 'scoring_state'])
+const READS = new Set(['console_match', 'server_now', 'standings', 'match_sides', 'takeover_requests', 'scoring_state', 'finish_check'])
 
 /** variant 'full': logo, brand colours, two Sponsors and a venue; 'plain': none of them. A Season in the started state. brand: { primary, secondary, kits } overrides the colours. */
-async function open({ variant = 'full', init = '', long = false, brand = null } = {}) {
+async function open({ variant = 'full', init = '', long = false, brand = null, list = null } = {}) {
   const mock = { writes: [], commands: [], signed: [], views: [] }
   const season = { id: S, number: 1, status: 'started', setup_step: 7, version: 3, description: '', rules: '', photo_consent: 'Photos may be posted.',
     starts_on: '2033-11-07', ends_on: '2033-11-21', registration_deadline: '2033-11-03', structure: 'groups_knockout', group_count: 2, teams_per_group: 4, qualifiers_per_group: 2,
     venue: variant === 'full' ? 'Tamghas Arena' : null }
+  if (list?.structure) season.structure = list.structure
   const sponsors = variant === 'full'
     ? [{ id: 'a1', caption: 'Alpha Co', logo_path: `${T}/a1.webp`, ad_paths: [], version: 1, sort: 0 }, { id: 'b2', caption: 'Beta Ltd', logo_path: `${T}/b2.webp`, ad_paths: [], version: 1, sort: 1 }] : []
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 1200 } })
@@ -108,6 +109,8 @@ async function open({ variant = 'full', init = '', long = false, brand = null } 
       const later = { ...season, id: '22222222-0000-4000-8000-000000000010', number: 2, venue: 'Latest Venue' }
       return json(route, [{ id: T, name: long ? LONG : 'Gulmi Cup', brand_primary: brand?.primary ?? (variant === 'full' ? '#f6c453' : '#0a1a3f'), brand_secondary: brand?.secondary ?? '#f58220', logo_path: variant === 'full' ? `${T}/logo.webp` : null, version: 1, season: variant === 'full' ? [season, later] : [season] }])
     }
+    if (path === '/rest/v1/season' && new URL(req.url()).searchParams.get('select') === 'fixtures_published_at') return json(route, [{ fixtures_published_at: list?.published ? '2033-11-01T00:00:00Z' : null }])
+    if (path === '/rest/v1/draw_slot') return json(route, list?.slots ?? [])
     if (path === '/rest/v1/season') return json(route, { venue: new URL(req.url()).searchParams.get('id') === `eq.${S}` ? season.venue : 'Latest Venue' })
     if (path === '/rest/v1/player_photo_public') {
       // What the consent view gives: a path only for a consented cut-out (Roshan); others come back null. Anyone else's photo is never in the answer.
@@ -115,8 +118,8 @@ async function open({ variant = 'full', init = '', long = false, brand = null } 
       return json(route, [{ player_id: pid(1, 9), photo_path: `${T}/roshan.webp` }, { player_id: pid(2, 9), photo_path: null }, { player_id: pid(1, 2), photo_path: null }])
     }
     if (path === '/rest/v1/sponsor') return json(route, sponsors)
-    if (path === '/rest/v1/team') return json(route, TEAMS.map((t) => ({ id: t.id, name: t.name, code: t.code, kit_colour: t.kit, status: 'approved', registration_link: [], version: 1 })))
-    if (path === '/rest/v1/match') return json(route, matches)
+    if (path === '/rest/v1/team') return json(route, (list?.teams ?? TEAMS).map((t) => ({ id: t.id, name: t.name, code: t.code, kit_colour: t.kit, status: 'approved', registration_link: [], version: 1 })))
+    if (path === '/rest/v1/match') return json(route, list?.matches ?? matches)
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     if (req.method() !== 'GET' && !path.startsWith('/rest/v1/rpc/')) mock.writes.push(`${req.method()} ${path}`)
     if (!req.postData()) return json(route, [])
@@ -124,6 +127,7 @@ async function open({ variant = 'full', init = '', long = false, brand = null } 
     const cmd = path.replace('/rest/v1/rpc/', '')
     if (req.method() !== 'GET' && !READS.has(cmd)) mock.commands.push({ cmd, ...a })
     if (req.method() !== 'GET' && !READS.has(cmd) && !/^(set_season_venue|set_setup_step)$/.test(cmd)) mock.writes.push(`${req.method()} ${path}`)
+    if (cmd === 'standings' && list) return json(route, list.rows)
     if (cmd === 'console_match') return json(route, consoleFor(a.p_match_id, long, brand?.kits))
     if (READS.has(cmd)) return json(route, [])
     return json(route, { ok: true, code: null, message: 'ok', version: 4 })
@@ -557,6 +561,127 @@ try {
     const gate = readFileSync('src/domain/playerPhotos.ts', 'utf8')
     assert.ok(/player_photo_public/.test(gate) && /createSignedUrls/.test(gate))
     assert.ok(files.some((f) => /Player\.tsx$/.test(f)))
+  }
+
+  // Story 5.5, the Graphics tab: Official Draw, Fixtures (a card per day, parts over 8), Results (latest first, shootout), group tables in the server's order, the League's one
+  // table, the "Available once..." cards, the entry link, layout at three widths, and nothing uploaded or written.
+  {
+    const T4 = [...TEAMS, { id: tid(3), name: 'Blue Bats', code: 'BLU', kit: '#00aaff' }, { id: tid(4), name: 'Green Ghosts', code: 'GRN', kit: '#00aa00' }]
+    const slots = [[1, 1, 1], [1, 2, 2], [2, 1, 3], [2, 2, 4]].map(([grp, pos, t]) => ({ id: `99999999-0000-4000-8000-00000000000${t}`, grp, pos, team_id: tid(t) }))
+    const row = (n, t, home, away, stage, round, kick_off, status, extra = {}) => ({ id: mid(n), stage, round, label: null, ord: n, home_team_id: tid(home), away_team_id: tid(away), home_src: null, away_src: null,
+      kick_off, status, version: 1, hg: null, ag: null, home_pens: null, away_pens: null, ...extra })
+    const lm = [
+      ...Array.from({ length: 10 }, (_, i) => row(10 + i, 0, 1, 2, 'group', 'Group A', `2033-11-13T${String(8 + i).padStart(2, '0')}:00:00+05:45`, 'scheduled')),
+      row(30, 0, 3, 4, 'group', 'Group B', '2033-11-12T09:00:00+05:45', 'scheduled'),
+      row(31, 0, 3, 4, 'group', 'Group B', null, 'scheduled'),
+      row(40, 0, 1, 2, 'group', 'Group A', '2033-11-10T10:00:00+05:45', 'finished', { hg: 3, ag: 2 }),
+      row(41, 0, 3, 4, 'knockout', 'Final', '2033-11-11T10:00:00+05:45', 'finished', { hg: 2, ag: 2, home_pens: 4, away_pens: 3 }),
+      row(42, 0, 1, 2, 'group', 'Group A', '2033-11-11T12:00:00+05:45', 'finished', { hg: 1, ag: 0 }),
+    ]
+    const st = (grp, pos, t, p, w, d, l, gd, pts) => ({ grp, pos, team_id: tid(t), p, w, d, l, gf: 0, ga: 0, gd, pts, group_done: false, provisional: false, shootout_with: null })
+    const rows = [st(1, 1, 1, 2, 2, 0, 0, 2, 6), st(1, 2, 2, 2, 0, 0, 2, -2, 0), st(2, 1, 4, 1, 0, 1, 0, 0, 1), st(2, 2, 3, 1, 0, 1, 0, 0, 1)]
+    const list = { teams: T4, slots, matches: lm, rows, published: true }
+    const { page: p, mock } = await open({ list })
+    await p.goto(`${base}/t/${T}`)
+    await p.getByRole('tab', { name: 'Graphics' }).click()
+    await p.waitForFunction(() => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 8, null, { timeout: 90000 })
+    const heads = await p.locator('.graphics-grid .graphic-card h2').allTextContents()
+    assert.equal(heads.length, 8)
+    const want = [/^Official Draw Graphic$/, /^Fixtures Graphic for .*12 Nov 2033\)$/, /^Fixtures Graphic for .*13 Nov 2033\), Part 1 of 2$/, /^Fixtures Graphic for .*13 Nov 2033\), Part 2 of 2$/,
+      /^Results Graphic for .*11 Nov 2033\)$/, /^Results Graphic for .*10 Nov 2033\)$/, /^Group A table Graphic$/, /^Group B table Graphic$/]
+    want.forEach((re, i) => assert.match(heads[i], re, `card ${i}: ${heads[i]}`))
+    const alts = await p.locator('.graphics-grid .graphic-thumb').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+    assert.match(alts[0], /^Official draw, Gulmi Cup Season 2\. Group A: Red Tigers, Eight Eagles\. Group B: Blue Bats, Green Ghosts\. \w+ · .*\d{4}.*\)\.$/)
+    assert.match(alts[1], /^Fixtures, Gulmi Cup, .*\(12 Nov 2033\): 09:00 BLU v GRN \(Group B\)\. Latest Venue\.$/)
+    assert.match(alts[2], /\(13 Nov 2033\), Part 1 of 2: 08:00 RTM v RE8 \(Group A\); 09:00 RTM v RE8 \(Group A\);/)
+    assert.equal(alts[2].split('; ').length, 8)
+    assert.equal(alts[3].split('; ').length, 2)
+    assert.ok(alts[1].indexOf('09:00') > 0 && !alts.slice(1, 4).join().includes('GRN v BLU'), 'a Match without a kick-off or in the wrong place')
+    assert.match(alts[4], /^Results, Gulmi Cup, .*\(11 Nov 2033\): 10:00 BLU 2–2 GRN \(4–3 pens\) \(Final\); 12:00 RTM 1–0 RE8 \(Group A\)\. Latest Venue\.$/)
+    assert.match(alts[5], /: 10:00 RTM 3–2 RE8 \(Group A\)\./)
+    assert.equal(alts[6], 'Group A table after match day 2: 1 Red Tigers 6 pts (2, 2, 0, 0, +2); 2 Eight Eagles 0 pts (2, 0, 0, 2, -2).')
+    // Level on points: the server's order (GRN first although BLU sorts first), and no Match finished in the group means day 0.
+    assert.equal(alts[7], 'Group B table after match day 0: 1 Green Ghosts 1 pts (1, 0, 1, 0, 0); 2 Blue Bats 1 pts (1, 0, 1, 0, 0).')
+    const g = await p.locator('.graphic-list').evaluateAll((els) => els.map((el) => ({ fits: el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth, size: [el.offsetWidth, el.offsetHeight],
+      text: el.innerText, facts: [...el.querySelectorAll('.graphic-line, .graphic-foot')].map((n) => parseFloat(getComputedStyle(n).fontSize)), dots: el.querySelectorAll('.graphic-dot').length,
+      made: el.querySelector('.graphic-made').textContent, sub: el.querySelector('.graphic-sub').textContent })))
+    g.forEach((x, i) => { assert.deepEqual([x.fits, x.size], [true, [1080, 1350]], `list ${i} overflows`); assert.ok(x.facts.every((f) => f >= 36), `list ${i} facts: ${x.facts}`); assert.equal(x.made, 'Made with Test Platform') })
+    assert.equal(g[0].dots, 4)
+    assert.match(g[0].text, /GROUP A\s+RTM\s*Red Tigers/i)
+    assert.match(g[4].text, /BLU\s*2–2 \(4–3 pens\)\s*GRN/)
+    assert.match(g[6].text, /Level on points: Head-to-head points, Head-to-head goal difference, Shootout between the tied Teams, Overall goal difference, Goals scored/)
+    assert.ok(g[7].text.indexOf('GRN') < g[7].text.indexOf('BLU'), 'the server order was changed')
+    assert.equal(g[6].sub, 'After match day 2')
+    assert.equal(g[7].sub, 'After match day 0')
+    assert.deepEqual((await audit(p, '.graphic-list')).filter((l) => l.see || l.ratio < l.need), [], 'unreadable list text')
+    // The Draw, Fixtures and table cards come before the Post-match packs.
+    assert.ok(await p.locator('.graphics-grid').evaluate((el) => el.nextElementSibling.textContent === 'Post-match packs'))
+    // Download: a PNG of exactly 1080x1350, named for the Graphic.
+    const [d] = await Promise.all([p.waitForEvent('download'), p.getByRole('button', { name: 'Download the Official Draw Graphic', exact: true }).click()])
+    assert.equal(d.suggestedFilename(), 'official-draw.png')
+    assert.deepEqual(pngSize(readFileSync(await d.path())), [1080, 1350])
+    // A Fixture moved to another day shows on that day's card the next time the card renders.
+    lm.find((m) => m.id === mid(10)).kick_off = '2033-11-12T15:00:00+05:45'
+    await p.reload()
+    await p.waitForFunction(() => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 8, null, { timeout: 90000 })
+    const moved = await p.locator('.graphics-grid .graphic-thumb').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+    assert.match(moved[1], /09:00 BLU v GRN \(Group B\); 15:00 RTM v RE8 \(Group A\)\./)
+    assert.equal(moved[2].split('; ').length, 8)
+    assert.equal(moved[2].includes('08:00'), false)
+    // Layout: one column at 390px, two at 768px, content at most 960px at 1280px.
+    const cols = async () => p.locator('.graphics-grid').evaluate((el) => ({ cols: getComputedStyle(el).gridTemplateColumns.split(' ').length, home: document.querySelector('.home').offsetWidth }))
+    assert.equal((await cols()).cols, 1)
+    await p.setViewportSize({ width: 768, height: 1000 })
+    assert.equal((await cols()).cols, 2)
+    await p.setViewportSize({ width: 1280, height: 1000 })
+    assert.ok((await cols()).home <= 960 + 2, 'content wider than 960px')
+    assert.deepEqual(mock.writes, [], 'a Storage upload or an app write')
+    assert.equal(mock.commands.length, 0, 'a command was sent')
+    await p.context().close()
+  }
+
+  // The Draw board's "Draw complete" links to the Graphics tab.
+  {
+    const slots = [[1, 1, 1], [1, 2, 2], [2, 1, 3], [2, 2, 4]].map(([grp, pos, t]) => ({ id: `99999999-0000-4000-8000-00000000000${t}`, grp, pos, team_id: tid(t) }))
+    const T4 = [...TEAMS, { id: tid(3), name: 'Blue Bats', code: 'BLU', kit: '#00aaff' }, { id: tid(4), name: 'Green Ghosts', code: 'GRN', kit: '#00aa00' }]
+    const { page: p } = await open({ list: { teams: T4, slots, matches: [], rows: [], published: false } })
+    await p.goto(`${base}/t/${T}`)
+    await p.getByRole('button', { name: 'Open the draw Graphic', exact: true }).click()
+    assert.equal(await p.getByRole('tab', { name: 'Graphics' }).getAttribute('aria-selected'), 'true')
+    await p.locator('.graphics-grid .graphic-card h2', { hasText: 'Official Draw Graphic' }).waitFor()
+    // Nothing is placed yet: the cards say what they need.
+    const needs = await p.locator('.graphics-grid .graphic-card .meta').allTextContents()
+    assert.deepEqual(needs.filter((t) => t.startsWith('Available')), ['Available once fixtures are published', 'Available once a Match is finished', 'Available once fixtures are published'])
+    await p.context().close()
+    const q = await open({ list: { teams: T4, slots: [], matches: [], rows: [], published: false } })
+    await q.page.goto(`${base}/t/${T}`)
+    await q.page.getByRole('tab', { name: 'Graphics' }).click()
+    await q.page.getByText('Available once the Draw is complete').waitFor()
+    assert.equal(await q.page.getByText('Available once a Match is finished').count(), 1)
+    await q.page.context().close()
+  }
+
+  // League: one league table card and no Draw or group cards.
+  {
+    const T4 = [...TEAMS]
+    const lm = [{ id: mid(50), stage: 'league', round: 'League', label: null, ord: 1, home_team_id: tid(1), away_team_id: tid(2), home_src: null, away_src: null, kick_off: '2033-11-10T10:00:00+05:45',
+      status: 'finished', version: 1, hg: 2, ag: 1, home_pens: null, away_pens: null }]
+    const rows = [{ grp: 0, pos: 1, team_id: tid(1), p: 1, w: 1, d: 0, l: 0, gf: 2, ga: 1, gd: 1, pts: 3, group_done: false, provisional: false, shootout_with: null },
+      { grp: 0, pos: 2, team_id: tid(2), p: 1, w: 0, d: 0, l: 1, gf: 1, ga: 2, gd: -1, pts: 0, group_done: false, provisional: false, shootout_with: null }]
+    const { page: p, mock } = await open({ list: { structure: 'league', teams: T4, slots: [], matches: lm, rows, published: true } })
+    await p.goto(`${base}/t/${T}`)
+    await p.getByRole('tab', { name: 'Graphics' }).click()
+    await p.waitForFunction(() => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 2, null, { timeout: 60000 })
+    const heads = await p.locator('.graphics-grid .graphic-card h2').allTextContents()
+    assert.equal(heads.length, 3)
+    assert.equal(heads[0], 'Fixtures Graphics')
+    assert.equal(await p.getByText('No Matches left to play').count(), 1)
+    assert.match(heads[1], /^Results Graphic for /)
+    assert.equal(heads[2], 'League table Graphic')
+    assert.equal(await p.getByText('Official Draw').count(), 0)
+    assert.equal(await p.locator('.graphics-grid .graphic-thumb').last().getAttribute('aria-label'), 'League table after match day 1: 1 Red Tigers 3 pts (1, 1, 0, 0, +1); 2 Eight Eagles 0 pts (1, 0, 0, 1, -1).')
+    assert.deepEqual(mock.writes, [])
+    await p.context().close()
   }
 
   // Venue: set in Settings → Dates, editable after the Season starts (the dates lock), refused past 80 characters, cleared when blanked.

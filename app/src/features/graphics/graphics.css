@@ -61,3 +61,30 @@
 .graphic-card { display: grid; gap: var(--spacing-3); }
 .graphic-card .graphic-thumb { max-width: 24rem; }
 .graphic-caption { user-select: text; white-space: pre-wrap; }
+
+/* The Classic list Template (Story 5.5): the Draw's groups, a day's Matches, a table. Same fact type (36px and up) as the Result Graphic. */
+.graphic-list .graphic-sub { margin-top: 16px; }
+.graphic-listbody { flex: 1; min-height: 0; width: 100%; margin-top: 28px; overflow: hidden; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.graphic-line { display: flex; align-items: center; gap: 16px; min-height: 0; white-space: nowrap; font: var(--graphic-fact-font-weight) 40px / 1.2 var(--graphic-fact-font-family); }
+.graphic-line b { font-family: var(--graphic-team-font-family); font-weight: var(--graphic-team-font-weight); text-transform: uppercase; }
+.graphic-line span { overflow: hidden; text-overflow: ellipsis; }
+.graphic-dot { flex: none; width: 36px; height: 36px; border-radius: 50%; box-shadow: 0 0 0 3px currentColor; }
+.graphic-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 48px; align-content: start; }
+.graphic-groups section { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.graphic-gtitle { font: var(--graphic-headline-font-weight) 56px / 1.1 var(--graphic-headline-font-family); text-transform: uppercase; }
+.graphic-match { gap: 20px; }
+.graphic-match .graphic-time { width: 110px; flex: none; }
+.graphic-home { flex: 1; min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; }
+.graphic-away { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.graphic-mid { flex: none; text-align: center; font-weight: 700; }
+.graphic-rnd { flex: none; max-width: 230px; text-align: right; }
+.graphic-trow { display: grid; grid-template-columns: 70px 1fr repeat(6, 100px); gap: 0; }
+.graphic-trow > span { text-align: right; }
+.graphic-trow > span:first-child, .graphic-trow > span:nth-child(2) { text-align: left; }
+.graphic-thead { font-weight: 700; }
+.graphic-tteam { padding: 3px; display: flex; align-items: center; gap: 16px; }
+.graphic-foot { margin-top: 12px; white-space: normal; font: var(--graphic-fact-font-weight) var(--graphic-fact-font-size) / var(--graphic-fact-line-height) var(--graphic-fact-font-family); }
+
+.graphics-grid { display: grid; gap: var(--spacing-3); grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 600px) { .graphics-grid { grid-template-columns: 1fr 1fr; } }
+.graphics-grid .graphic-card .graphic-thumb { max-width: none; }

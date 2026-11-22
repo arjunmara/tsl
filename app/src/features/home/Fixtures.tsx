@@ -63,7 +63,7 @@ export function kickOffText(kickOff: string | null) {
  * The Matches tab from the Draw on (Stories 3.1, 3.2): the "Suggest fixtures" action, the Match cards, and the Draw board
  * below. The phone works out the pairings and sends the whole list in one command that needs a signal.
  */
-export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: string; head: Head; fallback: string }) {
+export function Fixtures({ tournamentId, head: h, fallback, onOpenGraphics }: { tournamentId: string; head: Head; fallback: string; onOpenGraphics?: () => void }) {
   const navigate = useNavigate()
   const { teams } = useTeams(tournamentId, h.season.id)
   const { slots } = useDraw(tournamentId, h.season.id)
@@ -74,6 +74,7 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const [justPublished, setJustPublished] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [arranging, setArranging] = useState(false)
   const inflight = useRef(false) // a swap sent, its result not on the cards yet: the versions shown are stale
@@ -164,6 +165,7 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
     setNotice('')
     setProblem(null)
     const r = await runCommand('publish_fixtures', { season_id: h.season.id })
+    setJustPublished(r.ok)
     if (r.ok) setNotice('Fixtures published')
     else setProblem(messageFor(r.code))
     setBusy(false)
@@ -245,6 +247,7 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
       {h.season.status === 'finished' && <p className="meta">{messages.season_finished}</p>}
       {action}
       <p role="status" aria-live="polite" className="body-strong">{notice}</p>
+      {justPublished && onOpenGraphics && <SecondaryButton label="Open the fixtures Graphics" onClick={onOpenGraphics} />}
       <Problem text={problem} />
       {matches.length > 0 && (rounds ? rounds.map((r) => (
         <section key={r}>
@@ -261,7 +264,7 @@ export function Fixtures({ tournamentId, head: h, fallback }: { tournamentId: st
           canRecord={h.season.status === 'started'} reload={standings.reload} />
       )}
       {league ? (!matches.length && !editable && <p className="body">{fallback}</p>)
-        : ((editable && !published) || !matches.length) && <Draw tournamentId={tournamentId} head={h} fallback={fallback} />}
+        : ((editable && !published) || !matches.length) && <Draw tournamentId={tournamentId} head={h} fallback={fallback} onOpenGraphics={onOpenGraphics} />}
       {league && !matches.length && editable && !ready && <p className="body">{fallback}</p>}
       <ConfirmSheet open={!!asking} title={asking?.title ?? ''} before={asking?.before ?? ''} after={asking?.after ?? ''}
         actionLabel="Swap these two Fixtures" note={messages.logged_note} onConfirm={() => asking?.go()}

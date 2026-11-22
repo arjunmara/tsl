@@ -13,6 +13,7 @@ import { sideText } from './Fixtures'
 /** The Season's group tables and resolved Match sides from the database (read once Fixtures exist), kept for offline; reloads as changes send and when the signal returns. */
 export function useStandings(seasonId: string, enabled: boolean) {
   const [data, setData] = useState<{ rows: StandingRow[]; sides: Sides[] } | null>(null)
+  const [failed, setFailed] = useState<'offline' | 'unknown' | null>(null)
   const [attempt, setAttempt] = useState(0)
   const pending = useOutbox().entries.length
   useEffect(() => {
@@ -23,12 +24,16 @@ export function useStandings(seasonId: string, enabled: boolean) {
   useEffect(() => {
     if (!enabled) return
     let live = true
-    void seasonStandings(seasonId).then((r) => live && setData((prev) => ('code' in r ? prev : r)))
+    void seasonStandings(seasonId).then((r) => {
+      if (!live) return
+      setFailed('code' in r ? r.code : null)
+      setData((prev) => ('code' in r ? prev : r))
+    })
     return () => {
       live = false
     }
   }, [seasonId, enabled, attempt, pending])
-  return { data, reload: () => setAttempt((n) => n + 1) }
+  return { data, failed, reload: () => setAttempt((n) => n + 1) }
 }
 
 const groupName = (grp: number) => (grp === 0 ? 'League table' : `Group ${String.fromCharCode(64 + grp)}`)
