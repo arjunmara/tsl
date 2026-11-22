@@ -75,14 +75,16 @@ const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers
 const READS = new Set(['console_match', 'server_now', 'standings', 'match_sides', 'season_top_scorers', 'takeover_requests', 'scoring_state', 'finish_check'])
 
 /** variant 'full': logo, brand colours, two Sponsors and a venue; 'plain': none of them. A Season in the started state. brand: { primary, secondary, kits } overrides the colours. */
-async function open({ variant = 'full', init = '', long = false, brand = null, list = null } = {}) {
+async function open({ variant = 'full', init = '', long = false, brand = null, list = null, template = 'classic', three = false } = {}) {
   const mock = { writes: [], commands: [], signed: [], views: [] }
+  let tplNow = template, tplVersion = 1
   const season = { id: S, number: 1, status: 'started', setup_step: 7, version: 3, description: '', rules: '', photo_consent: 'Photos may be posted.',
     starts_on: '2033-11-07', ends_on: '2033-11-21', registration_deadline: '2033-11-03', structure: 'groups_knockout', group_count: 2, teams_per_group: 4, qualifiers_per_group: 2,
     venue: variant === 'full' ? 'Tamghas Arena' : null }
   if (list?.structure) season.structure = list.structure
   const sponsors = variant === 'full'
-    ? [{ id: 'a1', caption: 'Alpha Co', logo_path: `${T}/a1.webp`, ad_paths: [], version: 1, sort: 0 }, { id: 'b2', caption: 'Beta Ltd', logo_path: `${T}/b2.webp`, ad_paths: [], version: 1, sort: 1 }] : []
+    ? [{ id: 'a1', caption: 'Alpha Co', logo_path: `${T}/a1.webp`, ad_paths: [], version: 1, sort: 0 }, { id: 'b2', caption: 'Beta Ltd', logo_path: `${T}/b2.webp`, ad_paths: [], version: 1, sort: 1 },
+      ...(three ? [{ id: 'c3', caption: 'Gamma Industries Pvt Ltd', logo_path: `${T}/c3.webp`, ad_paths: [], version: 1, sort: 2 }] : [])] : []
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 1200 } })
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base })
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort())
@@ -103,11 +105,13 @@ async function open({ variant = 'full', init = '', long = false, brand = null, l
   await context.route(`${SUPA}/rest/v1/**`, (route) => {
     const req = route.request()
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    // Routed requests ignore setOffline, so a test that goes offline also drops what it sends.
+    if (mock.drop && req.method() === 'POST') return route.abort('internetdisconnected')
     const path = new URL(req.url()).pathname
     if (path === '/rest/v1/tournament') {
       // The full variant has a later Season with another venue: the Graphic reads the venue of the Match's own Season (S).
       const later = { ...season, id: '22222222-0000-4000-8000-000000000010', number: 2, venue: 'Latest Venue' }
-      return json(route, [{ id: T, name: long ? LONG : 'Gulmi Cup', brand_primary: brand?.primary ?? (variant === 'full' ? '#f6c453' : '#0a1a3f'), brand_secondary: brand?.secondary ?? '#f58220', logo_path: variant === 'full' ? `${T}/logo.webp` : null, version: 1, season: variant === 'full' ? [season, later] : [season] }])
+      return json(route, [{ id: T, name: long ? LONG : 'Gulmi Cup', brand_primary: brand?.primary ?? (variant === 'full' ? '#f6c453' : '#0a1a3f'), brand_secondary: brand?.secondary ?? '#f58220', logo_path: variant === 'full' ? `${T}/logo.webp` : null, version: tplVersion, template: tplNow, season: variant === 'full' ? [season, later] : [season] }])
     }
     if (path === '/rest/v1/season' && new URL(req.url()).searchParams.get('select') === 'fixtures_published_at') return json(route, [{ fixtures_published_at: list?.published ? '2033-11-01T00:00:00Z' : null }])
     if (path === '/rest/v1/draw_slot') return json(route, list?.slots ?? [])
@@ -128,10 +132,16 @@ async function open({ variant = 'full', init = '', long = false, brand = null, l
     const a = JSON.parse(req.postData())
     const cmd = path.replace('/rest/v1/rpc/', '')
     if (req.method() !== 'GET' && !READS.has(cmd)) mock.commands.push({ cmd, ...a })
-    if (req.method() !== 'GET' && !READS.has(cmd) && !/^(set_season_venue|set_setup_step|set_season_award)$/.test(cmd)) mock.writes.push(`${req.method()} ${path}`)
+    if (req.method() !== 'GET' && !READS.has(cmd) && !/^(set_season_venue|set_setup_step|set_season_award|set_template)$/.test(cmd)) mock.writes.push(`${req.method()} ${path}`)
     if (cmd === 'standings' && list) return json(route, list.rows)
     if (cmd === 'match_sides' && list?.sides) return json(route, list.sides)
     if (cmd === 'season_top_scorers') return json(route, list?.scorers ?? [])
+    if (cmd === 'set_template') {
+      // The server's side: the Template changes and the Tournament's version moves on.
+      tplNow = a.template
+      tplVersion += 1
+      return json(route, { ok: true, code: null, message: 'Template saved.', version: tplVersion })
+    }
     if (cmd === 'set_season_award') {
       // The server's side: a new award is version 1, a change bumps it.
       const row = list.awards.find((x) => x.award === a.award)
@@ -830,6 +840,166 @@ try {
     await three.page.getByText('Available once every league Match is played').waitFor()
     assert.equal(await three.page.getByText('Available once a goal is scored').count(), 2, 'the Top scorers card and the Season awards line')
     await three.page.context().close()
+  }
+
+  // Story 5.7, Templates: Split and Minimal for every Graphic kind of 5.1 to 5.6 (1080x1350, every text layer readable, "Made with" at 24px or more, nothing written), the
+  // Minimal leader mark, the picker in Settings → Graphics (previews from real or sample data, the kind switch, Use this template, offline, keyboard, reduced motion).
+  {
+    const MADE = 'Made with Test Platform'
+    /** Every Graphic root on the page: size, no overflow, "Made with" text and size, the right Template, and every text layer readable. */
+    const verify = async (p, tpl, n, label) => {
+      const roots = await p.locator('.graphic-classic, .graphic-player').evaluateAll((els) => els.filter((el) => !el.closest('.picker-slide')).map((el) => ({ t: el.dataset.template,
+        w: el.offsetWidth, h: el.offsetHeight, fits: el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth, made: el.querySelector('.graphic-made')?.textContent,
+        px: parseFloat(getComputedStyle(el.querySelector('.graphic-made')).fontSize), op: getComputedStyle(el.querySelector('.graphic-made')).opacity })))
+      assert.equal(roots.length, n, `${label}: ${roots.length} Graphics`)
+      for (const r of roots) assert.deepEqual([r.t, r.w, r.h, r.fits, r.made, r.px >= 24, r.op], [tpl, 1080, 1350, true, MADE, true, '1'], `${label}: ${JSON.stringify(r)}`)
+      const bad = [...await audit(p, '.graphic-classic'), ...await audit(p, '.graphic-player')].filter((l) => l.see || l.ratio < l.need)
+      assert.deepEqual(bad, [], `${label}: unreadable text`)
+    }
+    const sd = (n, h, a) => ({ match_id: mid(n), home_team_id: h, away_team_id: a, home_src: null, away_src: null, home_resolved: h, away_resolved: a })
+    const T4 = [...TEAMS, { id: tid(3), name: 'Blue Bats', code: 'BLU', kit: '#00aaff' }, { id: tid(4), name: 'Green Ghosts', code: 'GRN', kit: '#00aa00' }]
+    const sq = [0, 1].flatMap((i) => squad(i).map((x) => ({ team_id: tid(i + 1), shirt_number: x.shirt, player: { id: x.player_id, name: x.name } })))
+    const slots = [[1, 1, 1], [1, 2, 2], [2, 1, 3], [2, 2, 4]].map(([grp, pos, t]) => ({ id: `99999999-0000-4000-8000-00000000000${t}`, grp, pos, team_id: tid(t) }))
+    const row = (n, home, away, stage, round, kick_off, status, extra = {}) => ({ id: mid(n), stage, round, label: null, ord: n, home_team_id: tid(home), away_team_id: tid(away), home_src: null, away_src: null,
+      kick_off, status, version: 1, hg: null, ag: null, home_pens: null, away_pens: null, ...extra })
+    const lm = [row(10, 1, 2, 'group', 'Group A', '2033-11-13T08:00:00+05:45', 'scheduled'), row(30, 3, 4, 'group', 'Group B', '2033-11-12T09:00:00+05:45', 'scheduled'),
+      row(40, 1, 2, 'group', 'Group A', '2033-11-10T10:00:00+05:45', 'finished', { hg: 3, ag: 2 }),
+      row(41, 3, 4, 'knockout', 'Final', '2033-11-11T10:00:00+05:45', 'finished', { hg: 2, ag: 2, home_pens: 4, away_pens: 3 })]
+    const st = (grp, pos, t, p, w, d, l, gd, pts) => ({ grp, pos, team_id: tid(t), p, w, d, l, gf: 0, ga: 0, gd, pts, group_done: false, provisional: false, shootout_with: null })
+    const rows = [st(1, 1, 1, 1, 1, 0, 0, 1, 3), st(1, 2, 2, 1, 0, 0, 1, -1, 0), st(2, 1, 4, 0, 0, 0, 0, 0, 0), st(2, 2, 3, 0, 0, 0, 0, 0, 0)]
+    const scorers = [{ player_id: pid(1, 1), team_id: tid(1), goals: 3 }, { player_id: pid(2, 1), team_id: tid(2), goals: 2 }]
+    const everyKind = () => ({ teams: T4, slots, matches: lm, rows, published: true, scorers, squad: sq, sides: [sd(40, tid(1), tid(2)), sd(41, tid(3), tid(4))],
+      awards: [{ id: 'a1000000-0000-4000-8000-000000000000', award: 'player_of_tournament', player_id: pid(1, 1), version: 1 }] })
+
+    for (const tpl of ['split', 'minimal']) {
+      // The pack of a Match with goals, an own goal, a Man of the Match and a Fair Player: the Result and every Player Graphic.
+      const { page: p, mock } = await open({ template: tpl })
+      await p.goto(`${base}/t/${T}/m/${mid(4)}/pack`)
+      await p.waitForFunction(() => [...document.querySelectorAll('.graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 6, null, { timeout: 60000 })
+      await verify(p, tpl, 7, `${tpl} pack`)
+      const d = await download(p)
+      assert.deepEqual(pngSize(d.buf), [1080, 1350], `${tpl}: the PNG size`)
+      if (process.env.GRAPHIC_SAVE) writeFileSync(`${process.env.GRAPHIC_SAVE}.${tpl}.png`, d.buf)
+      assert.deepEqual(mock.writes, [], `${tpl}: something was written`)
+      await p.context().close()
+
+      // The Graphics tab: Official Draw, Fixtures, Results, tables, top scorers, bracket, champions and the Season award, all in the Template.
+      const tab = await open({ template: tpl, list: everyKind() })
+      await tab.page.goto(`${base}/t/${T}`)
+      await tab.page.getByRole('tab', { name: 'Graphics' }).click()
+      await tab.page.waitForFunction(() => document.querySelectorAll('.graphics-grid .graphic-card button').length >= 9
+        && document.querySelectorAll('.graphics-grid .graphic-placeholder').length === 0, null, { timeout: 120000 })
+      const heads = await tab.page.locator('.graphics-grid .graphic-card h2').allTextContents()
+      for (const re of [/^Official Draw/, /^Fixtures/, /^Results/, /table Graphic$/, /^Top scorers/, /^Bracket/, /^Champions/, /^Player of the Tournament/]) assert.ok(heads.some((h) => re.test(h)), `${tpl}: no ${re} in ${heads}`)
+      await verify(tab.page, tpl, heads.filter((h) => !/^Available/.test(h)).length, `${tpl} tab`)
+      assert.deepEqual(tab.mock.writes, [], `${tpl} tab: something was written`)
+      await tab.page.context().close()
+    }
+
+    // Split with hard colours (a yellow home kit against a navy away kit, and the sweep), Minimal once: ink per half passes everywhere.
+    for (const [tpl, brand] of [['split', { primary: '#f6c453', secondary: '#ffffff', kits: ['#ffff00', '#0a1a3f'] }], ...COLOURS.map((c) => ['split', c]), ['minimal', COLOURS[0]]]) {
+      const { page: p } = await open({ template: tpl, brand })
+      await ready(p, 2)
+      await verify(p, tpl, 5, `${tpl} ${brand.kits}`)
+      if (tpl === 'split') {
+        const halves = await p.locator('.graphic-split .graphic-half').evaluateAll((els) => els.map((e) => e.textContent))
+        assert.deepEqual(halves, ['RTMRed Tigers', 'RE8Eight Eagles'])
+      }
+      await p.context().close()
+    }
+
+    // Long names (a 2-line Tournament name, long Team names, a venue and 3 Sponsors): the Result stays 1080x1350 with no overflow and "Made with" inside the canvas.
+    for (const tpl of ['split', 'minimal']) {
+      const { page: p } = await open({ template: tpl, long: true, three: true })
+      await ready(p, 1)
+      const f = await p.locator('.graphic-classic').evaluate((el) => {
+        const made = el.querySelector('.graphic-made').getBoundingClientRect()
+        const root = el.getBoundingClientRect()
+        return { size: [el.offsetWidth, el.offsetHeight], fits: el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth, plates: el.querySelectorAll('.graphic-plate').length,
+          made: made.bottom <= root.bottom && made.height > 0, text: el.querySelector('.graphic-made').textContent }
+      })
+      assert.deepEqual([f.size, f.fits, f.plates, f.made, f.text], [[1080, 1350], true, 3, true, MADE], `${tpl} long names: ${JSON.stringify(f)}`)
+      await p.context().close()
+    }
+
+    // Minimal: the leader is marked by weight 800 against 600 and a ▲; a shootout decides a level score; nothing is marked for a draw.
+    {
+      const { page: p } = await open({ template: 'minimal' })
+      for (const [n, lead] of [[1, 0], [2, 0], [6, null]]) {
+        await ready(p, n)
+        const f = await p.locator('.graphic-minimal').evaluate((el) => ({ w: [...el.querySelectorAll('.graphic-mscore')].map((s) => getComputedStyle(s).fontWeight), mark: [...el.querySelectorAll('.graphic-mlead')].map((s) => s.textContent),
+          score: [...el.querySelectorAll('.graphic-mscore')].map((s) => s.textContent) }))
+        if (lead === null) assert.deepEqual([f.w, f.mark], [['600', '600'], ['', '']], 'a draw is marked')
+        else assert.deepEqual([f.w, f.mark], [['800', '600'], ['▲', '']], `match ${n}`)
+      }
+      await p.context().close()
+    }
+
+    // The picker: three previews of the Tournament's own Match (or sample Teams before there is one), a kind switch, Use this template at once, offline, keyboard, reduced motion.
+    {
+      const { page: p, mock } = await open({ init: () => { window.__shared = [] } })
+      await p.goto(`${base}/t/${T}/settings`)
+      await button(p, 'Choose a graphics template').click()
+      await p.waitForURL(`**/t/${T}/settings/graphics`)
+      const slides = p.locator('.picker-slide')
+      await p.waitForFunction(() => document.querySelectorAll('.picker-slide .graphic-classic').length === 3 && document.querySelector('.picker-slide .graphic-code, .picker-slide .graphic-disc'))
+      assert.deepEqual(await slides.locator('h2').allTextContents(), ['Classic', 'Split', 'Minimal'])
+      assert.deepEqual(await slides.evaluateAll((els) => els.map((e) => e.querySelector('.graphic-classic').dataset.template)), ['classic', 'split', 'minimal'])
+      assert.ok((await p.locator('.picker-slide .graphic-classic').first().textContent()).includes('Red Tigers'), 'not from the Tournament\'s Match')
+      assert.deepEqual(await p.locator('.picker-slide .graphic-made').allTextContents(), [MADE, MADE, MADE])
+      assert.equal(await p.locator('.picker-inuse').count(), 1)
+      assert.equal(await slides.first().locator('.picker-inuse').textContent(), '✓ In use')
+      assert.equal(await p.getByRole('button', { name: 'Use this template', exact: true }).count(), 2)
+      // The kind switch re-renders every preview.
+      for (const [name, sel] of [['Goal', '.graphic-player'], ['Fixtures', '.graphic-list'], ['Table', '.graphic-list'], ['Result', '.graphic-classic']]) {
+        await p.getByRole('button', { name, exact: true }).click()
+        await p.waitForFunction((s) => document.querySelectorAll(`.picker-slide ${s}`).length === 3, sel)
+      }
+      // Keyboard: arrows move between previews, the name list jumps, and the row snaps.
+      const at = () => p.evaluate(() => document.activeElement?.getAttribute('aria-label'))
+      await slides.first().focus()
+      await p.keyboard.press('ArrowRight')
+      assert.equal(await at(), 'Split template')
+      await p.keyboard.press('ArrowRight')
+      await p.keyboard.press('ArrowRight')
+      assert.equal(await at(), 'Minimal template')
+      await p.keyboard.press('ArrowLeft')
+      assert.equal(await at(), 'Split template')
+      await button(p, 'Show Minimal template').click()
+      assert.equal(await at(), 'Minimal template')
+      assert.equal(await p.locator('.picker-row').evaluate((r) => getComputedStyle(r).scrollSnapType), 'x mandatory')
+      assert.equal(await p.locator('.picker-row').evaluate((r) => getComputedStyle(r).scrollBehavior), 'smooth')
+      await p.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
+      assert.equal(await p.locator('.picker-row').evaluate((r) => getComputedStyle(r).scrollBehavior), 'auto', 'smooth scrolling under reduced motion')
+      // Use this template: sent at once with the Tournament's version, no Confirm sheet; Split is in use.
+      await slides.nth(1).getByRole('button', { name: 'Use this template' }).click()
+      await p.waitForFunction(() => document.querySelectorAll('.picker-slide')[1].querySelector('.picker-inuse'))
+      assert.equal(await p.getByRole('dialog').count(), 0, 'a Confirm sheet')
+      for (let i = 0; i < 40 && !mock.commands.some((c) => c.cmd === 'set_template'); i++) await new Promise((r) => setTimeout(r, 100))
+      const sent = mock.commands.filter((c) => c.cmd === 'set_template')
+      assert.equal(sent.length, 1)
+      assert.deepEqual([sent[0].tournament_id, sent[0].template, sent[0].expected_version], [T, 'split', 1])
+      assert.equal(await p.locator('.picker-inuse').count(), 1)
+      // Offline: the choice queues, shows as in use and the Save status says what is waiting.
+      mock.drop = true
+      await p.context().setOffline(true)
+      await slides.nth(2).getByRole('button', { name: 'Use this template' }).click()
+      await p.getByText('Offline · 1 change waiting to send', { exact: false }).first().waitFor()
+      assert.ok(await slides.nth(2).locator('.picker-inuse').count(), 'Minimal is not shown as in use while queued')
+      assert.deepEqual(mock.writes, [], 'a Storage upload or an app write')
+      await p.context().close()
+    }
+    // Before the Draw, with no Match at all: sample Teams in every preview.
+    {
+      const { page: p } = await open({ list: { teams: [], slots: [], matches: [], rows: [], published: false, squad: [], awards: [] } })
+      await p.goto(`${base}/t/${T}/settings/graphics`)
+      await p.waitForFunction(() => document.querySelectorAll('.picker-slide .graphic-classic').length === 3)
+      for (const t of await p.locator('.picker-slide .graphic-classic').allTextContents()) assert.match(t, /Red Tigers.*RTM|RTM.*Red Tigers/s)
+      assert.match(await p.locator('.picker-slide .graphic-classic').first().textContent(), /Blue Eagles/)
+      await p.getByRole('button', { name: 'Goal', exact: true }).click()
+      await p.waitForFunction(() => document.querySelectorAll('.picker-slide .graphic-player').length === 3)
+      await p.context().close()
+    }
   }
 
   // Venue: set in Settings → Dates, editable after the Season starts (the dates lock), refused past 80 characters, cleared when blanked.

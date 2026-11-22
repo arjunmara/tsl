@@ -46,8 +46,12 @@ export const NEW_STRUCTURE: Structure = {
 }
 
 /** One Tournament as the setup wizard needs it; brand colours are null when the server sent none. */
+/** The Tournament's Graphic Template (Story 5.7). */
+export const TEMPLATES = ['classic', 'split', 'minimal'] as const
+export type Template = (typeof TEMPLATES)[number]
+
 export type TournamentSetup = {
-  id: string; name: string; brandPrimary: string | null; brandSecondary: string | null; logoPath: string | null; version: number
+  template: Template; id: string; name: string; brandPrimary: string | null; brandSecondary: string | null; logoPath: string | null; version: number
   season: (SeasonSummary & { answers: SeasonAnswers; settings: MatchSettings; lineup: LineupRules; structure: Structure }) | null
 }
 
@@ -55,7 +59,7 @@ type SeasonRow = { id: string; number: number; status: SeasonStatus; setup_step?
   & Partial<Record<keyof SeasonAnswers, string | null>> & Partial<MatchSettings> & Partial<LineupRules> & Partial<Structure>
 const ANSWERS = ['description', 'rules', 'photo_consent', 'starts_on', 'ends_on', 'registration_deadline', 'venue'] as const
 type Row = {
-  id: string; name: string; brand_primary?: string; brand_secondary?: string; logo_path?: string | null; version?: number
+  id: string; name: string; brand_primary?: string; brand_secondary?: string; logo_path?: string | null; version?: number; template?: Template
   season: SeasonRow[]
 }
 
@@ -134,7 +138,7 @@ export async function myTournaments(): Promise<{ tournaments: TournamentSummary[
 export async function tournamentSetup(id: string): Promise<{ tournament: TournamentSetup | null } | { code: 'offline' | 'unknown' }> {
   try {
     const { data, error, status } = await supabase.schema('app').from('tournament')
-      .select('id, name, brand_primary, brand_secondary, logo_path, version, season(id, number, status, setup_step, version, description, rules, photo_consent, starts_on, ends_on, registration_deadline, venue, ' +
+      .select('id, name, brand_primary, brand_secondary, logo_path, version, template, season(id, number, status, setup_step, version, description, rules, photo_consent, starts_on, ends_on, registration_deadline, venue, ' +
         `${SETTINGS.join(', ')}, ${Object.keys(NEW_LINEUP).join(', ')}, ${Object.keys(NEW_STRUCTURE).join(', ')})`)
       .eq('id', id)
     if (error) return failed(status)
@@ -145,7 +149,7 @@ export async function tournamentSetup(id: string): Promise<{ tournament: Tournam
     if (row && Number.isInteger(row.version)) await noteVersion(row.id, row.version!)
     return {
       tournament: t ? {
-        id: t.id, name: t.name, brandPrimary: t.brand_primary ?? null, brandSecondary: t.brand_secondary ?? null,
+        id: t.id, name: t.name, template: TEMPLATES.find((x) => x === t.template) ?? 'classic', brandPrimary: t.brand_primary ?? null, brandSecondary: t.brand_secondary ?? null,
         logoPath: t.logo_path ?? null, version: t.version ?? 1,
         season: s && row ? {
           ...s, answers: Object.fromEntries(ANSWERS.map((k) => [k, row[k] ?? ''])) as SeasonAnswers,

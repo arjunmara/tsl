@@ -1,5 +1,5 @@
 import { formatDate, inZone } from './format'
-import { logoUrl, seasonSponsors, tournamentSetup, TIEBREAKS, type Structure } from './tournaments'
+import { logoUrl, seasonSponsors, tournamentSetup, TIEBREAKS, type Structure, type Template } from './tournaments'
 import { drawColumns } from './drawBoard'
 import { matchMeta, type Match } from './matches'
 import { supabase } from './supabase'
@@ -10,7 +10,7 @@ import type { Team } from './teams'
 
 // The list Graphics (Story 5.5): Official Draw, Fixtures, Results and tables in the Classic list Template. Made on the device from current data; nothing is stored.
 
-export type Brand = { tournament: string; logo: string | null; primary: string | null; secondary: string | null; venue: string; sponsors: { name: string; logo: string }[] }
+export type Brand = { template: Template; tournament: string; logo: string | null; primary: string | null; secondary: string | null; venue: string; sponsors: { name: string; logo: string }[] }
 export type MatchRow = { time: string; home: string; away: string; round: string; score: string | null; pens: string | null }
 export type ListBody =
   | { kind: 'draw'; groups: { title: string; teams: { code: string; name: string; kit: string | null }[] }[] }
@@ -28,7 +28,7 @@ export async function seasonBrand(tournamentId: string, seasonId: string): Promi
   if ('code' in t) return t
   if (v.error || !t.tournament) return { code: 'unknown' }
   return {
-    tournament: t.tournament.name, logo: t.tournament.logoPath ? logoUrl(t.tournament.logoPath) : null, primary: t.tournament.brandPrimary, secondary: t.tournament.brandSecondary,
+    template: t.tournament.template, tournament: t.tournament.name, logo: t.tournament.logoPath ? logoUrl(t.tournament.logoPath) : null, primary: t.tournament.brandPrimary, secondary: t.tournament.brandSecondary,
     venue: (v.data as { venue: string | null } | null)?.venue ?? '', sponsors: 'code' in s ? [] : s.sponsors.map((x) => ({ name: x.caption, logo: logoUrl(x.logo_path) })),
   }
 }

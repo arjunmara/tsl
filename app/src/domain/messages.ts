@@ -152,6 +152,7 @@ export const messages = {
   venue_invalid: 'Use 1 to 80 characters for the venue, on one line.',
   dates_locked: "The dates can't change once the season has started. The venue can.",
   awards_unknown: "Couldn't load the Season awards. Try loading them again.",
+  template_invalid: "That template doesn't exist. Reload the page.",
   award_invalid: "That award doesn't exist. Reload the page.",
   graphic_failed: "Couldn't make this Graphic. Try again.",
   image_saved: 'Image saved. Caption copied.',

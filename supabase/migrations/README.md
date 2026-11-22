@@ -652,3 +652,9 @@ the Tournament, one row per Season and award; Organisers read it through RLS, no
 `expected_version` for an award already set is a `version_conflict`) and the read `app.season_top_scorers(season)` (goals per Player, own goals and unknown
 scorers left out; the Top Scorer is derived from it, never stored). Steps: paste `0038_season_awards.sql` into the SQL Editor and run it. Check:
 `select count(*) from app.season_awards` runs and shows 0.
+
+## Apply 0039_template.sql (Story 5.7)
+
+Apply after 0038 and before the app deploy with the template picker (test first, then live). It adds `app.tournament.template` (`classic` by default; `split` or
+`minimal` otherwise) and the command `set_template` (any Organiser; a stale `expected_version` is a `version_conflict`, any other value is `template_invalid`; the
+change shows in the Activity log). Steps: paste `0039_template.sql` into the SQL Editor and run it. Check: `select template from app.tournament limit 1` shows `classic`.

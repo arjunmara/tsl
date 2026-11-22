@@ -70,7 +70,7 @@ const surname = (name: string) => name.trim().split(/\s+/).at(-1) ?? name
  */
 export function awardGraphics(b: Brand, seasonNumber: number, d: SeasonAwardsData, byId: Map<string, Team>, cutouts: Map<string, string>): PlayerData[] {
   const side = { code: '', name: '', kit: null, score: 0, goals: [] }
-  const base: ResultData = { tournament: b.tournament, logo: b.logo, primary: b.primary, secondary: b.secondary, round: `Season ${seasonNumber} awards`, home: side, away: side,
+  const base: ResultData = { template: b.template, tournament: b.tournament, logo: b.logo, primary: b.primary, secondary: b.secondary, round: `Season ${seasonNumber} awards`, home: side, away: side,
     pens: null, date: '', venue: b.venue, sponsors: b.sponsors }
   const name = (id: string) => d.players.find((p) => p.playerId === id)?.name ?? ''
   const team = (id: string) => byId.get(d.players.find((p) => p.playerId === id)?.teamId ?? d.scorers.find((s) => s.playerId === id)?.teamId ?? '')

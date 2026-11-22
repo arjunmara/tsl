@@ -5,9 +5,9 @@ import type { ListData } from '../../domain/listGraphics'
 import { messages } from '../../domain/messages'
 import { PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { Problem } from '../auth/Screen'
-import { Classic } from './Classic'
 import { List } from './List'
 import { Player } from './Player'
+import { Result } from './templates'
 
 const W = 1080
 const H = 1350
@@ -156,7 +156,7 @@ export function ResultCard({ data, onRetry, ...pack }: { data: ResultData; onRet
   return (
     <GraphicView {...pack} heading="Result Graphic" data={data} problem={null} text={caption(data)} file={graphicFile(data)}
       retryLabel="Try making the graphic again" shareLabel="Share this Graphic" downloadLabel="Download this Graphic" onRetry={onRetry}>
-      {(ref, d) => <Classic ref={ref} data={d} />}
+      {(ref, d) => <Result ref={ref} data={d} />}
     </GraphicView>
   )
 }

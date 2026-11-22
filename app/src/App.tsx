@@ -17,6 +17,7 @@ import { Settings } from './features/home/Settings'
 import { Activity } from './features/home/Activity'
 import { CoOrganisers } from './features/home/CoOrganisers'
 import { Scorers } from './features/home/Scorers'
+import { TemplatePicker } from './features/graphics/TemplatePicker'
 import { TakeoverPrompt } from './features/home/TakeoverPrompt'
 import { Invite } from './features/auth/Invite'
 import { Register } from './features/register/Register'
@@ -108,6 +109,7 @@ export function App() {
                 <Route path="/t/:tournamentId/settings/co-organisers" element={<CoOrganisers />} />
                 <Route path="/t/:tournamentId/settings/activity" element={<Activity />} />
                 <Route path="/t/:tournamentId/settings/scorers" element={<Scorers />} />
+                <Route path="/t/:tournamentId/settings/graphics" element={<TemplatePicker />} />
                 <Route path="/t/:tournamentId/settings/:section" element={<SettingsSection />} />
               </Route>
             </Route>

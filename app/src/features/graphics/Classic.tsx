@@ -43,7 +43,7 @@ export const Classic = forwardRef<HTMLDivElement, { data: ResultData }>(function
   const when = [data.date, data.venue].filter(Boolean)
   const style: CSSProperties = { background: field.panel, color: field.text }
   return (
-    <div ref={ref} className="graphic-classic" style={style}>
+    <div ref={ref} className="graphic-classic" data-template="classic" style={style}>
       <div className="graphic-frame" style={{ borderColor: accent }} />
       <div className="graphic-eyebrow">
         {data.logo && <img className="graphic-logo" src={data.logo} alt="" crossOrigin="anonymous" />}

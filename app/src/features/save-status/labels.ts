@@ -14,6 +14,7 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   set_season_rules: (a) => `Change the season's ${changed(a)}`,
   set_season_dates: () => 'Change the season dates',
   set_season_venue: () => 'Change the venue',
+  set_template: (a) => `Change the graphics template to ${String(a.template ?? '').replace(/^./, (c) => c.toUpperCase())}`,
   // Preset keys are their labels in lower case (futsal → Futsal, 7-a-side).
   set_match_settings: (a) => (a.format_preset != null
     ? `Change the format to ${String(a.format_preset).replace(/^./, (c) => c.toUpperCase())}` : 'Change the Match settings'),

@@ -3436,4 +3436,20 @@ out=$(as anon "select app.set_season_award('$(cmd 4012)', '$S29', 'best_goalkeep
 [[ $out == *"permission denied for function"* ]] || fail "anon: can execute set_season_award: $out"
 [ "$(as anon "select count(*) from app.season_awards" 2>&1 | grep -c "permission denied")" = 1 ] || fail "anon: can read season_awards"
 
+# --- Template (Story 5.7): the Tournament's Graphic Template, versioned, three values, logged.
+tpl() { as "$1" "select case when (r->>'ok')::boolean then 'ok' else r->>'code' end from app.set_template('$(cmd "$2")', '$3', '$5', $4) r"; }
+[ "$(q "select template from app.tournament where id='$T15'")" = classic ] || fail "template: default is not classic"
+v=$(q "select version from app.tournament where id='$T15'")
+[ "$(tpl $A 4100 $T15 $v split)|$(q "select template||version from app.tournament where id='$T15'")" = "ok|split$((v + 1))" ] || fail "template: not set"
+[ "$(q "select count(*) from app.activity_log where table_name='tournament' and op='update' and command_id='$(cmd 4100)' and actor='$A'")" = 1 ] || fail "template: not logged"
+[ "$(tpl $A 4100 $T15 $v split)|$(q "select version from app.tournament where id='$T15'")" = "ok|$((v + 1))" ] || fail "template: repeat wrote again"
+r=$(as $A "select app.set_template('$(cmd 4101)', '$T15', 'minimal', $v)")
+[ "$(q "select r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'template' from (select '$r'::jsonb r) x")" = "version_conflict|$((v + 1))|split" ] || fail "template: conflict envelope: $r"
+v=$((v + 1))
+[ "$(tpl $A 4102 $T15 $v gradient)|$(tpl $A 4103 $T15 $v '')|$(tpl $B 4104 $T15 $v minimal)" = "template_invalid|template_invalid|not_authorized" ] || fail "template: bad value or non-member"
+! q "update app.tournament set template = 'x' where id='$T15'" >/dev/null 2>&1 || fail "template: check constraint missing"
+[ "$(tpl $A 4105 $T15 $v minimal)|$(tpl $A 4106 $T15 $((v + 1)) classic)|$(q "select template from app.tournament where id='$T15'")" = "ok|ok|classic" ] || fail "template: switching back"
+out=$(as anon "select app.set_template('$(cmd 4107)', '$T15', 'split', 1)" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute set_template: $out"
+
 echo ok

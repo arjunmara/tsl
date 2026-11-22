@@ -3,13 +3,13 @@ import { formatDate, inZone } from './format'
 import type { Match } from './matches'
 import { cutOutUrls } from './playerPhotos'
 import { supabase } from './supabase'
-import { logoUrl, seasonSponsors, tournamentSetup } from './tournaments'
+import { logoUrl, seasonSponsors, tournamentSetup, type Template } from './tournaments'
 
 // The Result Graphic's data and caption (Story 5.1). Nothing here is stored: the Graphic is made on the device from what the server says now.
 
 export type Side = { code: string; name: string; kit: string | null; score: number; goals: { who: string; minute: number }[] }
 export type ResultData = {
-  tournament: string; logo: string | null; primary: string | null; secondary: string | null; round: string
+  template: Template; tournament: string; logo: string | null; primary: string | null; secondary: string | null; round: string
   home: Side; away: Side; pens: { home: number; away: number } | null; date: string; venue: string; sponsors: { name: string; logo: string }[]
 }
 
@@ -42,7 +42,7 @@ async function load(tournamentId: string, seasonId: string, match: Match): Promi
     code: x.code, name: x.name, kit: x.lineup?.kitColour ?? x.registeredKit, score: scored ?? goalsOf(c.events, x.teamId), goals: goalsOfTeam(c.events, x, c.teams) })
   const day = match.kickOff ? inZone(match.kickOff).date : ''
   const d: ResultData = {
-    tournament: t.tournament.name, logo: t.tournament.logoPath ? logoUrl(t.tournament.logoPath) : null,
+    template: t.tournament.template, tournament: t.tournament.name, logo: t.tournament.logoPath ? logoUrl(t.tournament.logoPath) : null,
     primary: t.tournament.brandPrimary, secondary: t.tournament.brandSecondary, round: matchMetaOf(match),
     home: side(homeT, match.hg), away: side(awayT, match.ag),
     pens: c.match.homePens != null && c.match.awayPens != null ? { home: c.match.homePens, away: c.match.awayPens } : null,
