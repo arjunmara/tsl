@@ -658,3 +658,9 @@ scorers left out; the Top Scorer is derived from it, never stored). Steps: paste
 Apply after 0038 and before the app deploy with the template picker (test first, then live). It adds `app.tournament.template` (`classic` by default; `split` or
 `minimal` otherwise) and the command `set_template` (any Organiser; a stale `expected_version` is a `version_conflict`, any other value is `template_invalid`; the
 change shows in the Activity log). Steps: paste `0039_template.sql` into the SQL Editor and run it. Check: `select template from app.tournament limit 1` shows `classic`.
+
+## Apply 0040_more_templates.sql (Story 5.8)
+
+Apply after 0039 and before the app deploy with Gradient and Spotlight (test first, then live). It widens the check on `app.tournament.template` and the command
+`set_template` to `classic`, `split`, `minimal`, `gradient` and `spotlight`; any other value is still `template_invalid`. Steps: paste `0040_more_templates.sql`
+into the SQL Editor and run it. Check: `select pg_get_constraintdef(oid) from pg_constraint where conname = 'tournament_template_check'` lists `gradient` and `spotlight`.

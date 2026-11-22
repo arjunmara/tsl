@@ -47,7 +47,7 @@ export const NEW_STRUCTURE: Structure = {
 
 /** One Tournament as the setup wizard needs it; brand colours are null when the server sent none. */
 /** The Tournament's Graphic Template (Story 5.7). */
-export const TEMPLATES = ['classic', 'split', 'minimal'] as const
+export const TEMPLATES = ['classic', 'split', 'minimal', 'gradient', 'spotlight'] as const
 export type Template = (typeof TEMPLATES)[number]
 
 export type TournamentSetup = {

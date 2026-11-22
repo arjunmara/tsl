@@ -3446,9 +3446,14 @@ v=$(q "select version from app.tournament where id='$T15'")
 r=$(as $A "select app.set_template('$(cmd 4101)', '$T15', 'minimal', $v)")
 [ "$(q "select r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'template' from (select '$r'::jsonb r) x")" = "version_conflict|$((v + 1))|split" ] || fail "template: conflict envelope: $r"
 v=$((v + 1))
-[ "$(tpl $A 4102 $T15 $v gradient)|$(tpl $A 4103 $T15 $v '')|$(tpl $B 4104 $T15 $v minimal)" = "template_invalid|template_invalid|not_authorized" ] || fail "template: bad value or non-member"
+[ "$(tpl $A 4102 $T15 $v neon)|$(tpl $A 4103 $T15 $v '')|$(tpl $B 4104 $T15 $v minimal)" = "template_invalid|template_invalid|not_authorized" ] || fail "template: bad value or non-member"
 ! q "update app.tournament set template = 'x' where id='$T15'" >/dev/null 2>&1 || fail "template: check constraint missing"
 [ "$(tpl $A 4105 $T15 $v minimal)|$(tpl $A 4106 $T15 $((v + 1)) classic)|$(q "select template from app.tournament where id='$T15'")" = "ok|ok|classic" ] || fail "template: switching back"
+# Story 5.8: Gradient and Spotlight are saved; a value outside the five is still refused by the command and by the check.
+[ "$(tpl $A 4108 $T15 $((v + 2)) gradient)|$(tpl $A 4109 $T15 $((v + 3)) spotlight)|$(q "select template from app.tournament where id='$T15'")" = "ok|ok|spotlight" ] || fail "template: gradient or spotlight not saved"
+[ "$(tpl $A 4110 $T15 $((v + 4)) neon)" = template_invalid ] || fail "template: neon accepted"
+for t in gradient spotlight; do q "update app.tournament set template = '$t' where id='$T15'" >/dev/null || fail "template: check refuses $t"; done
+! q "update app.tournament set template = 'neon' where id='$T15'" >/dev/null 2>&1 || fail "template: check accepts neon"
 out=$(as anon "select app.set_template('$(cmd 4107)', '$T15', 'split', 1)" 2>&1 || true)
 [[ $out == *"permission denied for function"* ]] || fail "anon: can execute set_template: $out"
 

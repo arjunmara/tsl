@@ -2,6 +2,7 @@ import { forwardRef, type CSSProperties } from 'react'
 import { platformName } from '../../domain/env'
 import type { ListData } from '../../domain/listGraphics'
 import { brandDefaults, inkFor, readable, textColours, token } from '../setup/brand'
+import { gradientOf } from './Gradient'
 import './graphics.css'
 
 /**
@@ -14,23 +15,28 @@ export const List = forwardRef<HTMLDivElement, { data: ListData }>(function List
   // Split and Minimal (Story 5.7) change the palette and header only; the list layout is the same.
   const split = data.template === 'split'
   const min = data.template === 'minimal'
-  const field = split ? { panel: ink.navy, text: ink.white } : min ? { panel: ink.white, text: ink.navy } : readable(data.primary ?? def.primary, ink)
+  // Gradient (Story 5.8): the brand diagonal, one accent rule. Spotlight: the solid brand panel and one thick accent rule.
+  const grad = data.template === 'gradient'
+  const spot = data.template === 'spotlight'
+  const g = gradientOf(data.primary ?? def.primary, ink)
+  const field = split ? { panel: ink.navy, text: ink.white } : min ? { panel: ink.white, text: ink.navy } : grad ? { panel: g.from, text: g.text } : readable(data.primary ?? def.primary, ink)
   const accent = data.secondary ?? def.secondary
   const eyebrow = split ? inkFor([ink.navy], 28, ink, accent).text : min ? token('--ink-muted') : undefined
   const left = readable(data.primary ?? def.primary, ink).panel
   const dot = (kit: string | null) => <span className="graphic-dot" style={{ background: kit ?? ink.navy }} />
   const b = data.body
-  const style: CSSProperties = { background: field.panel, color: field.text }
+  const style: CSSProperties = { ...(grad ? g.css : { background: field.panel }), color: field.text }
   return (
-    <div ref={ref} className={`graphic-classic graphic-list${split ? ' graphic-lsplit' : min ? ' graphic-lmin' : ''}`} data-template={data.template} style={style}>
-      {!split && !min && <div className="graphic-frame" style={{ borderColor: accent }} />}
+    <div ref={ref} className={`graphic-classic graphic-list${split ? ' graphic-lsplit' : min ? ' graphic-lmin' : ''}`} data-template={data.template} data-worst-fill={grad ? g.worst : undefined} style={style}>
+      {!split && !min && !grad && !spot && <div className="graphic-frame" style={{ borderColor: accent }} />}
       <div className="graphic-eyebrow" style={eyebrow ? { color: eyebrow } : undefined}>
         {data.logo && <img className="graphic-logo" src={data.logo} alt="" crossOrigin="anonymous" />}
         <span>{data.tournament}</span>
       </div>
       <p className="graphic-round">{data.title}</p>
       {split ? <div className="graphic-strip"><span style={{ background: left }} /><span style={{ background: ink.white }} /></div>
-        : !min && <div className="graphic-tick" style={{ background: accent }} />}
+        : spot ? <div className="graphic-thick" style={{ background: accent }} />
+        : !min && <div className="graphic-tick" data-accent={grad ? '' : undefined} style={{ background: accent }} />}
       <p className="graphic-when graphic-sub">{data.sub}</p>
       <div className="graphic-rule" style={min ? { background: token('--line') } : { background: field.text, opacity: 0.4 }} />
       <div className="graphic-listbody">

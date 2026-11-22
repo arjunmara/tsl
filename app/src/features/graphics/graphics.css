@@ -171,3 +171,20 @@
 .picker-slide { flex: 0 0 min(88%, 30rem); scroll-snap-align: center; display: grid; gap: var(--spacing-3); align-content: start; }
 .picker-inuse { justify-self: start; margin: 0; }
 @media (prefers-reduced-motion: reduce) { .picker-row { scroll-behavior: auto; } }
+
+/* The Gradient and Spotlight Templates (Story 5.8). Gradient: the Classic layout on a diagonal, outlined crests, the Split score face, one accent rule. */
+.graphic-gradient .graphic-ring { display: grid; place-items: center; width: 200px; height: 200px; border-radius: 50%; font: 800 72px / 1 var(--graphic-team-font-family); letter-spacing: 2px; }
+.graphic-gscore { font: var(--graphic-score-font-weight) 290px / var(--graphic-score-line-height) var(--graphic-score-font-family); letter-spacing: 0; }
+.graphic-gradient .graphic-round { margin-top: 28px; }
+/* Spotlight: a thick rule under the header; on a Player Graphic the field fills the canvas above a content-sized solid panel. */
+.graphic-thick { width: 100%; height: 12px; margin-top: 28px; flex: none; }
+.graphic-spotlight .graphic-row { margin-top: 40px; }
+.graphic-spotlight .graphic-disc { box-shadow: inset 0 0 0 6px currentColor; }
+.graphic-pspot { display: flex; flex-direction: column; }
+.graphic-spotfield { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.graphic-pspot .graphic-cutout { bottom: 0; height: 100%; }
+.graphic-pspot .graphic-info { position: static; gap: 6px; padding: 28px 88px 36px; }
+.graphic-pspot .graphic-pname { font-size: 72px; }
+.graphic-pspot .graphic-minute, .graphic-pspot .graphic-mini { font-size: 52px; }
+.graphic-pspot .graphic-tag { font-size: 32px; }
+.graphic-pspot .graphic-info .graphic-sponsors, .graphic-pspot .graphic-info .graphic-made { margin-top: 8px; }

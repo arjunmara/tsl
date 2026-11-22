@@ -2,6 +2,7 @@ import { forwardRef, useLayoutEffect, useRef, useState, type CSSProperties } fro
 import { platformName } from '../../domain/env'
 import type { PlayerData } from '../../domain/graphics'
 import { brandDefaults, darken, inkFor, lighten, mix, readable, textColours, token, type TextColours } from '../setup/brand'
+import { gradientOf } from './Gradient'
 import './graphics.css'
 
 /** The panel's colour and ink: panel text sits on a fill at least 95% opaque over the cut-out, so it must read on the colour blended 5% with black and with white. */
@@ -26,7 +27,7 @@ export const Player = forwardRef<HTMLDivElement, { data: PlayerData }>(function 
   useLayoutEffect(() => {
     const fit = () => {
       const el = word.current
-      if (el) setPx(Math.min(data.base.template === 'split' ? 220 : 400, Math.floor((parseFloat(getComputedStyle(el).fontSize) * 984) / Math.max(el.offsetWidth, 1))))
+      if (el) setPx(Math.min(data.base.template === 'split' ? 220 : data.base.template === 'spotlight' ? 340 : 400, Math.floor((parseFloat(getComputedStyle(el).fontSize) * 984) / Math.max(el.offsetWidth, 1))))
     }
     fit()
     void document.fonts.ready.then(fit)
@@ -35,17 +36,23 @@ export const Player = forwardRef<HTMLDivElement, { data: PlayerData }>(function 
   const ink = textColours()
   const def = brandDefaults()
   // Split: navy bars over the home and away kit colours; Minimal: white canvas, navy ink, grey word. Only the palette and header differ from Classic.
+  // Gradient (Story 5.8): the brand diagonal as the canvas, no glow or frame. Spotlight: a light field on top holding the word and the cut-out, a solid brand panel below.
   const split = b.template === 'split'
   const min = b.template === 'minimal'
-  const field = split ? { panel: ink.navy, text: ink.white } : min ? { panel: ink.white, text: ink.navy } : readable(b.primary ?? def.primary, ink)
+  const grad = b.template === 'gradient'
+  const spot = b.template === 'spotlight'
+  const g = gradientOf(b.primary ?? def.primary, ink)
+  const field = split ? { panel: ink.navy, text: ink.white } : min ? { panel: ink.white, text: ink.navy } : grad ? { panel: g.from, text: g.text } : readable(b.primary ?? def.primary, ink)
+  const fieldTop = lighten(field.panel, 0.82)
   const accent = split ? ink.white : min ? ink.navy : b.secondary ?? def.secondary
   const glow = split || min ? field.panel : mix(field.panel, accent, 0.38)
-  const top = inkFor([field.panel, glow], 40, ink, min ? token('--ink-muted') : field.text)
-  const wordInk = inkFor([field.panel, glow], split ? 200 : 400, ink, min ? token('--ink-muted') : accent)
-  const { panel, text } = panelOf(field.panel, field.text, ink)
+  const behind = spot ? [fieldTop] : grad ? [g.from, g.to] : [field.panel, glow]
+  const top = inkFor(behind, 40, ink, spot ? field.panel : min ? token('--ink-muted') : field.text)
+  const wordInk = inkFor(behind, split ? 200 : 400, ink, spot ? field.panel : min ? token('--ink-muted') : grad ? g.text : accent)
+  const { panel, text } = panelOf(grad ? g.to : field.panel, field.text, ink)
   const chip = inkFor([accent], 36, ink)
   const when = [b.date, b.venue].filter(Boolean)
-  const style: CSSProperties = { background: field.panel, color: min ? field.text : top.text }
+  const style: CSSProperties = { ...(grad ? g.css : { background: field.panel }), color: min || spot ? field.text : top.text }
   const header = (
     <>
       <div className="graphic-eyebrow" style={min ? { color: top.text } : split ? { color: inkFor([ink.navy], 28, ink, b.secondary ?? def.secondary).text } : undefined}>
@@ -55,9 +62,11 @@ export const Player = forwardRef<HTMLDivElement, { data: PlayerData }>(function 
       <p className="graphic-round" style={split ? { color: ink.white } : undefined}>{b.round}</p>
     </>
   )
+  const wordEl = <p ref={word} className="graphic-word" style={{ color: wordInk.text, fontSize: px, ...(split ? { background: ink.navy } : {}) }}>{data.word}</p>
+  const cutEl = data.cutout && <img className="graphic-cutout" src={data.cutout} alt="" crossOrigin="anonymous" />
   return (
-    <div ref={ref} className={`graphic-player${split ? ' graphic-psplit' : min ? ' graphic-pmin' : ''}`} data-template={b.template} style={style}>
-      {!split && !min && <div className="graphic-glow" style={{ background: `radial-gradient(circle 460px at 50% 40%, ${accent}61, ${accent}00)` }} />}
+    <div ref={ref} className={`graphic-player${split ? ' graphic-psplit' : min ? ' graphic-pmin' : spot ? ' graphic-pspot' : ''}`} data-template={b.template} data-worst-fill={grad ? g.worst : undefined} style={style}>
+      {!split && !min && !grad && !spot && <div className="graphic-glow" style={{ background: `radial-gradient(circle 460px at 50% 40%, ${accent}61, ${accent}00)` }} />}
       {split && (
         <>
           <div className="graphic-halfbg" style={{ left: 0, background: b.home.kit ?? b.primary ?? def.primary }} />
@@ -65,10 +74,8 @@ export const Player = forwardRef<HTMLDivElement, { data: PlayerData }>(function 
           <div className="graphic-ptop" style={{ background: ink.navy }}>{header}</div>
         </>
       )}
-      {!split && header}
-      <p ref={word} className="graphic-word" style={{ color: wordInk.text, fontSize: px, ...(split ? { background: ink.navy } : {}) }}>{data.word}</p>
-      {data.cutout && <img className="graphic-cutout" src={data.cutout} alt="" crossOrigin="anonymous" />}
-      <div className="graphic-info" style={{ background: `${panel}f3`, color: text }}>
+      {spot ? <div className="graphic-spotfield" style={{ background: fieldTop, color: top.text }}>{header}{wordEl}{cutEl}</div> : <>{!split && header}{wordEl}{cutEl}</>}
+      <div className="graphic-info" style={{ background: spot ? field.panel : `${panel}f3`, color: spot ? field.text : text, ...(spot ? { borderTop: `12px solid ${accent}` } : {}) }}>
         <div className="graphic-tagrow">
           <span className="graphic-tag" style={{ background: chip.fill ?? accent, color: chip.text }}>{data.label}</span>
           {data.minute != null && <span className="graphic-minute">{data.minute}′</span>}
@@ -87,7 +94,7 @@ export const Player = forwardRef<HTMLDivElement, { data: PlayerData }>(function 
         )}
         <p className="graphic-made">Made with {platformName}</p>
       </div>
-      {!split && !min && <div className="graphic-frame" style={{ borderColor: accent }} />}
+      {!split && !min && !grad && !spot && <div className="graphic-frame" style={{ borderColor: accent }} />}
     </div>
   )
 })

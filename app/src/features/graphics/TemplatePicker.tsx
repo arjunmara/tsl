@@ -18,7 +18,7 @@ import { Player } from './Player'
 import { Result } from './templates'
 import './graphics.css'
 
-const NAMES: Record<Template, string> = { classic: 'Classic', split: 'Split', minimal: 'Minimal' }
+const NAMES: Record<Template, string> = { classic: 'Classic', split: 'Split', minimal: 'Minimal', gradient: 'Gradient', spotlight: 'Spotlight' }
 const KINDS = [['result', 'Result'], ['goal', 'Goal'], ['fixtures', 'Fixtures'], ['table', 'Table']] as const
 type Kind = (typeof KINDS)[number][0]
 const W = 1080

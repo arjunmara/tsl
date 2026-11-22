@@ -185,7 +185,9 @@ const audit = (p, sel = '.graphic-classic') => p.locator(sel).evaluateAll((roots
     while (fill && rgba(getComputedStyle(fill).backgroundColor)[3] === 0) fill = fill.parentElement
     let see = rgba(cs.color)[3] < 1
     for (let n = el; n && n !== root.parentElement; n = n.parentElement) if (getComputedStyle(n).opacity !== '1') see = true
-    const bg = rgba(getComputedStyle(fill).backgroundColor)
+    // A gradient root names its lightest stop in data-worst-fill: text on it is measured against that colour.
+    const wf = fill.dataset.worstFill
+    const bg = wf ? [1, 3, 5].map((i) => parseInt(wf.slice(i, i + 2), 16)).concat(1) : rgba(getComputedStyle(fill).backgroundColor)
     const px = parseFloat(cs.fontSize)
     // A fill at least 95% opaque (the Player panel over the cut-out) is measured as the fill blended 5% with black and with white, the worst of the two.
     const worst = bg[3] >= 0.95 && bg[3] < 1 ? Math.min(...[0, 255].map((k) => ratio(rgba(cs.color), bg.slice(0, 3).map((v) => v * 0.95 + k * 0.05)))) : ratio(rgba(cs.color), bg)
@@ -871,7 +873,7 @@ try {
     const everyKind = () => ({ teams: T4, slots, matches: lm, rows, published: true, scorers, squad: sq, sides: [sd(40, tid(1), tid(2)), sd(41, tid(3), tid(4))],
       awards: [{ id: 'a1000000-0000-4000-8000-000000000000', award: 'player_of_tournament', player_id: pid(1, 1), version: 1 }] })
 
-    for (const tpl of ['split', 'minimal']) {
+    for (const tpl of ['split', 'minimal', 'gradient', 'spotlight']) {
       // The pack of a Match with goals, an own goal, a Man of the Match and a Fair Player: the Result and every Player Graphic.
       const { page: p, mock } = await open({ template: tpl })
       await p.goto(`${base}/t/${T}/m/${mid(4)}/pack`)
@@ -897,7 +899,8 @@ try {
     }
 
     // Split with hard colours (a yellow home kit against a navy away kit, and the sweep), Minimal once: ink per half passes everywhere.
-    for (const [tpl, brand] of [['split', { primary: '#f6c453', secondary: '#ffffff', kits: ['#ffff00', '#0a1a3f'] }], ...COLOURS.map((c) => ['split', c]), ['minimal', COLOURS[0]]]) {
+    for (const [tpl, brand] of [['split', { primary: '#f6c453', secondary: '#ffffff', kits: ['#ffff00', '#0a1a3f'] }], ...COLOURS.map((c) => ['split', c]), ['minimal', COLOURS[0]],
+      ...['gradient', 'spotlight'].flatMap((t) => [{ primary: '#f6c453', secondary: '#f58220', kits: ['#ffff00', '#0a1a3f'] }, { primary: '#0a1a3f', secondary: '#f6c453', kits: ['#ffffff', '#f6c453'] }, ...COLOURS].map((c) => [t, c]))]) {
       const { page: p } = await open({ template: tpl, brand })
       await ready(p, 2)
       await verify(p, tpl, 5, `${tpl} ${brand.kits}`)
@@ -905,11 +908,16 @@ try {
         const halves = await p.locator('.graphic-split .graphic-half').evaluateAll((els) => els.map((e) => e.textContent))
         assert.deepEqual(halves, ['RTMRed Tigers', 'RE8Eight Eagles'])
       }
+      if (tpl === 'gradient') {
+        // Every Graphic names its lightest stop; brand-secondary is exactly one accent (a rule on a Result, the tag chip on a Player Graphic).
+        const roots = await p.locator('[data-template="gradient"]').evaluateAll((els) => els.map((el) => [/^#[0-9a-f]{6}$/.test(el.dataset.worstFill ?? ''), el.querySelectorAll('[data-accent], .graphic-tag').length]))
+        assert.deepEqual(roots, roots.map(() => [true, 1]), `gradient: worst fill or accent count ${brand.primary}`)
+      }
       await p.context().close()
     }
 
     // Long names (a 2-line Tournament name, long Team names, a venue and 3 Sponsors): the Result stays 1080x1350 with no overflow and "Made with" inside the canvas.
-    for (const tpl of ['split', 'minimal']) {
+    for (const tpl of ['split', 'minimal', 'gradient', 'spotlight']) {
       const { page: p } = await open({ template: tpl, long: true, three: true })
       await ready(p, 1)
       const f = await p.locator('.graphic-classic').evaluate((el) => {
@@ -919,6 +927,49 @@ try {
           made: made.bottom <= root.bottom && made.height > 0, text: el.querySelector('.graphic-made').textContent }
       })
       assert.deepEqual([f.size, f.fits, f.plates, f.made, f.text], [[1080, 1350], true, 3, true, MADE], `${tpl} long names: ${JSON.stringify(f)}`)
+      await p.context().close()
+    }
+
+    // Spotlight on a consented goal: the cut-out fills the top ~60% above a solid panel and a thick rule, bottom-anchored, never an empty box. No consent, an own goal or an
+    // unknown scorer: the word and the panel only. An Award with no cut-out too.
+    {
+      const { page: p } = await open({ template: 'spotlight' })
+      await p.goto(`${base}/t/${T}/m/${mid(4)}/pack`)
+      await p.waitForFunction(() => document.querySelectorAll('.graphic-player .graphic-cutout').length === 2 && [...document.querySelectorAll('.graphic-cutout')].every((i) => i.complete), null, { timeout: 60000 })
+      const f = await p.locator('.graphic-pspot').evaluateAll((els) => els.map((el) => {
+        const info = el.querySelector('.graphic-info'), cut = el.querySelector('.graphic-cutout'), field = el.querySelector('.graphic-spotfield')
+        return { cut: !!cut, rule: getComputedStyle(info).borderTopWidth, fieldH: field.offsetHeight, panelTop: info.offsetTop, word: !!el.querySelector('.graphic-word'),
+          imgs: [...field.querySelectorAll('img')].map((i) => i.className), svgs: el.querySelectorAll('svg').length,
+          below: cut ? cut.offsetTop + cut.offsetHeight <= info.offsetTop && cut.offsetHeight >= 500 && cut.offsetHeight / 1350 >= 0.45 : null }
+      }))
+      assert.ok(f.length >= 4, `spotlight Player Graphics: ${f.length}`)
+      for (const x of f) {
+        assert.deepEqual([x.rule, x.word, x.svgs, x.fieldH >= 600 && x.fieldH <= 900, x.panelTop === x.fieldH, x.imgs.every((c) => /^graphic-(logo|cutout)$/.test(c))], ['12px', true, 0, true, true, true], JSON.stringify(x))
+        if (x.cut) assert.equal(x.below, true, `cut-out above the panel: ${JSON.stringify(x)}`)
+      }
+      assert.equal(f.filter((x) => x.cut).length, 2, 'a cut-out without consent (the goal and the Man of the Match)')
+      await p.context().close()
+    }
+
+    // Gradient on a light primary: the worst fill is the darker stop (navy text reads worst there) and the audit passes; a ring stays visible.
+    {
+      const { page: p } = await open({ template: 'gradient', brand: { primary: '#f6c453', secondary: '#f58220', kits: ['#f6c453', '#0a1a3f'] } })
+      await ready(p, 1)
+      const f = await p.locator('.graphic-gradient').evaluate((el) => ({ wf: el.dataset.worstFill, bg: getComputedStyle(el).backgroundImage, text: getComputedStyle(el).color }))
+      const stops = f.bg.match(/rgb\([^)]*\)/g).map((c) => '#' + c.match(/\d+/g).map((v) => Number(v).toString(16).padStart(2, '0')).join(''))
+      assert.equal(f.wf, stops[1], `worst fill ${f.wf} is not the darker stop ${stops}`)
+      await verify(p, 'gradient', 6, 'gradient light primary')
+      await p.context().close()
+    }
+
+    // Spotlight worst case (3 Sponsors, long Tournament and Team names, an assist, date and venue): nothing overflows and the field keeps at least 45% of the canvas.
+    {
+      const { page: p } = await open({ template: 'spotlight', long: true, three: true })
+      await p.goto(`${base}/t/${T}/m/${mid(4)}/pack`)
+      await p.waitForFunction(() => document.querySelectorAll('.graphic-player .graphic-cutout').length === 2 && [...document.querySelectorAll('.graphic-cutout')].every((i) => i.complete), null, { timeout: 60000 })
+      const f = await p.locator('.graphic-pspot').evaluateAll((els) => els.map((el) => ({ fits: el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth, field: el.querySelector('.graphic-spotfield').offsetHeight,
+        made: el.querySelector('.graphic-made').getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom, plates: el.querySelectorAll('.graphic-plate').length })))
+      for (const x of f) assert.ok(x.fits && x.made && x.plates === 3 && x.field >= 608, `spotlight worst case: ${JSON.stringify(x)}`)
       await p.context().close()
     }
 
@@ -935,36 +986,35 @@ try {
       await p.context().close()
     }
 
-    // The picker: three previews of the Tournament's own Match (or sample Teams before there is one), a kind switch, Use this template at once, offline, keyboard, reduced motion.
+    // The picker: five previews of the Tournament's own Match (or sample Teams before there is one), a kind switch, Use this template at once, offline, keyboard, reduced motion.
     {
       const { page: p, mock } = await open({ init: () => { window.__shared = [] } })
       await p.goto(`${base}/t/${T}/settings`)
       await button(p, 'Choose a graphics template').click()
       await p.waitForURL(`**/t/${T}/settings/graphics`)
       const slides = p.locator('.picker-slide')
-      await p.waitForFunction(() => document.querySelectorAll('.picker-slide .graphic-classic').length === 3 && document.querySelector('.picker-slide .graphic-code, .picker-slide .graphic-disc'))
-      assert.deepEqual(await slides.locator('h2').allTextContents(), ['Classic', 'Split', 'Minimal'])
-      assert.deepEqual(await slides.evaluateAll((els) => els.map((e) => e.querySelector('.graphic-classic').dataset.template)), ['classic', 'split', 'minimal'])
+      await p.waitForFunction(() => document.querySelectorAll('.picker-slide .graphic-classic').length === 5 && document.querySelector('.picker-slide .graphic-code, .picker-slide .graphic-disc'))
+      assert.deepEqual(await slides.locator('h2').allTextContents(), ['Classic', 'Split', 'Minimal', 'Gradient', 'Spotlight'])
+      assert.deepEqual(await slides.evaluateAll((els) => els.map((e) => e.querySelector('.graphic-classic').dataset.template)), ['classic', 'split', 'minimal', 'gradient', 'spotlight'])
       assert.ok((await p.locator('.picker-slide .graphic-classic').first().textContent()).includes('Red Tigers'), 'not from the Tournament\'s Match')
-      assert.deepEqual(await p.locator('.picker-slide .graphic-made').allTextContents(), [MADE, MADE, MADE])
+      assert.deepEqual(await p.locator('.picker-slide .graphic-made').allTextContents(), [MADE, MADE, MADE, MADE, MADE])
       assert.equal(await p.locator('.picker-inuse').count(), 1)
       assert.equal(await slides.first().locator('.picker-inuse').textContent(), '✓ In use')
-      assert.equal(await p.getByRole('button', { name: 'Use this template', exact: true }).count(), 2)
+      assert.equal(await p.getByRole('button', { name: 'Use this template', exact: true }).count(), 4)
       // The kind switch re-renders every preview.
       for (const [name, sel] of [['Goal', '.graphic-player'], ['Fixtures', '.graphic-list'], ['Table', '.graphic-list'], ['Result', '.graphic-classic']]) {
         await p.getByRole('button', { name, exact: true }).click()
-        await p.waitForFunction((s) => document.querySelectorAll(`.picker-slide ${s}`).length === 3, sel)
+        await p.waitForFunction((s) => document.querySelectorAll(`.picker-slide ${s}`).length === 5, sel)
       }
       // Keyboard: arrows move between previews, the name list jumps, and the row snaps.
       const at = () => p.evaluate(() => document.activeElement?.getAttribute('aria-label'))
       await slides.first().focus()
       await p.keyboard.press('ArrowRight')
       assert.equal(await at(), 'Split template')
-      await p.keyboard.press('ArrowRight')
-      await p.keyboard.press('ArrowRight')
-      assert.equal(await at(), 'Minimal template')
+      for (let i = 0; i < 4; i++) await p.keyboard.press('ArrowRight')
+      assert.equal(await at(), 'Spotlight template')
       await p.keyboard.press('ArrowLeft')
-      assert.equal(await at(), 'Split template')
+      assert.equal(await at(), 'Gradient template')
       await button(p, 'Show Minimal template').click()
       assert.equal(await at(), 'Minimal template')
       assert.equal(await p.locator('.picker-row').evaluate((r) => getComputedStyle(r).scrollSnapType), 'x mandatory')
@@ -993,11 +1043,11 @@ try {
     {
       const { page: p } = await open({ list: { teams: [], slots: [], matches: [], rows: [], published: false, squad: [], awards: [] } })
       await p.goto(`${base}/t/${T}/settings/graphics`)
-      await p.waitForFunction(() => document.querySelectorAll('.picker-slide .graphic-classic').length === 3)
+      await p.waitForFunction(() => document.querySelectorAll('.picker-slide .graphic-classic').length === 5)
       for (const t of await p.locator('.picker-slide .graphic-classic').allTextContents()) assert.match(t, /Red Tigers.*RTM|RTM.*Red Tigers/s)
       assert.match(await p.locator('.picker-slide .graphic-classic').first().textContent(), /Blue Eagles/)
       await p.getByRole('button', { name: 'Goal', exact: true }).click()
-      await p.waitForFunction(() => document.querySelectorAll('.picker-slide .graphic-player').length === 3)
+      await p.waitForFunction(() => document.querySelectorAll('.picker-slide .graphic-player').length === 5)
       await p.context().close()
     }
   }
