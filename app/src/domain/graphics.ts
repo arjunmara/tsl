@@ -74,7 +74,7 @@ export const graphicFile = (d: ResultData) => `${d.home.code}-v-${d.away.code}.p
 
 // Player Graphics (Story 5.3) and the Post-match pack (Story 5.4): result, goals, cards, missed penalties, Man of the Match, Fair Player.
 
-export type Kind = 'goal' | 'card' | 'missed' | 'mom' | 'fair'
+export type Kind = 'goal' | 'card' | 'missed' | 'mom' | 'fair' | 'award'
 export type PlayerData = {
   kind: Kind
   base: ResultData
@@ -89,7 +89,7 @@ export type Pack = { result: ResultData; players: PlayerData[] }
 
 /** The line that stands in for a kind with no Graphics. */
 export const emptyReason: Record<Kind, string> = {
-  goal: 'No goals in this Match', card: 'No cards in this Match', missed: 'No missed penalties', mom: 'No Man of the Match chosen', fair: 'No Fair Player chosen',
+  goal: 'No goals in this Match', card: 'No cards in this Match', missed: 'No missed penalties', mom: 'No Man of the Match chosen', fair: 'No Fair Player chosen', award: 'No Season award chosen',
 }
 
 /** One share caption for the whole pack: each Graphic's caption in pack order, a blank line between. */

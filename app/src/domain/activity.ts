@@ -75,6 +75,8 @@ export function activityLines(r: ActivityRow, label: (k: string) => string, show
   const b = r.before ?? {}
   const a = r.after ?? {}
   const lines: ActivityLine[] = []
+  // A Season award changes its Player (an id, so never shown): say so in words.
+  if (r.table === 'season_awards') return [{ key: 'player', label: 'Player', text: 'Player changed' }]
   for (const k of Object.keys(a)) {
     if (k === 'id' || k === 'version' || k.endsWith('_id') || k.endsWith('_at')) continue
     // A personal field is logged as its own name, or "<name>:changed" when an update changed it.

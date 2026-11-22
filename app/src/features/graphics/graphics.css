@@ -84,6 +84,23 @@
 .graphic-thead { font-weight: 700; }
 .graphic-tteam { padding: 3px; display: flex; align-items: center; gap: 16px; }
 .graphic-foot { margin-top: 12px; white-space: normal; font: var(--graphic-fact-font-weight) var(--graphic-fact-font-size) / var(--graphic-fact-line-height) var(--graphic-fact-font-family); }
+/* Top scorers, the bracket and champions (Story 5.6). A round of more than 4 ties (the round of 16) shows each tie on one line in a wider column.
+   ponytail: a round of more than 8 ties (a round of 32) clips; split the bracket if one is ever needed. */
+.graphic-srow .graphic-rank { width: 56px; flex: none; }
+.graphic-srow .graphic-sname { flex: 1; min-width: 0; }
+.graphic-srow .graphic-sgoals { flex: none; font-weight: 700; }
+.graphic-bracket { display: grid; gap: 20px; flex: 1; min-height: 0; }
+.graphic-bracket section { min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.graphic-bracket .graphic-gtitle { font-size: 44px; margin-bottom: 12px; }
+.graphic-ties { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-around; gap: 8px; }
+.graphic-tie { min-width: 0; }
+.graphic-tie .graphic-line { font-size: 36px; justify-content: space-between; gap: 8px; }
+.graphic-tie .graphic-line b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.graphic-champs { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; text-align: center; }
+.graphic-champdisc { width: 460px; height: 460px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: var(--graphic-word-font-weight) 190px / 1 var(--graphic-word-font-family); text-transform: uppercase; box-shadow: 0 0 0 10px currentColor; }
+.graphic-cname { font: var(--graphic-headline-font-weight) 96px / 1 var(--graphic-headline-font-family); text-transform: uppercase; overflow-wrap: anywhere; }
+.graphic-cscore { justify-content: center; }
 
 .graphics-grid { display: grid; gap: var(--spacing-3); grid-template-columns: 1fr; align-items: start; }
 @media (min-width: 600px) { .graphics-grid { grid-template-columns: 1fr 1fr; } }

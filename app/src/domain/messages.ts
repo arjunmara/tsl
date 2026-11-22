@@ -151,6 +151,8 @@ export const messages = {
   date_out_of_range: `Pick a date from ${formatDate(BS_RANGE.min)} to ${formatDate(BS_RANGE.max)}.`,
   venue_invalid: 'Use 1 to 80 characters for the venue, on one line.',
   dates_locked: "The dates can't change once the season has started. The venue can.",
+  awards_unknown: "Couldn't load the Season awards. Try loading them again.",
+  award_invalid: "That award doesn't exist. Reload the page.",
   graphic_failed: "Couldn't make this Graphic. Try again.",
   image_saved: 'Image saved. Caption copied.',
   image_saved_no_copy: 'Image saved. Copy the caption below.',

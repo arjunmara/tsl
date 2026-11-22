@@ -61,7 +61,7 @@ export const Player = forwardRef<HTMLDivElement, { data: PlayerData }>(function 
         <p className="graphic-pname">{data.name}</p>
         {data.team && <p className="graphic-pteam">{data.team}</p>}
         {data.assist && <p className="graphic-assist">Assist: {data.assist}</p>}
-        <p className="graphic-mini">{b.home.code} {b.home.score}–{b.away.score} {b.away.code}</p>
+        {data.kind !== 'award' && <p className="graphic-mini">{b.home.code} {b.home.score}–{b.away.score} {b.away.code}</p>}
         {when.length > 0 && <p className="graphic-when">{when.join('\n')}</p>}
         {b.sponsors.length > 0 && (
           <div className="graphic-sponsors">

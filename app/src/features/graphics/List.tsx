@@ -1,7 +1,7 @@
 import { forwardRef, type CSSProperties } from 'react'
 import { platformName } from '../../domain/env'
 import type { ListData } from '../../domain/listGraphics'
-import { brandDefaults, readable, textColours } from '../setup/brand'
+import { brandDefaults, inkFor, readable, textColours } from '../setup/brand'
 import './graphics.css'
 
 /**
@@ -45,6 +45,38 @@ export const List = forwardRef<HTMLDivElement, { data: ListData }>(function List
             <span className="graphic-rnd">{r.round}</span>
           </p>
         ))}
+        {b.kind === 'scorers' && b.rows.map((r, i) => (
+          <p key={i} className="graphic-line graphic-srow"><span className="graphic-rank">{r.rank}</span>{dot(r.kit)}<b>{r.code}</b><span className="graphic-sname">{r.name}</span><span className="graphic-sgoals">{r.goals}</span></p>
+        ))}
+        {b.kind === 'bracket' && (
+          <div className="graphic-bracket" style={{ gridTemplateColumns: b.rounds.map((r) => (r.ties.length > 4 ? 'minmax(0, 1.7fr)' : 'minmax(0, 1fr)')).join(' ') }}>
+            {b.rounds.map((r) => (
+              <section key={r.title}>
+                <h3 className="graphic-gtitle">{r.title}</h3>
+                <div className="graphic-ties">
+                  {r.ties.map((t, i) => (
+                    <div key={i} className="graphic-tie">
+                      {r.ties.length > 4
+                        ? <p className="graphic-line"><b>{t.home}</b><span>{t.hs}</span><b>{t.away}</b><span>{t.as}</span></p>
+                        : <><p className="graphic-line"><b>{t.home}</b><span>{t.hs}</span></p><p className="graphic-line"><b>{t.away}</b><span>{t.as}</span></p></>}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+        {b.kind === 'champions' && (() => {
+          const kit = b.kit ?? ink.navy
+          const d = inkFor([kit], 120, ink)
+          return (
+            <div className="graphic-champs">
+              <div className="graphic-champdisc" style={{ background: d.fill ?? kit, color: d.text }}>{b.code}</div>
+              <p className="graphic-cname">{b.name}</p>
+              {b.score && <p className="graphic-line graphic-cscore">{b.score}</p>}
+            </div>
+          )
+        })()}
         {b.kind === 'table' && (
           <>
             <p className="graphic-line graphic-trow graphic-thead"><span>#</span><span>Team</span>{['P', 'W', 'D', 'L', 'GD', 'Pts'].map((h) => <span key={h}>{h}</span>)}</p>

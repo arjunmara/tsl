@@ -5,6 +5,7 @@ import { matchMeta, type Match } from './matches'
 import { supabase } from './supabase'
 import type { Slot } from './draw'
 import type { StandingRow } from './standings'
+import type { Scorer } from './seasonAwards'
 import type { Team } from './teams'
 
 // The list Graphics (Story 5.5): Official Draw, Fixtures, Results and tables in the Classic list Template. Made on the device from current data; nothing is stored.
@@ -14,6 +15,9 @@ export type MatchRow = { time: string; home: string; away: string; round: string
 export type ListBody =
   | { kind: 'draw'; groups: { title: string; teams: { code: string; name: string; kit: string | null }[] }[] }
   | { kind: 'matches'; rows: MatchRow[] }
+  | { kind: 'scorers'; rows: { rank: number; code: string; kit: string | null; name: string; goals: number }[] }
+  | { kind: 'bracket'; rounds: { title: string; ties: { home: string; away: string; hs: string; as: string }[] }[] }
+  | { kind: 'champions'; code: string; kit: string | null; name: string; score: string | null }
   | { kind: 'table'; rows: { pos: number; code: string; kit: string | null; p: number; w: number; d: number; l: number; gd: string; pts: number }[]; footnote: string }
 /** title and sub are the Graphic's headline and day line; foot the venue; label names the card, its buttons and (as `heading`) its thumbnail. */
 export type ListData = Brand & { body: ListBody; title: string; sub: string; foot: string[]; caption: string; label: string; file: string }
@@ -107,4 +111,61 @@ export function tableData(b: Brand, structure: Structure, rows: StandingRow[], m
       caption: `${after}: ${list.map((r) => `${r.pos} ${r.name} ${r.pts} pts (${r.p}, ${r.w}, ${r.d}, ${r.l}, ${r.gd})`).join('; ')}.`,
     }
   })
+}
+
+/** Top scorers (Story 5.6): at most 10 rows, ranked by goals; Players level share a rank (1, 1, 3) and sort by name. null before any goal. */
+export function scorersData(b: Brand, seasonNumber: number, scorers: Scorer[], names: Map<string, string>, byId: Map<string, Team>): ListData | null {
+  const sorted = scorers.filter((s) => s.goals > 0).map((s) => ({ ...s, name: names.get(s.playerId) ?? '?' })).sort((x, y) => y.goals - x.goals || x.name.localeCompare(y.name))
+  if (sorted.length === 0) return null
+  const rows = sorted.slice(0, 10).map((s) => {
+    const t = byId.get(s.teamId)
+    return { rank: sorted.findIndex((x) => x.goals === s.goals) + 1, code: t?.code ?? '?', kit: t?.kitColour ?? null, name: s.name, goals: s.goals }
+  })
+  return {
+    ...b, body: { kind: 'scorers', rows }, title: 'Top scorers', sub: `Season ${seasonNumber}`, foot: [], label: 'Top scorers Graphic', file: 'top-scorers.png',
+    caption: `Top scorers, ${b.tournament} Season ${seasonNumber}: ${rows.map((r) => `${r.rank} ${r.name} (${r.code}) ${r.goals}`).join('; ')}.`,
+  }
+}
+
+/** The result as the Graphic shows it: "2–1", with the shootout when the Match went to one. */
+const resultOf = (m: Match) => `${m.hg ?? 0}–${m.ag ?? 0}${m.homePens != null && m.awayPens != null ? ` (${m.homePens}–${m.awayPens} pens)` : ''}`
+
+/** The road to the final: one column per knockout round in Fixture order. Sides are the database's resolved Teams; a side not known yet shows its source label. null with no knockout Match. */
+export function bracketData(b: Brand, seasonNumber: number, matches: Match[], byId: Map<string, Team>, sides: Map<string, { homeTeamId: string | null; awayTeamId: string | null }>): ListData | null {
+  const ko = matches.filter((m) => m.stage === 'knockout').sort((x, y) => x.ord - y.ord)
+  if (ko.length === 0) return null
+  const rounds = [...new Set(ko.map((m) => m.round))].map((title) => ({
+    title,
+    ties: ko.filter((m) => m.round === title).map((m) => {
+      const s = sides.get(m.id)
+      const done = m.status === 'finished'
+      const pen = (n: number | null | undefined) => (done && m.homePens != null && m.awayPens != null && n != null ? ` (${n})` : '')
+      const home = sideOf(s ? s.homeTeamId : m.homeTeamId, m.homeSrc, byId)
+      const away = sideOf(s ? s.awayTeamId : m.awayTeamId, m.awaySrc, byId)
+      return { tie: { home, away, hs: done ? `${m.hg ?? 0}${pen(m.homePens)}` : '', as: done ? `${m.ag ?? 0}${pen(m.awayPens)}` : '' }, text: `${title}: ${home} ${done ? resultOf(m) : 'v'} ${away}` }
+    }),
+  }))
+  return {
+    ...b, body: { kind: 'bracket', rounds: rounds.map((r) => ({ title: r.title, ties: r.ties.map((t) => t.tie) })) }, title: 'Road to the final', sub: `Season ${seasonNumber}`, foot: [],
+    label: 'Bracket Graphic', file: 'bracket.png',
+    caption: `Road to the final, ${b.tournament} Season ${seasonNumber}: ${rounds.flatMap((r) => r.ties.map((t) => t.text)).join('; ')}.`,
+  }
+}
+
+/**
+ * Champions: the winner of the finished final (its score or shootout), or for a League the table leader. The caller passes the winner's Team id and the final
+ * Match (null for a League). The winner is read from the finished result; no table or bracket is worked out here.
+ */
+export function championsData(b: Brand, seasonNumber: number, team: Team, final: Match | null): ListData {
+  return {
+    ...b, body: { kind: 'champions', code: team.code, kit: team.kitColour, name: team.name, score: final ? resultOf(final) : null }, title: 'Champions', sub: `Season ${seasonNumber}`, foot: [],
+    label: 'Champions Graphic', file: 'champions.png', caption: `Champions, ${b.tournament} Season ${seasonNumber}: ${team.name}.`,
+  }
+}
+
+/** The Team that won a finished Match: the higher score, else the shootout. null if level with no shootout. */
+export function winnerOf(m: Match, s: { homeTeamId: string | null; awayTeamId: string | null } | undefined): string | null {
+  const [h, a] = [s ? s.homeTeamId : m.homeTeamId, s ? s.awayTeamId : m.awayTeamId]
+  const [x, y] = (m.hg ?? 0) === (m.ag ?? 0) ? [m.homePens, m.awayPens] : [m.hg, m.ag]
+  return x == null || y == null || x === y ? null : x > y ? h : a
 }

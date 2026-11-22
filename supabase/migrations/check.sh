@@ -89,7 +89,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,legacy_mirror_push,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring,holder_label,move_scoring,scoring_state,takeover_requests}"
+helpers="{is_member,legacy_mirror_push,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring,holder_label,move_scoring,scoring_state,takeover_requests,season_top_scorers}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -3383,5 +3383,57 @@ if grep -rEin "(insert into|update|delete from|truncate)[[:space:]]+(only[[:spac
   fail "mirror: a file writes a public table"
 fi
 [ "$(grep -Ein "(insert into|update|delete from)[[:space:]]+public\." "$dir/0036_legacy_mirror.sql" | grep -v ":[[:space:]]*--" | grep -vc "public\.live")" = 0 ] || fail "mirror: 0036 writes a table besides public.live"
+
+# --- Season awards and top scorers (Story 5.6). S29 of T15 (started): AWA (X24) v AWB (X25), 4 Players each. Goals: X24 shirt 1 three (and one deleted), X24 shirt 2 two,
+# X25 shirt 1 two, plus an own goal, an unknown scorer. A organises T15; B does not.
+S29=21111111-0000-4000-8000-0000000000fb X24=47111111-0000-4000-8000-000000000024 X25=47111111-0000-4000-8000-000000000025 AM1=54111111-0000-4000-8000-0000000000d1
+q "insert into app.season (id, tournament_id, number, status, starters, max_bench) values ('$S29', '$T15', 20, 'started', 2, 2)" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$X24', '$T15', '$S29', 'Award A FC', 'AWA', '#ff0000', 'approved'), ('$X25', '$T15', '$S29', 'Award B FC', 'AWB', '#0000ff', 'approved')" >/dev/null
+for t in 24 25; do for n in 1 2 3 4; do
+  q "insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl $t $n)', '$T15', 'Player $t-$n', '2000-01-01');
+     insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '$(eval echo \$X$t)', '$(pl $t $n)', $n)" >/dev/null
+done; done
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status) values ('$AM1', '$T15', '$S29', 'group', 'Group A', 1, '$X24', '$X25', 'scheduled')" >/dev/null
+gl() { q "insert into app.match_event (id, tournament_id, season_id, match_id, kind, period, minute, entered_at, team_id, player_id, own_goal, deleted_at)
+  values (gen_random_uuid(), '$T15', '$S29', '$AM1', 'goal', 1, $3, now(), '$1', $2, ${4:-false}, ${5:-null})" >/dev/null; }
+gl $X24 "'$(pl 24 1)'" 1; gl $X24 "'$(pl 24 1)'" 2; gl $X24 "'$(pl 24 1)'" 3; gl $X24 "'$(pl 24 1)'" 4 false now\(\)
+gl $X24 "'$(pl 24 2)'" 5; gl $X24 "'$(pl 24 2)'" 6; gl $X25 "'$(pl 25 1)'" 7; gl $X25 "'$(pl 25 1)'" 8
+gl $X24 "'$(pl 25 3)'" 9 true; gl $X25 null 10
+ts() { as "$1" "select coalesce(string_agg(goals::text, ',' order by goals desc, player_id), '-') from app.season_top_scorers('$S29')"; }
+[ "$(ts $A)|$(as $A "select string_agg(distinct team_id::text, ',') from app.season_top_scorers('$S29') where player_id = '$(pl 24 1)'")" = "3,2,2|$X24" ] || fail "scorers: $(ts $A)"
+[ "$(ts $B)" = - ] || fail "scorers: another Tournament's Organiser reads goals"
+out=$(as anon "select * from app.season_top_scorers('$S29')" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute season_top_scorers: $out"
+[ "$(as $A "select count(*) from app.season_top_scorers('$S29') where player_id = '$(pl 25 3)'")" = 0 ] || fail "scorers: an own goal counted"
+sa() { tc "$1" "set_season_award('$(cmd "$2")', '$3', '$4', $(nq $5), $6)"; }
+av() { q "select coalesce(string_agg(award||'='||(select name from app.player p where p.id = a.player_id)||'@'||version, ',' order by award), '-') from app.season_awards a where season_id='$S29'"; }
+[ "$(sa $A 4000 $S29 player_of_tournament $(pl 24 1) null)|$(av)" = "ok|player_of_tournament=Player 24-1@1" ] || fail "award: not set: $(av)"
+[ "$(q "select count(*) from app.activity_log where table_name='season_awards' and op='insert' and command_id='$(cmd 4000)' and actor='$A'")" = 1 ] || fail "award: set not logged"
+[ "$(sa $A 4000 $S29 player_of_tournament $(pl 24 1) null)|$(av)" = "ok|player_of_tournament=Player 24-1@1" ] || fail "award: repeat wrote again"
+r=$(as $A "select app.set_season_award('$(cmd 4001)', '$S29', 'player_of_tournament', '$(pl 25 1)', null)")
+[ "$(q "select r->>'code', r->'conflict'->>'current_version', r->'conflict'->'current'->>'player_id' from (select '$r'::jsonb r) x")" = "version_conflict|1|$(pl 24 1)" ] || fail "award: conflict envelope: $r"
+[ "$(sa $A 4002 $S29 player_of_tournament $(pl 25 1) 0)" = version_conflict ] || fail "award: stale version changed it"
+[ "$(sa $A 4003 $S29 player_of_tournament $(pl 25 1) 1)|$(av)" = "ok|player_of_tournament=Player 25-1@2" ] || fail "award: not changed: $(av)"
+[ "$(q "select count(*) from app.activity_log where table_name='season_awards' and op='update' and command_id='$(cmd 4003)' and actor='$A'")" = 1 ] || fail "award: change not logged"
+[ "$(sa $A 4004 $S29 best_goalkeeper $(pl 25 4) null)|$(sa $A 4005 $S29 best_goalkeeper $(pl 13 1) null)|$(sa $A 4006 $S29 best_goalkeeper $(pl 24 1) null)|$(sa $A 4007 $S29 bogus $(pl 24 1) null)|$(sa $B 4008 $S29 best_goalkeeper $(pl 24 1) null)" \
+  = "ok|player_invalid|version_conflict|award_invalid|not_authorized" ] || fail "award: Squad, conflict, award or Tournament check"
+[ "$(sa $A 4009 $S29 best_goalkeeper null null)" = player_invalid ] || fail "award: no Player accepted"
+[ "$(sa $A 4010 $S15 best_goalkeeper $(pl 24 1) null)" = season_setup ] || fail "award: allowed in setup"
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values ('47111111-0000-4000-8000-000000000026', '$T15', '$S29', 'Pending FC', 'AWP', '#00ff00', 'submitted');
+   insert into app.player (id, tournament_id, name, date_of_birth) values ('$(pl 26 1)', '$T15', 'Player 26-1', '2000-01-01');
+   insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$T15', '47111111-0000-4000-8000-000000000026', '$(pl 26 1)', 1)" >/dev/null
+[ "$(sa $A 4013 $S29 best_goalkeeper $(pl 26 1) null)|$(av | grep -c 'Player 26-1')" = "player_invalid|0" ] || fail "award: a Player of a Team that is not approved"
+q "update app.season set status = 'finished' where id = '$S29'" >/dev/null
+[ "$(sa $A 4011 $S29 best_goalkeeper $(pl 24 4) 1)|$(av)" = "ok|best_goalkeeper=Player 24-4@2,player_of_tournament=Player 25-1@2" ] || fail "award: refused after the Season finished: $(av)"
+[ "$(as $B "select count(*) from app.season_awards")|$(as $A "select count(*) from app.season_awards where season_id='$S29'")" = "0|2" ] || fail "award: RLS read"
+for w in "insert into app.season_awards (tournament_id, season_id, award, player_id) values ('$T15', '$S29', 'x', '$(pl 24 1)')" "update app.season_awards set version = 9" "delete from app.season_awards"; do
+  ! as $A "$w" >/dev/null 2>&1 || fail "award: a client wrote directly: $w"
+done
+[ "$(q "select string_agg(policyname||':'||cmd||':'||array_to_string(roles, ',')||':'||qual, ';') from pg_policies where schemaname='app' and tablename='season_awards'")" \
+  = 'organiser_read:SELECT:authenticated:app.is_member(tournament_id)' ] || fail "award: table policies"
+out=$(as anon "select app.set_season_award('$(cmd 4012)', '$S29', 'best_goalkeeper', '$(pl 24 1)', 1)" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute set_season_award: $out"
+[ "$(as anon "select count(*) from app.season_awards" 2>&1 | grep -c "permission denied")" = 1 ] || fail "anon: can read season_awards"
 
 echo ok

@@ -73,6 +73,7 @@ export const commandLabels: Record<string, (args: Args) => string> = {
   set_clock: () => 'Correct the Match clock',
   end_match: () => 'End the Match',
   set_awards: () => 'Change the Awards',
+  set_season_award: (a) => `Change the ${a.award === 'best_goalkeeper' ? 'Best Goalkeeper' : 'Player of the Tournament'}`,
   type_result: () => 'Save the result',
   record_goal: () => 'Record a goal',
   add_assist: () => 'Add an assist to a goal',

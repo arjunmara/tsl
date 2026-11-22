@@ -72,7 +72,7 @@ function consoleFor(id, long, kits) {
 
 const browser = await chromium.launch({ channel: 'chrome' })
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
-const READS = new Set(['console_match', 'server_now', 'standings', 'match_sides', 'takeover_requests', 'scoring_state', 'finish_check'])
+const READS = new Set(['console_match', 'server_now', 'standings', 'match_sides', 'season_top_scorers', 'takeover_requests', 'scoring_state', 'finish_check'])
 
 /** variant 'full': logo, brand colours, two Sponsors and a venue; 'plain': none of them. A Season in the started state. brand: { primary, secondary, kits } overrides the colours. */
 async function open({ variant = 'full', init = '', long = false, brand = null, list = null } = {}) {
@@ -118,6 +118,8 @@ async function open({ variant = 'full', init = '', long = false, brand = null, l
       return json(route, [{ player_id: pid(1, 9), photo_path: `${T}/roshan.webp` }, { player_id: pid(2, 9), photo_path: null }, { player_id: pid(1, 2), photo_path: null }])
     }
     if (path === '/rest/v1/sponsor') return json(route, sponsors)
+    if (path === '/rest/v1/squad_entry') return json(route, list?.squad ?? [])
+    if (path === '/rest/v1/season_awards') return json(route, list?.awards ?? [])
     if (path === '/rest/v1/team') return json(route, (list?.teams ?? TEAMS).map((t) => ({ id: t.id, name: t.name, code: t.code, kit_colour: t.kit, status: 'approved', registration_link: [], version: 1 })))
     if (path === '/rest/v1/match') return json(route, list?.matches ?? matches)
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
@@ -126,8 +128,17 @@ async function open({ variant = 'full', init = '', long = false, brand = null, l
     const a = JSON.parse(req.postData())
     const cmd = path.replace('/rest/v1/rpc/', '')
     if (req.method() !== 'GET' && !READS.has(cmd)) mock.commands.push({ cmd, ...a })
-    if (req.method() !== 'GET' && !READS.has(cmd) && !/^(set_season_venue|set_setup_step)$/.test(cmd)) mock.writes.push(`${req.method()} ${path}`)
+    if (req.method() !== 'GET' && !READS.has(cmd) && !/^(set_season_venue|set_setup_step|set_season_award)$/.test(cmd)) mock.writes.push(`${req.method()} ${path}`)
     if (cmd === 'standings' && list) return json(route, list.rows)
+    if (cmd === 'match_sides' && list?.sides) return json(route, list.sides)
+    if (cmd === 'season_top_scorers') return json(route, list?.scorers ?? [])
+    if (cmd === 'set_season_award') {
+      // The server's side: a new award is version 1, a change bumps it.
+      const row = list.awards.find((x) => x.award === a.award)
+      if (row) Object.assign(row, { player_id: a.player_id, version: row.version + 1 })
+      else list.awards.push({ id: `a${list.awards.length + 1}000000-0000-4000-8000-000000000000`, award: a.award, player_id: a.player_id, version: 1 })
+      return json(route, { ok: true, code: null, message: 'Award saved.', version: row ? row.version : 1 })
+    }
     if (cmd === 'console_match') return json(route, consoleFor(a.p_match_id, long, brand?.kits))
     if (READS.has(cmd)) return json(route, [])
     return json(route, { ok: true, code: null, message: 'ok', version: 4 })
@@ -584,11 +595,11 @@ try {
     const { page: p, mock } = await open({ list })
     await p.goto(`${base}/t/${T}`)
     await p.getByRole('tab', { name: 'Graphics' }).click()
-    await p.waitForFunction(() => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 8, null, { timeout: 90000 })
+    await p.waitForFunction(() => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 10, null, { timeout: 90000 })
     const heads = await p.locator('.graphics-grid .graphic-card h2').allTextContents()
-    assert.equal(heads.length, 8)
+    assert.equal(heads.length, 11)
     const want = [/^Official Draw Graphic$/, /^Fixtures Graphic for .*12 Nov 2033\)$/, /^Fixtures Graphic for .*13 Nov 2033\), Part 1 of 2$/, /^Fixtures Graphic for .*13 Nov 2033\), Part 2 of 2$/,
-      /^Results Graphic for .*11 Nov 2033\)$/, /^Results Graphic for .*10 Nov 2033\)$/, /^Group A table Graphic$/, /^Group B table Graphic$/]
+      /^Results Graphic for .*11 Nov 2033\)$/, /^Results Graphic for .*10 Nov 2033\)$/, /^Group A table Graphic$/, /^Group B table Graphic$/, /^Top scorers Graphic$/, /^Bracket Graphic$/, /^Champions Graphic$/]
     want.forEach((re, i) => assert.match(heads[i], re, `card ${i}: ${heads[i]}`))
     const alts = await p.locator('.graphics-grid .graphic-thumb').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
     assert.match(alts[0], /^Official draw, Gulmi Cup Season 2\. Group A: Red Tigers, Eight Eagles\. Group B: Blue Bats, Green Ghosts\. \w+ · .*\d{4}.*\)\.$/)
@@ -615,7 +626,8 @@ try {
     assert.equal(g[7].sub, 'After match day 0')
     assert.deepEqual((await audit(p, '.graphic-list')).filter((l) => l.see || l.ratio < l.need), [], 'unreadable list text')
     // The Draw, Fixtures and table cards come before the Post-match packs.
-    assert.ok(await p.locator('.graphics-grid').evaluate((el) => el.nextElementSibling.textContent === 'Post-match packs'))
+    assert.ok(await p.locator('.graphics-grid').first().evaluate((el) => el.nextElementSibling.textContent === 'Season awards'))
+    assert.equal(await p.locator('.graphics-grid').last().evaluate((el) => el.nextElementSibling.textContent), 'Post-match packs')
     // Download: a PNG of exactly 1080x1350, named for the Graphic.
     const [d] = await Promise.all([p.waitForEvent('download'), p.getByRole('button', { name: 'Download the Official Draw Graphic', exact: true }).click()])
     assert.equal(d.suggestedFilename(), 'official-draw.png')
@@ -623,13 +635,13 @@ try {
     // A Fixture moved to another day shows on that day's card the next time the card renders.
     lm.find((m) => m.id === mid(10)).kick_off = '2033-11-12T15:00:00+05:45'
     await p.reload()
-    await p.waitForFunction(() => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 8, null, { timeout: 90000 })
+    await p.waitForFunction(() => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 10, null, { timeout: 90000 })
     const moved = await p.locator('.graphics-grid .graphic-thumb').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
     assert.match(moved[1], /09:00 BLU v GRN \(Group B\); 15:00 RTM v RE8 \(Group A\)\./)
     assert.equal(moved[2].split('; ').length, 8)
     assert.equal(moved[2].includes('08:00'), false)
     // Layout: one column at 390px, two at 768px, content at most 960px at 1280px.
-    const cols = async () => p.locator('.graphics-grid').evaluate((el) => ({ cols: getComputedStyle(el).gridTemplateColumns.split(' ').length, home: document.querySelector('.home').offsetWidth }))
+    const cols = async () => p.locator('.graphics-grid').first().evaluate((el) => ({ cols: getComputedStyle(el).gridTemplateColumns.split(' ').length, home: document.querySelector('.home').offsetWidth }))
     assert.equal((await cols()).cols, 1)
     await p.setViewportSize({ width: 768, height: 1000 })
     assert.equal((await cols()).cols, 2)
@@ -649,9 +661,10 @@ try {
     await p.getByRole('button', { name: 'Open the draw Graphic', exact: true }).click()
     assert.equal(await p.getByRole('tab', { name: 'Graphics' }).getAttribute('aria-selected'), 'true')
     await p.locator('.graphics-grid .graphic-card h2', { hasText: 'Official Draw Graphic' }).waitFor()
+    await p.getByText('Available once a goal is scored').first().waitFor()
     // Nothing is placed yet: the cards say what they need.
     const needs = await p.locator('.graphics-grid .graphic-card .meta').allTextContents()
-    assert.deepEqual(needs.filter((t) => t.startsWith('Available')), ['Available once fixtures are published', 'Available once a Match is finished', 'Available once fixtures are published'])
+    assert.deepEqual(needs.filter((t) => t.startsWith('Available')), ['Available once fixtures are published', 'Available once a Match is finished', 'Available once fixtures are published', 'Available once a goal is scored', 'Available once fixtures are published'])
     await p.context().close()
     const q = await open({ list: { teams: T4, slots: [], matches: [], rows: [], published: false } })
     await q.page.goto(`${base}/t/${T}`)
@@ -671,17 +684,152 @@ try {
     const { page: p, mock } = await open({ list: { structure: 'league', teams: T4, slots: [], matches: lm, rows, published: true } })
     await p.goto(`${base}/t/${T}`)
     await p.getByRole('tab', { name: 'Graphics' }).click()
-    await p.waitForFunction(() => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 2, null, { timeout: 60000 })
+    await p.waitForFunction(() => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === 3, null, { timeout: 60000 })
     const heads = await p.locator('.graphics-grid .graphic-card h2').allTextContents()
-    assert.equal(heads.length, 3)
+    assert.equal(heads.length, 5)
     assert.equal(heads[0], 'Fixtures Graphics')
     assert.equal(await p.getByText('No Matches left to play').count(), 1)
     assert.match(heads[1], /^Results Graphic for /)
     assert.equal(heads[2], 'League table Graphic')
+    assert.deepEqual(heads.slice(3), ['Top scorers Graphic', 'Champions Graphic'])
     assert.equal(await p.getByText('Official Draw').count(), 0)
-    assert.equal(await p.locator('.graphics-grid .graphic-thumb').last().getAttribute('aria-label'), 'League table after match day 1: 1 Red Tigers 3 pts (1, 1, 0, 0, +1); 2 Eight Eagles 0 pts (1, 0, 0, 1, -1).')
+    // Champions: every league Match is finished, so the table leader.
+    assert.equal(await p.locator('.graphics-grid .graphic-thumb').last().getAttribute('aria-label'), 'Champions, Gulmi Cup Season 2: Red Tigers.')
+    assert.equal(await p.locator('.graphics-grid .graphic-thumb').nth(1).getAttribute('aria-label'), 'League table after match day 1: 1 Red Tigers 3 pts (1, 1, 0, 0, +1); 2 Eight Eagles 0 pts (1, 0, 0, 1, -1).')
     assert.deepEqual(mock.writes, [])
     await p.context().close()
+  }
+
+  // Story 5.6: top scorers (12 scorers, a 3-way tie, top 10), the bracket (source labels, a Team advanced on pens), the Season awards (set, change behind a Confirm sheet, cut-out only
+  // for a consented Player, a tied Top Scorer text-only), champions (unplayed, played, League), nothing uploaded or written.
+  {
+    const T4 = [...TEAMS, { id: tid(3), name: 'Blue Bats', code: 'BLU', kit: '#00aaff' }, { id: tid(4), name: 'Green Ghosts', code: 'GRN', kit: '#00aa00' }]
+    const sq = [0, 1].flatMap((i) => squad(i).map((x) => ({ team_id: tid(i + 1), shirt_number: x.shirt, player: { id: x.player_id, name: x.name } })))
+    const sc = (t, n, goals) => ({ player_id: pid(t, n), team_id: tid(t), goals })
+    const km = (n, round, label, home, away, hsrc, asrc, status, extra = {}) => ({ id: mid(n), stage: 'knockout', round, label, ord: n, home_team_id: home, away_team_id: away, home_src: hsrc, away_src: asrc,
+      kick_off: null, status, version: 1, hg: null, ag: null, home_pens: null, away_pens: null, ...extra })
+    const sd = (n, h, a) => ({ match_id: mid(n), home_team_id: h, away_team_id: a, home_src: null, away_src: null, home_resolved: h, away_resolved: a })
+    const done = (p, n) => p.waitForFunction((k) => [...document.querySelectorAll('.graphics-grid .graphic-card button')].filter((b) => /^Download the /.test(b.textContent)).length === k, n, { timeout: 90000 })
+    const thumbs = (p) => p.locator('.graphics-grid .graphic-thumb').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+    const lists = (p) => p.locator('.graphic-list').evaluateAll((els) => els.map((el) => ({ fits: el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth
+      && [...el.querySelectorAll('.graphic-listbody, .graphic-bracket, .graphic-ties')].every((n) => n.scrollHeight <= n.clientHeight + 1), size: [el.offsetWidth, el.offsetHeight],
+      facts: [...el.querySelectorAll('.graphic-line')].map((n) => parseFloat(getComputedStyle(n).fontSize)), dots: el.querySelectorAll('.graphic-dot').length,
+      ranks: [...el.querySelectorAll('.graphic-rank')].map((n) => Number(n.textContent)), names: [...el.querySelectorAll('.graphic-sname')].map((n) => n.textContent),
+      titles: [...el.querySelectorAll('.graphic-bracket .graphic-gtitle')].map((t) => t.textContent),
+      slots: [...el.querySelectorAll('.graphic-tie .graphic-line')].map((n) => [...n.children].map((c) => c.textContent).join('|')),
+      crest: el.querySelector('.graphic-champdisc') && { text: el.querySelector('.graphic-champdisc').textContent, bg: getComputedStyle(el.querySelector('.graphic-champdisc')).backgroundColor,
+        name: el.querySelector('.graphic-cname').textContent, score: el.querySelector('.graphic-cscore')?.textContent ?? null } })))
+    const scorers = [sc(1, 1, 5), sc(2, 1, 3), sc(1, 9, 3), sc(1, 2, 3), sc(1, 3, 2), sc(2, 2, 2), sc(2, 3, 1), sc(1, 4, 1), sc(1, 5, 1), sc(2, 4, 1), sc(2, 5, 1), sc(2, 6, 1)]
+    const ko = [km(60, 'QF', 'QF1', tid(1), tid(2), null, null, 'finished', { hg: 1, ag: 1, home_pens: 5, away_pens: 4 }), km(61, 'QF', 'QF2', tid(3), tid(4), null, null, 'scheduled'),
+      km(62, 'SF', 'SF1', null, null, 'Winner QF1', 'Winner QF2', 'scheduled'), km(63, 'Final', 'Final', null, null, 'Winner SF1', 'Winner SF2', 'scheduled')]
+    // QF1 went to a shootout: the server's resolution puts RTM in SF1's home slot.
+    const sides = [sd(60, tid(1), tid(2)), sd(61, tid(3), tid(4)), sd(62, tid(1), null), sd(63, null, null)]
+    const awards = []
+    const { page: p, mock } = await open({ list: { teams: T4, slots: [], matches: ko, rows: [], published: true, scorers, squad: sq, awards, sides } })
+    await p.goto(`${base}/t/${T}`)
+    await p.getByRole('tab', { name: 'Graphics' }).click()
+    await done(p, 3)
+    const alts = await thumbs(p)
+    assert.equal(alts[0], 'Top scorers, Gulmi Cup Season 2: 1 RTM Player 1 (RTM) 5; 2 RE8 Player 1 (RE8) 3; 2 Roshan Adhikari (RTM) 3; 2 RTM Player 2 (RTM) 3; 5 RE8 Player 2 (RE8) 2; 5 RTM Player 3 (RTM) 2; '
+      + '7 RE8 Player 3 (RE8) 1; 7 RE8 Player 4 (RE8) 1; 7 RE8 Player 5 (RE8) 1; 7 RE8 Player 6 (RE8) 1.')
+    assert.equal(alts[1], 'Road to the final, Gulmi Cup Season 2: QF: RTM 1–1 (5–4 pens) RE8; QF: BLU v GRN; SF: RTM v Winner QF2; Final: Winner SF1 v Winner SF2.')
+    assert.equal(alts[2], 'Top Scorer, Gulmi Cup Season 2: RTM Player 1 (Red Tigers), 5 goals.')
+    const [top, br] = await lists(p)
+    for (const x of [top, br]) {
+      assert.deepEqual([x.fits, x.size], [true, [1080, 1350]], 'a list Graphic overflows')
+      assert.ok(x.facts.every((f) => f >= 36), `facts: ${x.facts}`)
+    }
+    // 12 scorers: the top 10, ties sharing a rank and listed by name, the 12th and 11th left off.
+    assert.deepEqual(top.ranks, [1, 2, 2, 2, 5, 5, 7, 7, 7, 7])
+    assert.equal(top.dots, 10)
+    assert.deepEqual(top.names.slice(0, 4), ['RTM Player 1', 'RE8 Player 1', 'Roshan Adhikari', 'RTM Player 2'])
+    // The bracket: a column per round in order, source labels where no Team is known, the shootout in the score, and the winner of QF1 in SF1 from the server.
+    assert.deepEqual(br.titles, ['QF', 'SF', 'Final'])
+    assert.deepEqual(br.slots, ['RTM|1 (5)', 'RE8|1 (4)', 'BLU|', 'GRN|', 'RTM|', 'Winner QF2|', 'Winner SF1|', 'Winner SF2|'])
+    assert.deepEqual((await audit(p, '.graphic-list')).filter((l) => l.see || l.ratio < l.need), [], 'unreadable list text')
+    assert.equal(await p.getByText('Available once the final is played').count(), 1)
+    // Season awards: the Top Scorer is derived; the other two are picked.
+    await p.getByText('Top Scorer: RTM Player 1 (RTM), 5 goals').waitFor()
+    assert.equal(await p.getByText('Not chosen yet').count(), 2)
+    assert.equal(await p.locator('.graphic-player .graphic-cutout').count(), 0, 'a cut-out for an unconsented Player')
+    const pickAward = async (name, who) => {
+      await button(p, `Pick ${name}`).or(button(p, `Change ${name}`)).click()
+      await p.getByRole('dialog').getByRole('heading', { name: `Who is the ${name}?` }).waitFor()
+      if (name === 'Best Goalkeeper' && who === 'Dilson Sunar') assert.deepEqual(await p.getByRole('dialog').getByRole('heading', { level: 3 }).allTextContents(), ['Red Tigers', 'Eight Eagles'])
+      await p.getByRole('dialog').getByRole('button', { name: new RegExp(`^${who}`) }).click()
+    }
+    const sent = async (n) => { for (let i = 0; i < 50 && mock.commands.filter((c) => c.cmd === 'set_season_award').length < n; i++) await new Promise((r) => setTimeout(r, 100)); return mock.commands.filter((c) => c.cmd === 'set_season_award') }
+    await pickAward('Best Goalkeeper', 'Dilson Sunar')
+    let cmds = await sent(1)
+    assert.deepEqual([cmds[0].season_id, cmds[0].award, cmds[0].player_id, cmds[0].expected_version], ['22222222-0000-4000-8000-000000000010', 'best_goalkeeper', pid(2, 9), undefined], 'a first pick carries a version')
+    await p.locator('.graphics-grid .graphic-card h2', { hasText: 'Best Goalkeeper Graphic for Dilson Sunar' }).waitFor()
+    await pickAward('Player of the Tournament', 'Roshan Adhikari')
+    await sent(2)
+    await button(p, 'Download the Player of the Tournament Graphic for Roshan Adhikari').waitFor({ timeout: 60000 })
+    const card = (t) => p.locator('.graphic-card', { has: p.locator('h2', { hasText: t }) })
+    assert.equal(await card('Best Goalkeeper Graphic').locator('.graphic-cutout').count(), 0, 'a cut-out without consent')
+    assert.match(await card('Player of the Tournament Graphic').locator('.graphic-cutout').getAttribute('src'), /roshan\.webp/)
+    const all = await thumbs(p)
+    assert.ok(all.includes('Best Goalkeeper, Gulmi Cup Season 2: Dilson Sunar (Eight Eagles).'))
+    assert.ok(all.includes('Player of the Tournament, Gulmi Cup Season 2: Roshan Adhikari (Red Tigers).'))
+    // Changing a set award asks first, old then new; Cancel changes nothing, Confirm sends the change at the version read.
+    await pickAward('Player of the Tournament', 'Dilson Sunar')
+    const dlg = p.getByRole('dialog')
+    assert.match(await dlg.locator('.ui-sheet-change').textContent(), /Roshan Adhikari.*Dilson Sunar/s)
+    await dlg.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await p.waitForFunction(() => !document.querySelector('dialog[open]'))
+    assert.equal((await sent(2)).length, 2, 'Cancel sent a change')
+    await pickAward('Player of the Tournament', 'Dilson Sunar')
+    await dlg.getByRole('button', { name: 'Change Player of the Tournament', exact: true }).click()
+    cmds = await sent(3)
+    assert.deepEqual([cmds[2].award, cmds[2].player_id, cmds[2].expected_version], ['player_of_tournament', pid(2, 9), 1])
+    await p.locator('.graphic-card h2', { hasText: 'Player of the Tournament Graphic for Dilson Sunar' }).waitFor()
+    assert.equal(mock.commands.filter((c) => c.cmd === 'set_season_award').length, 3)
+    assert.deepEqual(mock.writes, [], 'a Storage upload or an app write')
+    await p.context().close()
+
+    // A tied Top Scorer is one text-only Graphic naming both; the final is played, so champions show the winner and the score.
+    const final = [km(70, 'Final', 'Final', tid(1), tid(2), null, null, 'finished', { hg: 1, ag: 1, home_pens: 3, away_pens: 4 })]
+    const two = await open({ list: { teams: T4, slots: [], matches: final, rows: [], published: true, scorers: [sc(1, 9, 3), sc(2, 1, 3)], squad: sq, awards: [], sides: [sd(70, tid(1), tid(2))] } })
+    await two.page.goto(`${base}/t/${T}`)
+    await two.page.getByRole('tab', { name: 'Graphics' }).click()
+    await done(two.page, 4)
+    const t2 = await thumbs(two.page)
+    assert.equal(t2[1], 'Road to the final, Gulmi Cup Season 2: Final: RTM 1–1 (3–4 pens) RE8.')
+    assert.equal(t2[2], 'Champions, Gulmi Cup Season 2: Eight Eagles.')
+    assert.equal(t2[3], 'Top Scorer, Gulmi Cup Season 2: RE8 Player 1 (Eight Eagles) and Roshan Adhikari (Red Tigers), 3 goals.')
+    assert.match(t2[0], /1 RE8 Player 1 \(RE8\) 3; 1 Roshan Adhikari \(RTM\) 3\.$/)
+    const ch = (await lists(two.page)).find((x) => x.crest)
+    assert.deepEqual([ch.fits, ch.crest], [true, { text: 'RE8', bg: 'rgb(0, 0, 255)', name: 'Eight Eagles', score: '1–1 (3–4 pens)' }])
+    assert.equal(await two.page.locator('.graphic-player .graphic-cutout').count(), 0, 'a tie is text-only')
+    assert.equal(await two.page.locator('.graphic-player .graphic-word').textContent(), 'TIED')
+    assert.deepEqual([two.mock.views.length, two.mock.signed.length, two.mock.writes.length], [0, 0, 0], 'photos read or something written for a tie')
+    assert.deepEqual((await audit(two.page, '.graphic-list')).filter((l) => l.see || l.ratio < l.need), [], 'unreadable champions text')
+    await two.page.context().close()
+
+    // A full bracket (round of 16 to the final) still fits the canvas at fact size.
+    const full = [...Array.from({ length: 8 }, (_, i) => km(100 + i, 'R16', `R16-${i + 1}`, tid(1), tid(2), null, null, 'finished', { hg: 2, ag: 1 })),
+      ...Array.from({ length: 4 }, (_, i) => km(110 + i, 'QF', `QF${i + 1}`, null, null, `Winner R16-${2 * i + 1}`, `Winner R16-${2 * i + 2}`, 'scheduled')),
+      km(120, 'SF', 'SF1', null, null, 'Winner QF1', 'Winner QF2', 'scheduled'), km(121, 'SF', 'SF2', null, null, 'Winner QF3', 'Winner QF4', 'scheduled'),
+      km(122, 'Final', 'Final', null, null, 'Winner SF1', 'Winner SF2', 'scheduled')]
+    const four = await open({ list: { teams: T4, slots: [], matches: full, rows: [], published: true, scorers: [], squad: sq, awards: [], sides: full.map((m) => sd(Number(m.id.slice(-3)), m.home_team_id, m.away_team_id)) } })
+    await four.page.goto(`${base}/t/${T}`)
+    await four.page.getByRole('tab', { name: 'Graphics' }).click()
+    await done(four.page, 1)
+    const fb = (await lists(four.page))[0]
+    assert.deepEqual([fb.fits, fb.titles], [true, ['R16', 'QF', 'SF', 'Final']])
+    assert.ok(fb.facts.every((f) => f >= 36))
+    await four.page.context().close()
+
+    // A League is not decided until every league Match is finished.
+    const lg = (n, status) => ({ id: mid(n), stage: 'league', round: 'League', label: null, ord: n, home_team_id: tid(1), away_team_id: tid(2), home_src: null, away_src: null, kick_off: null,
+      status, version: 1, hg: status === 'finished' ? 1 : null, ag: status === 'finished' ? 0 : null, home_pens: null, away_pens: null })
+    const three = await open({ list: { structure: 'league', teams: TEAMS, slots: [], matches: [lg(80, 'finished'), lg(81, 'scheduled')], rows: [], published: true, squad: sq, awards: [], sides: [] } })
+    await three.page.goto(`${base}/t/${T}`)
+    await three.page.getByRole('tab', { name: 'Graphics' }).click()
+    await three.page.getByText('Available once every league Match is played').waitFor()
+    assert.equal(await three.page.getByText('Available once a goal is scored').count(), 2, 'the Top scorers card and the Season awards line')
+    await three.page.context().close()
   }
 
   // Venue: set in Settings → Dates, editable after the Season starts (the dates lock), refused past 80 characters, cleared when blanked.

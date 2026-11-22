@@ -643,3 +643,12 @@ Apply after 0036 and before the app deploy with the Result Graphic (test first, 
 the Season starts while the dates lock). A blank venue clears it; a stale version is a `version_conflict`; anything longer than 80 characters or with a
 control character is `venue_invalid`. Steps: paste `0037_season_venue.sql` into the SQL Editor and run it. Check:
 `select venue from app.season limit 1` runs and shows an empty column.
+
+## Apply 0038_season_awards.sql (Story 5.6)
+
+Apply after 0037 and before the app deploy with the Season awards Graphics (test first, then live). It adds `app.season_awards` (Best Goalkeeper and Player of
+the Tournament, one row per Season and award; Organisers read it through RLS, nobody writes it directly, and every change is in the Activity log), the command
+`set_season_award` (action `set_season_award`: started or finished Seasons; a Player outside the Season's Squads is `player_invalid`; a stale or missing
+`expected_version` for an award already set is a `version_conflict`) and the read `app.season_top_scorers(season)` (goals per Player, own goals and unknown
+scorers left out; the Top Scorer is derived from it, never stored). Steps: paste `0038_season_awards.sql` into the SQL Editor and run it. Check:
+`select count(*) from app.season_awards` runs and shows 0.

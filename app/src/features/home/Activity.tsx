@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { activityLines, activityPage, type ActivityFilter, type ActivityRow } from '../../domain/activity'
 import { formatDate, inZone } from '../../domain/format'
 import { messages } from '../../domain/messages'
+import { AWARDS, type AwardKey } from '../../domain/seasonAwards'
 import { backIcon, IconButton, SecondaryButton } from '../../ui/Button'
 import { Problem } from '../auth/Screen'
 import { fieldLabels } from '../save-status/labels'
@@ -103,6 +104,7 @@ function Log({ tournamentId }: { tournamentId: string }) {
     if (r.table === 'player' || r.table === 'staff') return String(j.name ?? (r.table === 'staff' ? 'Staff member' : 'Player'))
     if (r.table === 'squad_entry') return `${code ?? 'Team'} Squad`
     if (r.table === 'draw_slot') return `${code ?? 'Team'} Draw`
+    if (r.table === 'season_awards') return AWARDS[j.award as AwardKey] ?? 'Season award'
     return SUBJECTS[r.table] ?? label(r.table)
   }
 
