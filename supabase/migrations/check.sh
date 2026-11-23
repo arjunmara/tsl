@@ -89,7 +89,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,legacy_mirror_push,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring,holder_label,move_scoring,scoring_state,takeover_requests,season_top_scorers,player_root,same_person_candidates}"
+helpers="{is_member,legacy_mirror_push,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring,holder_label,move_scoring,scoring_state,takeover_requests,season_top_scorers,player_root,same_person_candidates,player_history}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -3640,5 +3640,33 @@ out=$(as anon "select app.suggest_same_person('$(cmd 4422)', '$TKB', '$(sp 4)', 
 [[ $out == *"permission denied for function"* ]] || fail "anon: can execute suggest_same_person: $out"
 out=$(as anon "select app.answer_same_person('$(cmd 4423)', '$TKB', '$(sp 4)', true, 1)" 2>&1 || true)
 [[ $out == *"permission denied for function"* ]] || fail "anon: can execute answer_same_person: $out"
+
+# --- Player history (Story 6.4). Ramesh = sp1 (root, FSW in SP1) and sp4 (alias, KTM in SP2); SP3 holds the root again for KTM. Season 1: 3 goals, 1 own goal, 1 Man of the
+# Match, Player of the Tournament. Season 2: 2 goals counted earlier, plus 1 assist, 1 yellow, 1 Fair Player; a deleted goal, an own goal and an unknown scorer count for nobody.
+SPM1=54111111-0000-4000-8000-0000000004fd
+ev() { echo "(gen_random_uuid(), '$TP', '$1', '$2', '$3', 1, $4, now(), '$5', $6, $7, $8, $9)"; }
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status, mom_player_id) values ('$SPM1', '$TP', '$SP1', 'group', 'Group A', 1, '$TF', '$TKA', 'scheduled', '$(sp 1)');
+   update app.match set fair_player_id = '$(sp 4)' where id = '$SPM';
+   insert into app.match_event (id, tournament_id, season_id, match_id, kind, period, minute, entered_at, team_id, player_id, own_goal, assist_id, card) values
+   $(ev $SP1 $SPM1 goal 1 $TF "'$(sp 1)'" false null null), $(ev $SP1 $SPM1 goal 2 $TF "'$(sp 1)'" false null null), $(ev $SP1 $SPM1 goal 3 $TF "'$(sp 1)'" false null null),
+   $(ev $SP1 $SPM1 goal 4 $TF "'$(sp 1)'" true null null), $(ev $SP2 $SPM goal 4 $TKB "'$(sp 5)'" false "'$(sp 4)'" null),
+   $(ev $SP2 $SPM card 5 $TKB "'$(sp 4)'" false null "'yellow'"), $(ev $SP2 $SPM goal 6 $TKB null false null null), $(ev $SP2 $SPM goal 7 $TKB "'$(sp 4)'" true "'$(sp 4)'" null);
+   insert into app.match_event (id, tournament_id, season_id, match_id, kind, period, minute, entered_at, team_id, player_id, deleted_at) values
+   (gen_random_uuid(), '$TP', '$SP2', '$SPM', 'goal', 1, 8, now(), '$TKB', '$(sp 1)', now());
+   insert into app.season_awards (tournament_id, season_id, award, player_id) values ('$TP', '$SP1', 'player_of_tournament', '$(sp 1)')" >/dev/null
+ph() { as "$1" "select coalesce(string_agg(concat_ws('/', season_number, team_code, goals, assists, yellow_cards, red_cards, mom, fair_player, nullif(array_to_string(awards, '+'), '')), ' ' order by season_number desc), 'none') from app.player_history('$2')"; }
+want="3/KTM/0/0/0/0/0/0 2/KTM/2/1/1/0/0/1 1/FSW/3/0/0/0/1/0/player_of_tournament"
+[ "$(ph $A $(sp 1))" = "$want" ] || fail "history: root rows: $(ph $A $(sp 1))"
+GR=f1111111-0000-4000-8000-0000000004fe LGR=67111111-0000-4000-8000-0000000004f9 # the returning Team's own link
+q "insert into auth.users (id, is_anonymous) values ('$GR', true);
+   insert into app.registration_grant (id, link_id, team_id, season_id, tournament_id) values ('$GR', '$LGR', '47111111-0000-4000-8000-0000000004f8', '$SP3', '$TP')" >/dev/null
+[ "$(ph $A $(sp 4))|$(ph $GR $(sp 4))|$(ph $GR $(sp 1))" = "$want|$want|$want" ] || fail "history: alias or manager of the latest Season's Team"
+[ "$(ph $GP $(sp 1))|$(ph $GP $(sp 4))" = "none|none" ] || fail "leak: an earlier Season's link read history"
+[ "$(ph $A $(sp 6))" = "3/KTM/0/0/0/0/0/0 2/KTM/0/0/0/0/0/0" ] || fail "history: a Player with no matches"
+# Leaks: a manager of another Team's Player, another Tournament's Organiser or manager, anon.
+[ "$(ph $GR $(sp 2))|$(ph $GR $(sp 3))|$(ph $B $(sp 1))|$(ph $GQ $(sp 4))|$(ph $A $(sp 7))|$(ph $B $(sp 7))" = "none|none|none|none|none|none" ] || fail "leak: player_history"
+out=$(as anon "select * from app.player_history('$(sp 1)')" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute player_history: $out"
+[ "$(q "select string_agg(a, ',' order by a) from (select unnest(proargnames) a from pg_proc where proname='player_history') x where a in ('photo_path','date_of_birth','given_by','name','document_number','player_id')")" = "" ] || fail "history: exposes personal columns"
 
 echo ok

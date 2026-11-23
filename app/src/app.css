@@ -1341,3 +1341,9 @@ html:has(.console) {
   width: fit-content;
 }
 fieldset.returning-list { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+/* Player history (Story 6.4): the table scrolls inside its own box, never the page. */
+.history-scroll { overflow-x: auto; max-width: 100%; }
+.history-scroll table { border-collapse: collapse; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.history-scroll th, .history-scroll td { padding: var(--spacing-1) var(--spacing-2); text-align: left; }
+.history-scroll tfoot { font-weight: 600; }

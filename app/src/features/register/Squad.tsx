@@ -15,6 +15,7 @@ import { Field } from '../../ui/Field'
 import { StatusPill } from '../../ui/StatusPill'
 import { blocked, useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
+import { PlayerHistory } from './PlayerHistory'
 
 /** Sends one Squad command for the Team (after its file, if any); returns the refusal in words (dropped from the queue), else null. */
 type Run = (name: string, args: Record<string, unknown>, versionOf?: string, upload?: Upload, change?: Ask | 'given') => Promise<string | null>
@@ -274,6 +275,7 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
         onSave={(given_by) => (setMissing(false), setHeldDob(null),
           void save({ consent: true, given_by, ...(heldDob ? { date_of_birth: heldDob } : {}) }))} />}
       <Problem text={problem} />
+      <PlayerHistory playerId={p.id} name={p.name} />
       <PhotoSection id={p.id} name={p.name} photo={p.photo} form={form} run={run} />
       <EligibilityProof player={p} form={form} run={run} />
       <DestructiveButton label="Remove from the Squad" accessibleLabel={`Remove ${p.name} from the Squad`} sheetTitle={`Remove ${p.name}?`}
@@ -726,7 +728,8 @@ export function ClosedSquad({ form }: { form: RegistrationForm }) {
         <h2 className="body-strong">Players · {form.players.length}</h2>
         <ul className="squad-list">
           {form.players.map((p) => <li key={p.id} className="body">
-            {p.name} · #{p.shirtNumber} · {documentLabel(p.eligibility?.documentType ?? null) || 'no document'} · {consentLine(p)}
+            <span>{p.name} · #{p.shirtNumber} · {documentLabel(p.eligibility?.documentType ?? null) || 'no document'} · {consentLine(p)}</span>
+            <PlayerHistory playerId={p.id} name={p.name} />
           </li>)}
         </ul>
       </section>

@@ -2,7 +2,7 @@ import { useId, useState, type ReactNode } from 'react'
 import { ConfirmSheet } from './ConfirmSheet'
 import './components.css'
 
-type Click = { label: string; onClick?: () => void }
+type Click = { label: string; onClick?: () => void; 'aria-expanded'?: boolean; 'aria-controls'?: string }
 
 // A disabled Primary always says why, in words, beneath it.
 export type PrimaryButtonProps = Click & ({ disabled?: false } | { disabled: true; disabledReason: string })
@@ -30,9 +30,9 @@ export function PrimaryButton(props: PrimaryButtonProps) {
   )
 }
 
-export function SecondaryButton({ label, onClick }: Click) {
+export function SecondaryButton({ label, onClick, ...aria }: Click) {
   return (
-    <button type="button" className="ui-button ui-secondary" onClick={onClick}>
+    <button type="button" className="ui-button ui-secondary" onClick={onClick} {...aria}>
       {label}
     </button>
   )

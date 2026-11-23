@@ -49,7 +49,7 @@ async function fresh({ deadline = OPEN_DAY, players = [], staff = [], roles = ['
     team: { id: TEAM, name: 'Friends Sporting Wing', code: 'FSW', kit_colour: null, status: 'invited', version: 1 },
     form: { tournament_name: 'Gulmi Cup', season_number: 1, season_status: 'registration', registration_deadline: deadline },
     rules: { consent_statement: "Photos can be used on the Gulmi Cup's posts and stream.", starters: 2, max_bench: 1, staff_roles: roles },
-    players, staff, down: false, calls: [], answers: {}, candidates: [],
+    players, staff, down: false, calls: [], answers: {}, candidates: [], history: [], historyFails: 0,
   }
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } })
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort())
@@ -79,6 +79,10 @@ async function fresh({ deadline = OPEN_DAY, players = [], staff = [], roles = ['
     }
     if (path === '/rest/v1/staff') return json(route, mock.staff.map((x) => ({ ...x, team_id: TEAM })))
     if (path === '/rest/v1/rpc/registration_eligibility') return json(route, [])
+    if (path === '/rest/v1/rpc/player_history') {
+      mock.calls.push({ ...JSON.parse(req.postData() ?? '{}'), cmd: 'player_history' })
+      return mock.historyFails-- > 0 ? json(route, { message: 'boom' }, 500) : json(route, mock.history)
+    }
     if (path === '/rest/v1/rpc/same_person_candidates') return (mock.calls.push({ ...JSON.parse(req.postData() ?? '{}'), cmd: 'same_person_candidates' }), json(route, mock.candidates))
     const a = JSON.parse(req.postData() ?? '{}')
     const cmd = path.replace('/rest/v1/rpc/', '')
@@ -425,8 +429,56 @@ try {
     await text(page, 'Bisho Basnet · #7 · no document · photo consent: Mina Basnet').waitFor()
     await text(page, 'Dinesh Shrees · #8 · no document · no photo consent').waitFor()
     await text(page, 'Ram Thapa · Coach').waitFor()
-    assert.equal(await page.locator('input, textarea, select, button').count(), 0, 'inputs or buttons on a closed form')
+    assert.equal(await page.locator('input, textarea, select').count(), 0, 'inputs on a closed form')
+    assert.deepEqual(await page.locator('button').allInnerTexts(), ["Show Bisho Basnet's history", "Show Dinesh Shrees's history"], 'only history buttons on a closed form')
     assert.equal(await page.getByText(/2012|Baisakh 1[89], 2069/).count(), 0, 'date of birth shown on a closed form')
+    await context.close()
+  }
+
+  // --- Player history (Story 6.4): open and close, totals, award words, empty and failed states, retry, no page scroll; the same on a closed Squad.
+  {
+    const row = (season, code, g, a, yc, rc, mom, fair, awards) => ({ season_number: season, team_code: code, team_name: code, goals: g, assists: a, yellow_cards: yc, red_cards: rc,
+      mom, fair_player: fair, awards })
+    const P = '91111111-0000-4000-8000-0000000000a1'
+    for (const closed of [false, true]) {
+      const { context, mock, page } = await fresh({ deadline: closed ? '2026-11-03' : OPEN_DAY, players: [player(P, 'Ramesh Chudara', 7, ADULT)] })
+      mock.history = [row(8, 'KTM', 2, 1, 1, 0, 0, 0, []), row(7, 'FSW', 3, 0, 0, 0, 1, 0, ['player_of_tournament', 'best_goalkeeper'])]
+      const scope = closed ? page.locator('li', { hasText: 'Ramesh Chudara' }) : card(page, 'Ramesh Chudara')
+      if (!closed) await card(page, 'Ramesh Chudara').locator('summary').click()
+      await button(scope, "Show Ramesh Chudara's history").click()
+      await button(scope, "Hide Ramesh Chudara's history").waitFor()
+      const toggle = button(scope, "Hide Ramesh Chudara's history")
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true')
+      await scope.locator('table').waitFor()
+      assert.ok(await page.locator(`[id="${await toggle.getAttribute('aria-controls')}"] table`).count())
+      await text(scope, 'G goals · A assists · YC yellow cards · RC red cards · MoM Man of the Match · FP Fair Player').waitFor()
+      assert.equal(await scope.locator('thead abbr[title="Goals"]').count(), 1)
+      assert.equal(calls(mock, 'player_history')[0].p_player_id, P)
+      const tr = scope.locator('tbody tr')
+      assert.deepEqual(await tr.allInnerTexts(), ['8\tKTM\t2\t1\t1\t0\t0\t0\t-', '7\tFSW\t3\t0\t0\t0\t1\t0\tPlayer of the Tournament, Best Goalkeeper'])
+      assert.equal((await scope.locator('tfoot tr').innerText()).replace(/\s+/g, ' '), 'Career 5 1 1 0 1 0 Player of the Tournament, Best Goalkeeper')
+      await noScroll(page)
+      await button(scope, "Hide Ramesh Chudara's history").click()
+      assert.equal(await scope.locator('table').count(), 0)
+      await context.close()
+    }
+    // Empty, then failed (a server error) with Load the history again, then offline.
+    const { context, mock, page } = await fresh({ players: [player(P, 'Ramesh Chudara', 7, ADULT)] })
+    const scope = card(page, 'Ramesh Chudara')
+    await scope.locator('summary').click()
+    await button(scope, "Show Ramesh Chudara's history").click()
+    await text(scope, 'No history found.').waitFor()
+    await button(scope, "Hide Ramesh Chudara's history").click()
+    mock.historyFails = 1
+    mock.history = [row(1, 'FSW', 1, 0, 0, 0, 0, 0, [])]
+    await button(scope, "Show Ramesh Chudara's history").click()
+    await text(scope, "Can't load the history. Try loading it again").waitFor()
+    await button(scope, 'Load the history again').click()
+    await scope.locator('tbody tr').waitFor()
+    await button(scope, "Hide Ramesh Chudara's history").click()
+    await context.setOffline(true)
+    await button(scope, "Show Ramesh Chudara's history").click()
+    await text(scope, "Can't load the history. Try loading it again").waitFor()
     await context.close()
   }
 

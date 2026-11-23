@@ -688,3 +688,11 @@ Player) and `app.player.same_as` (a manager's pending suggestion), the read `app
 the commands `suggest_same_person` (the Team's manager) and `answer_same_person` (an Organiser at Team review: `no_suggestion`, `candidate_invalid`), and `player_root`. A confirmed
 merge sets `merged_into`; nothing is deleted or repointed. `season_top_scorers` counts per person and `add_returning_teams` copies the surviving Player into the new Squad.
 Steps: paste `0043_same_person.sql` into the SQL Editor and run it. Check: `select proname from pg_proc where proname = 'answer_same_person'` returns one row.
+
+## Apply 0044_player_history.sql (Story 6.4)
+
+Apply after 0043 and before the app deploy with "Show history" (test first, then live). It adds the read `app.player_history(p_player_id)`: one row per Season for the whole person (the
+Player and every alias merged into the same root), newest first, with Team code and name, goals, assists, yellow and red cards, Man of the Match and Fair Player counts and the Season's
+awards. Own goals, unknown-scorer goals and deleted events count for nobody. Only an Organiser of the Player's Tournament, or a Registration link whose Team is in the Tournament's latest Season and has the person in its Squad, gets rows;
+no personal columns come back. Nothing is stored or changed. Steps: paste `0044_player_history.sql` into the SQL Editor and run it.
+Check: `select proname from pg_proc where proname = 'player_history'` returns one row.

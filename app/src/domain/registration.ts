@@ -423,3 +423,20 @@ export async function sameQuestions(teamId: string): Promise<SameQuestion[] | nu
     return null
   }
 }
+
+/** One Season of a Player's history (the whole person, aliases included). awards: keys such as 'player_of_tournament'. */
+export type HistoryRow = { season: number; teamCode: string | null; teamName: string | null; goals: number; assists: number; yellow: number; red: number; mom: number; fair: number; awards: string[] }
+
+/** The Player's history, newest Season first; null when it can't be read (offline, refused, or a failure). */
+export async function playerHistory(playerId: string): Promise<HistoryRow[] | null> {
+  if (!navigator.onLine) return null
+  try {
+    const { data, error } = await supabase.schema('app').rpc('player_history', { p_player_id: playerId })
+    if (error || !Array.isArray(data)) return null
+    return (data as Record<string, unknown>[]).map((r) => ({ season: r.season_number as number, teamCode: r.team_code as string | null, teamName: r.team_name as string | null,
+      goals: r.goals as number, assists: r.assists as number, yellow: r.yellow_cards as number, red: r.red_cards as number, mom: r.mom as number, fair: r.fair_player as number,
+      awards: (r.awards as string[] | null) ?? [] }))
+  } catch {
+    return null
+  }
+}
