@@ -680,3 +680,11 @@ Apply after 0041 and before the app deploy with "Add returning Teams" (test firs
 Registration link, the same Players in its Squad with the same shirt numbers (no new Player rows), copies of its Staff, and the previous Season's Photo consent and Eligibility
 records as recorded, without scans. All or nothing: `returning_team_invalid`, `already_returned`, `team_code_taken` refuse the whole command. The previous Season is unchanged.
 Steps: paste `0042_returning_teams.sql` into the SQL Editor and run it. Check: `select proname from pg_proc where proname = 'add_returning_teams'` returns one row.
+
+## Apply 0043_same_person.sql (Story 6.3)
+
+Apply after 0042 and before the app deploy with "Same person as last year?" (test first, then live). It adds `app.player.merged_into` (this Player row is an alias of an earlier
+Player) and `app.player.same_as` (a manager's pending suggestion), the read `app.same_person_candidates(p_team_id, p_name)` (name, Team code and Season only, same Tournament, at most 5),
+the commands `suggest_same_person` (the Team's manager) and `answer_same_person` (an Organiser at Team review: `no_suggestion`, `candidate_invalid`), and `player_root`. A confirmed
+merge sets `merged_into`; nothing is deleted or repointed. `season_top_scorers` counts per person and `add_returning_teams` copies the surviving Player into the new Squad.
+Steps: paste `0043_same_person.sql` into the SQL Editor and run it. Check: `select proname from pg_proc where proname = 'answer_same_person'` returns one row.

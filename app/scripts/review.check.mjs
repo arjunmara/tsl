@@ -42,7 +42,7 @@ async function fresh({ manager = false, status = 'submitted', note = null } = {}
     starts_on: '2033-11-07', ends_on: '2033-11-21', registration_deadline: '2033-11-03', starters: 2, max_bench: 1, staff_roles: ['manager'] }
   const mock = {
     team: { id: TEAM, tournament_id: T, name: 'Paper Sheet FC', code: 'PSF', kit_colour: null, status, return_note: note, version: 1, registration_link: [] },
-    calls: [], answers: {},
+    calls: [], answers: {}, entries: [], candidates: [],
   }
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 900 } })
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort())
@@ -65,7 +65,9 @@ async function fresh({ manager = false, status = 'submitted', note = null } = {}
       return json(route, [{ tournament_name: 'Gulmi Cup', season_number: 1, season_status: 'registration', registration_deadline: '2033-11-03' }])
     }
     if (path === '/rest/v1/rpc/registration_rules') return json(route, [{ consent_statement: 'Photos may be posted.', starters: 2, max_bench: 1, staff_roles: ['manager'] }])
-    if (['/rest/v1/squad_entry', '/rest/v1/staff', '/rest/v1/eligibility_record', '/rest/v1/sponsor', '/rest/v1/rpc/registration_eligibility'].includes(path)) {
+    if (path === '/rest/v1/squad_entry') return json(route, mock.entries)
+    if (path === '/rest/v1/rpc/same_person_candidates') return json(route, mock.candidates)
+    if (['/rest/v1/staff', '/rest/v1/eligibility_record', '/rest/v1/sponsor', '/rest/v1/rpc/registration_eligibility'].includes(path)) {
       return json(route, [])
     }
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
@@ -75,6 +77,7 @@ async function fresh({ manager = false, status = 'submitted', note = null } = {}
     const given = mock.answers[cmd]?.shift()
     if (given) return json(route, given)
     if (cmd === 'redeem_registration_link') return json(route, { ok: true, code: null, team_id: TEAM })
+    if (cmd === 'answer_same_person') mock.entries = []
     if (cmd === 'approve_team') mock.team.status = 'approved'
     if (cmd === 'return_team') Object.assign(mock.team, { status: 'returned', return_note: a.note })
     if (cmd === 'withdraw_team') mock.team.status = 'withdrawn'
@@ -120,6 +123,38 @@ try {
     await page.goto(`${base}/t/${T}`)
     await page.getByRole('tab', { name: 'Teams' }).click()
     await page.locator('.ui-pill', { hasText: 'Approved' }).waitFor()
+    await context.close()
+  }
+
+  // --- Same person (Story 6.3): a pending suggestion shows its question above Approve, which is disabled with a reason until it is answered.
+  for (const same of [true, false]) {
+    const { context, mock, page } = await fresh()
+    const P = '61111111-0000-4000-8000-000000000001'
+    mock.entries = [{ team_id: TEAM, shirt_number: 4, player: { id: P, name: 'Ramesh Chudara', version: 3, same_as: '61111111-0000-4000-8000-000000000002', merged_into: null } }]
+    mock.candidates = [{ player_id: '61111111-0000-4000-8000-000000000002', name: 'Ramesh Chudara', team_code: 'FSW', season_number: 7 }]
+    await openTeam(page)
+    await text(review(page), 'Same person as Ramesh Chudara (FSW, Season 7)?').waitFor()
+    const approve = button(review(page), 'Approve team')
+    assert.ok(await approve.isDisabled(), 'Approve enabled with a pending question')
+    await text(review(page), 'Answer each same-person question first.').waitFor()
+    await button(review(page), same ? 'Confirm same person' : 'Not the same person').click()
+    await until(page, async () => calls(mock, 'answer_same_person').length === 1, 'answer not sent')
+    const [c] = calls(mock, 'answer_same_person')
+    assert.deepEqual({ team_id: c.team_id, player_id: c.player_id, same: c.same, expected_version: c.expected_version }, { team_id: TEAM, player_id: P, same, expected_version: 3 })
+    await until(page, async () => !(await approve.isDisabled()), 'Approve still disabled after the answer')
+    assert.equal(await review(page).getByText('Same person as Ramesh Chudara (FSW, Season 7)?').count(), 0)
+    await context.close()
+  }
+
+  // --- Questions unreadable: Approve stays enabled with a note; the server's same_person_pending refusal shows in words.
+  {
+    const { context, mock, page } = await fresh()
+    mock.answers.approve_team = [{ ok: false, code: 'same_person_pending', message: 'No.' }]
+    await page.route(`${SUPA}/rest/v1/squad_entry*`, (r) => r.fulfill({ status: 500, headers: cors, contentType: 'application/json', body: '{}' }))
+    await openTeam(page)
+    await text(review(page), 'Pending same-person questions will be checked when this is sent.').waitFor()
+    await button(review(page), 'Approve team').click()
+    await page.getByRole('alert').getByText('Answer each same-person question first.').waitFor()
     await context.close()
   }
 

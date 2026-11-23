@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router'
 import { forgetRefused, queuedFor, send } from '../../domain/commands'
 import { serverNow } from '../../domain/clock'
 import { formatDay, inZone } from '../../domain/format'
-import { lastOpenDay, overlayForm, registrationClosed, reopened, teamForm, type RegistrationForm } from '../../domain/registration'
+import { candidateLine, lastOpenDay, overlayForm, registrationClosed, reopened, sameQuestions, teamForm, type RegistrationForm, type SameQuestion } from '../../domain/registration'
 import { messageFor, messages } from '../../domain/messages'
 import { newLink } from '../../domain/teamCode'
 import { linkToken, registrationUrl, rememberLink, type Team } from '../../domain/teams'
 import { backIcon, DestructiveButton, IconButton, PrimaryButton, SecondaryButton } from '../../ui/Button'
 import { KitDot } from '../../ui/KitDot'
 import { StatusPill } from '../../ui/StatusPill'
+import { blocked } from '../auth/form'
 import { Problem } from '../auth/Screen'
 import { ClosedTeam, TeamEditor } from '../register/Register'
 import { UUID } from '../setup/Setup'
@@ -249,9 +250,20 @@ function Review({ team, tournamentId, done }: { team: Team; tournamentId: string
   const [busy, setBusy] = useState(false)
   const noteId = useId()
   const s = team.status
+  // Same-person questions the manager raised (Story 6.3): each is answered before the Team can be approved. Answered ones stay hidden even while queued.
+  const [questions, setQuestions] = useState<SameQuestion[] | 'unread' | null>(null)
+  const [answered, setAnswered] = useState<string[]>([])
+  useEffect(() => {
+    let live = true
+    void sameQuestions(team.id).then((q) => live && setQuestions(q ?? 'unread'))
+    return () => {
+      live = false
+    }
+  }, [team.id, s])
+  const open = Array.isArray(questions) ? questions.filter((q) => !answered.includes(q.playerId)) : []
 
   async function review(name: string, args: Record<string, unknown>, said: string) {
-    if (busy) return
+    if (busy) return false
     setProblem(null)
     setNotice('')
     setBusy(true)
@@ -266,6 +278,13 @@ function Review({ team, tournamentId, done }: { team: Team; tournamentId: string
       setNotice(r.code === 'queued' ? `${messages.offline} ${said} once it's sent.` : said)
     }
     done()
+    return r.ok || r.code === 'queued'
+  }
+
+  async function answer(q: SameQuestion, same: boolean) {
+    const sent = await review('answer_same_person', { player_id: q.playerId, same, expected_version: q.version },
+      same ? `${q.name} is now counted as the same person as before` : `${q.name} stays a separate Player`)
+    if (sent) setAnswered((a) => [...a, q.playerId])
   }
 
   function sendNote() {
@@ -285,8 +304,18 @@ function Review({ team, tournamentId, done }: { team: Team; tournamentId: string
               : 'The Team manager hasn\'t sent this Team for review yet.'}</p>
       <p role="status" className="body">{notice}</p>
       <Problem text={problem} />
+      {open.map((q) => (
+        <div key={q.playerId} role="group" aria-label={`Same person question for ${q.name}`}>
+          <p className="body">{q.candidate ? candidateLine(q.candidate) : `Same person as an earlier ${q.name}?`}</p>
+          <PrimaryButton label="Confirm same person" onClick={() => void answer(q, true)} {...blocked(busy && 'Saving your answer…')} />
+          <SecondaryButton label="Not the same person" onClick={() => void answer(q, false)} />
+        </div>
+      ))}
+      {questions === 'unread' && <p className="meta">Pending same-person questions will be checked when this is sent.</p>}
       {s === 'submitted' && (
-        <PrimaryButton label="Approve team" onClick={() => void review('approve_team', {}, `${team.name} is approved`)} />
+        <PrimaryButton label="Approve team" onClick={() => void review('approve_team', {}, `${team.name} is approved`)}
+          {...blocked(open.length > 0 && 'Answer each same-person question first.')}
+        />
       )}
       {(s === 'submitted' || s === 'approved') && (writing ? (
         <>

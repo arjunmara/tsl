@@ -5,7 +5,7 @@ import { removeBackground } from '../../domain/cutout'
 import { downloadAsPng, encodeImage, resizeImage, toCanvas } from '../../domain/image'
 import { messageFor, messages } from '../../domain/messages'
 import {
-  DOCUMENT_TYPES, documentLabel, isMinor, noteNew, photoBucket, scanBucket, signScan, type Eligibility, type Photo, type RegistrationForm, type SquadPlayer, type StaffMember,
+  DOCUMENT_TYPES, candidateLine, documentLabel, isMinor, noteNew, sameCandidates, type Candidate, photoBucket, scanBucket, signScan, type Eligibility, type Photo, type RegistrationForm, type SquadPlayer, type StaffMember,
 } from '../../domain/registration'
 import { serverNow } from '../../domain/clock'
 import { STAFF_ROLES } from '../../domain/tournaments'
@@ -147,13 +147,23 @@ function AddPlayer({ form, run }: { form: RegistrationForm; run: Run }) {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const who = givenByField(isMinor(dob))
+  // The id is made before the name lookup and reused by add_player, so a "Yes" names the Player that is added (Story 6.3).
+  const [id, setId] = useState(() => crypto.randomUUID())
+  const [looked, setLooked] = useState<{ name: string; found: Candidate[] }>({ name: '', found: [] })
+  const [picked, setPicked] = useState<string | null>(null)
+  const [declined, setDeclined] = useState<string[]>([])
+  // Only the newest lookup counts: an older reply that arrives late is dropped.
+  const lookups = useRef(0)
+  const look = (name: string) => {
+    const n = ++lookups.current
+    void sameCandidates(form.team.id, name).then((found) => n === lookups.current && (setLooked({ name, found }), setPicked(null), setDeclined([])))
+  }
 
   async function add() {
     const v = values()
     if (!v || busy) return
     setBusy(true)
     setProblem(null)
-    const id = crypto.randomUUID()
     await noteNew(id)
     const name = v['player-name']!
     const n = form.players.length
@@ -165,7 +175,14 @@ function AddPlayer({ form, run }: { form: RegistrationForm; run: Run }) {
     setBusy(false)
     if (p === CANCELLED) return
     if (p) return setProblem(p)
+    const same = looked.name.trim().toLowerCase() === name.trim().toLowerCase() ? picked : null
+    if (same) await run('suggest_same_person', { player_id: id, candidate_id: same }, undefined, undefined, 'given')
     setNotice(`${name} added.`)
+    lookups.current++
+    setId(crypto.randomUUID())
+    setLooked({ name: '', found: [] })
+    setPicked(null)
+    setDeclined([])
     setDob('')
     setConsent(false)
     setKey((n) => n + 1)
@@ -175,8 +192,16 @@ function AddPlayer({ form, run }: { form: RegistrationForm; run: Run }) {
     <form key={key} ref={ref} noValidate className="squad-add" onSubmit={(e) => (e.preventDefault(), void add())}>
       <h3 className="body-strong">Add player</h3>
       <p role="status" className="body">{notice}</p>
-      <Field label="Player's name" name="player-name" value="" onSave={() => {}} required requiredMessage={messages.player_name_required}
+      <Field label="Player's name" name="player-name" value="" onSave={look} required requiredMessage={messages.player_name_required}
         validate={checkName} showErrors={showErrors} autoComplete="off" />
+      {looked.found.map((c) => (
+        <div key={c.id} role="group" aria-label={candidateLine(c)} className="squad-same">
+          <p className="body">{candidateLine(c)}</p>
+          <SecondaryButton label="Yes, same person" onClick={() => (setPicked(c.id), setDeclined((d) => d.filter((x) => x !== c.id)))} />
+          <SecondaryButton label="No, a different person" onClick={() => (setPicked((x) => (x === c.id ? null : x)), setDeclined((d) => [...d, c.id]))} />
+          <p role="status" className="meta">{picked === c.id ? 'Marked as the same person.' : declined.includes(c.id) ? 'Marked as a different person.' : ''}</p>
+        </div>
+      ))}
       <Field label="Shirt number" name="shirt-number" value="" onSave={() => {}} required requiredMessage={messages.shirt_required}
         validate={shirtCheck(form.players)} showErrors={showErrors} inputMode="numeric" autoComplete="off" />
       <Field label="Date of birth" name="date-of-birth" type="date" value={dob} onSave={setDob} required requiredMessage={messages.dob_required}
@@ -235,6 +260,7 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
       <summary>
         <span className="body-strong">{p.name} · #{p.shirtNumber}</span>
         <span className="meta"> {consentLine(p)} · {documentLine(p)}</span>
+        {p.sameAs && <span className="meta"> · Suggested: same as {p.name}</span>}
       </summary>
       <Field key={`name${rev}`} label="Player's name" value={p.name} onSave={(name) => void save({ name })} required requiredMessage={messages.player_name_required}
         validate={checkName} autoComplete="off" />

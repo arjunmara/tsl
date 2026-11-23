@@ -40,6 +40,8 @@ export type Photo = { path: string; cutout: boolean; url: string | null }
 export type SquadPlayer = {
   id: string; name: string; shirtNumber: number; dateOfBirth: string; consent: boolean; givenBy: string | null; version: number
   eligibility: Eligibility | null; photo: Photo | null
+  /** A pending "same person as an earlier Player" suggestion (the earlier Player's id); the Organiser answers it at review (Story 6.3). */
+  sameAs?: string | null
 }
 export type StaffMember = { id: string; name: string; role: string; version: number; photo: Photo | null }
 /** The Season's photo-consent statement and Line-up rules (null: not set). */
@@ -81,7 +83,7 @@ export async function registrationForm(hash: string): Promise<{ form: Registrati
       app.from('team').select('id, tournament_id, name, code, kit_colour, status, return_note, reopened_until, reopen_reason, version').limit(2),
       app.rpc('registration_form'),
       app.rpc('registration_rules'),
-      app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_path, is_cutout, photo_consent(consent_given, given_by))')
+      app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_path, is_cutout, same_as, photo_consent(consent_given, given_by))')
         .order('shirt_number'),
       app.from('staff').select('team_id, id, name, role, version, photo_path, is_cutout').order('created_at').order('id'),
       app.rpc('registration_eligibility'),
@@ -137,7 +139,7 @@ export async function teamForm(seasonId: string, teamId: string): Promise<{ form
     const [t, sq, st, el] = await Promise.all([
       app.from('team').select('id, tournament_id, name, code, kit_colour, status, return_note, reopened_until, reopen_reason, version, tournament(name), '
         + 'season(number, status, registration_deadline, photo_consent, starters, max_bench, staff_roles)').eq('season_id', seasonId).eq('id', teamId),
-      app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_path, is_cutout, photo_consent(season_id, consent_given, given_by))')
+      app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version, photo_path, is_cutout, same_as, photo_consent(season_id, consent_given, given_by))')
         .eq('team_id', teamId).order('shirt_number'),
       app.from('staff').select('team_id, id, name, role, version, photo_path, is_cutout').eq('team_id', teamId).order('created_at').order('id'),
       app.from('eligibility_record').select('id, player_id, document_type, document_number, scan_name, scan_path, scan_uploaded_at, verified_at, version').eq('season_id', seasonId),
@@ -234,12 +236,12 @@ async function signPhotos(people: { photo: Photo | null }[]) {
   }
 }
 type EntryRow = { team_id: string; shirt_number: number; player: { id: string; name: string; date_of_birth: string | null; version: number
-  photo_path: string | null; is_cutout: boolean | null
+  photo_path: string | null; is_cutout: boolean | null; same_as?: string | null
   photo_consent: { consent_given: boolean; given_by: string | null }[] } | null }
 const playerFrom = (e: EntryRow): SquadPlayer[] => e.player ? [{
   id: e.player.id, name: e.player.name, shirtNumber: e.shirt_number, dateOfBirth: e.player.date_of_birth ?? '', version: e.player.version,
   consent: e.player.photo_consent[0]?.consent_given ?? false, givenBy: e.player.photo_consent[0]?.given_by ?? null, eligibility: null,
-  photo: photoFrom(e.player.photo_path, e.player.is_cutout),
+  photo: photoFrom(e.player.photo_path, e.player.is_cutout), sameAs: e.player.same_as ?? null,
 }] : []
 type EligibilityRow = { id: string; player_id: string; document_type: DocumentType | null; document_number: string | null
   scan_name: string | null; verified: boolean; version: number; scan_path?: string | null; scan_uploaded_at?: string | null }
@@ -291,6 +293,9 @@ export function overlaySquad(form: RegistrationForm, queued: OutboxEntry[]): Reg
     if (name === 'add_player' && !players.some((p) => p.id === a.player_id)) {
       players.push({ id: String(a.player_id), name: String(a.name), shirtNumber: Number(a.shirt_number), dateOfBirth: String(a.date_of_birth),
         consent: a.consent === true, givenBy: a.consent === true ? String(a.given_by ?? '') : null, version: 1, eligibility: null, photo: null })
+    } else if (name === 'suggest_same_person') {
+      const p = players.find((x) => x.id === a.player_id)
+      if (p) p.sameAs = typeof a.candidate_id === 'string' ? a.candidate_id : null
     } else if (name === 'edit_player') {
       const p = players.find((x) => x.id === a.player_id)
       if (!p) continue
@@ -383,5 +388,38 @@ export async function squadLimit(seasonId: string): Promise<{ limit: number | nu
     return { limit: s && s.starters !== null && s.max_bench !== null ? s.starters + s.max_bench : null }
   } catch {
     return { code: navigator.onLine ? 'unknown' : 'offline' }
+  }
+}
+
+/** An earlier Player of the Tournament with the same name, as the lookup gives them: no photo, birth date, guardian or contact data. */
+export type Candidate = { id: string; name: string; teamCode: string; seasonNumber: number }
+export const candidateLine = (c: Candidate) => `Same person as ${c.name} (${c.teamCode}, Season ${c.seasonNumber})?`
+
+/** Earlier Players of this Tournament with exactly this name who played for another Team (at most 5). Offline or refused: none. */
+export async function sameCandidates(teamId: string, name: string): Promise<Candidate[]> {
+  try {
+    const { data, error } = await supabase.schema('app').rpc('same_person_candidates', { p_team_id: teamId, p_name: name })
+    if (error || !Array.isArray(data)) return []
+    return (data as { player_id: string; name: string; team_code: string; season_number: number }[])
+      .map((r) => ({ id: r.player_id, name: r.name, teamCode: r.team_code, seasonNumber: r.season_number }))
+  } catch {
+    return []
+  }
+}
+
+/** A Player of the Team with a pending suggestion, for the Organiser's review; candidate: who it names (null when the lookup no longer shows them). */
+export type SameQuestion = { playerId: string; name: string; version: number; candidate: Candidate | null }
+
+/** The Team's pending same-person suggestions; null when they can't be read (the Organiser then sees none, and the server still decides). */
+export async function sameQuestions(teamId: string): Promise<SameQuestion[] | null> {
+  try {
+    const { data, error } = await supabase.schema('app').from('squad_entry').select('player(id, name, version, same_as, merged_into)').eq('team_id', teamId)
+    if (error || !Array.isArray(data)) return null
+    const pending = (data as unknown as { player: { id: string; name: string; version: number; same_as: string | null; merged_into: string | null } | null }[])
+      .flatMap((e) => (e.player?.same_as && !e.player.merged_into ? [e.player] : []))
+    return await Promise.all(pending.map(async (p) => ({ playerId: p.id, name: p.name, version: p.version,
+      candidate: (await sameCandidates(teamId, p.name)).find((c) => c.id === p.same_as) ?? null })))
+  } catch {
+    return null
   }
 }

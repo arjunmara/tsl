@@ -89,7 +89,7 @@ done
 
 # --- Command skeleton (Story 1.6): every app function is security definer with search_path='';
 # every function not on the helper allowlist calls app.authorize, then app.claim_command.
-helpers="{is_member,legacy_mirror_push,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring,holder_label,move_scoring,scoring_state,takeover_requests,season_top_scorers}"
+helpers="{is_member,legacy_mirror_push,season_allows,authorize,claim_command,finish_command,log_change,season_status_guard,activity_log_immutable,server_now,report_client_error,is_asset_member,lineup_violations,sponsor_invalid,organisers,lock_membership,invite_preview,granted_team,registration_form,conflict,registration_rules,can_upload_scan,registration_eligibility,eligibility_invalid,can_use_photo,can_read_scan,scans_to_delete,scans_deleted,grace_window,link_closes_at,file_queued,photos_to_delete,files_deleted,draw_slots,standings_calc,standings,match_resolve,match_sides,match_going_live,match_freeze_check,start_check,finish_check,actor_name,scorer_allows,scorer_status,console_reads,console_match,scorer_matches,match_score,clock_step,match_goal_score,goal_step,on_pitch,event_step,sub_chain_ok,result_check,holds_scoring,holder_label,move_scoring,scoring_state,takeover_requests,season_top_scorers,player_root,same_person_candidates}"
 skeleton="select coalesce(string_agg(proname, ', ' order by proname), '') from pg_proc
   where pronamespace = 'app'::regnamespace and (not prosecdef
     or not coalesce(proconfig, '{}') @> array['search_path=\"\"']
@@ -892,7 +892,7 @@ others=$(q "select string_agg(format('%s(%s)', p.proname, (select string_agg(for
     when a.t in ('text[]'::regtype, 'uuid[]'::regtype, 'jsonb'::regtype) then '''{}''' else '''x''' end), ', ' order by a.o)
     from unnest(p.proargnames, p.proargtypes::oid[]::regtype[]) with ordinality a(n, t, o))), E'\n' order by p.proname)
   from pg_proc p where p.pronamespace = 'app'::regnamespace and p.prorettype = 'jsonb'::regtype
-    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command,add_player,edit_player,remove_player,add_staff,edit_staff,remove_staff,submit_team,add_eligibility,edit_eligibility,set_photo,request_scorer_approval}'::name[])")
+    and p.proname <> all ('$helpers'::name[] || '{redeem_registration_link,edit_team,discard_command,add_player,edit_player,remove_player,add_staff,edit_staff,remove_staff,submit_team,add_eligibility,edit_eligibility,set_photo,request_scorer_approval,suggest_same_person}'::name[])")
 [ "$(wc -l <<<"$others")" -ge 20 ] || fail "grant: too few commands listed: $others"
 refused_all() {
   while IFS= read -r f; do
@@ -3544,5 +3544,101 @@ q "update app.season set status='started' where id='$SN2'" >/dev/null
 [ "$(ar $A 4310 $SN2 "$(row $RT2 8)")|$(q "select count(*) from app.team where season_id='$SN2' and returning_from='$RT3'")" = "season_started|1" ] || fail "returning: allowed after the Season started"
 out=$(as anon "select app.add_returning_teams('$(cmd 4312)', '$SN2', '[]')" 2>&1 || true)
 [[ $out == *"permission denied for function"* ]] || fail "anon: can execute add_returning_teams: $out"
+
+# --- Same person as last year (Story 6.3). TP: SP1 (finished) has FSW (Ramesh Chudara, Other Guy) and KTM (Solo Same); SP2 (registration) has KTM with a manager grant GP and
+# Players "ramesh chudara", "Solo Same" and "Nobody New". T2 (B's) has a Player of the same name. A organises TP; B does not.
+TP=11111111-0000-4000-8000-0000000001b0 SP1=21111111-0000-4000-8000-0000000001b0 SP2=21111111-0000-4000-8000-0000000001b1
+TF=47111111-0000-4000-8000-0000000004f1 TKA=47111111-0000-4000-8000-0000000004f2 TKB=47111111-0000-4000-8000-0000000004f3 LGP=67111111-0000-4000-8000-0000000004f4
+GP=f1111111-0000-4000-8000-0000000004f5 GQ=f1111111-0000-4000-8000-0000000004f6
+sp() { printf '61111111-0000-4000-8000-%08d%04d' 4400 "$1"; }
+create $A 4400 $TP $SP1 'Same Cup' >/dev/null
+q "update app.season set status='registration' where id='$SP1'; update app.season set status='started' where id='$SP1'; update app.season set status='finished' where id='$SP1';
+   insert into app.season (id, tournament_id, number, status) values ('$SP2', '$TP', 2, 'setup'); update app.season set status='registration' where id='$SP2';
+   insert into auth.users (id, is_anonymous) values ('$GP', true), ('$GQ', true);
+   insert into app.team (id, tournament_id, season_id, name, code, status) values ('$TF', '$TP', '$SP1', 'Far West', 'FSW', 'approved'), ('$TKA', '$TP', '$SP1', 'Kathmandu', 'KTM', 'approved'),
+     ('$TKB', '$TP', '$SP2', 'Kathmandu', 'KTM', 'invited'), ('47111111-0000-4000-8000-0000000004fa', '$TP', '$SP2', 'Opp FC', 'OPP', 'invited');
+   insert into app.registration_link (id, tournament_id, team_id, token_hash, created_by) values ('$LGP', '$TP', '$TKB', '$(hash same-person)', '$A');
+   insert into app.registration_grant (id, link_id, team_id, season_id, tournament_id) values ('$GP', '$LGP', '$TKB', '$SP2', '$TP'), ('$GQ', '$LW', '$W', '$S2', '$T2');
+   insert into app.player (id, tournament_id, name, date_of_birth) values ('$(sp 1)', '$TP', 'Ramesh Chudara', '2000-01-01'), ('$(sp 2)', '$TP', 'Other Guy', '2000-01-02'),
+     ('$(sp 3)', '$TP', 'Solo Same', '2000-01-03'), ('$(sp 4)', '$TP', 'ramesh chudara', '2001-01-01'), ('$(sp 5)', '$TP', 'Solo Same', '2001-01-03'), ('$(sp 6)', '$TP', 'Nobody New', '2001-01-04'),
+     ('$(sp 7)', '$T2', 'Ramesh Chudara', '2000-01-05');
+   insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$TP', '$TF', '$(sp 1)', 1), ('$TP', '$TF', '$(sp 2)', 2), ('$TP', '$TKA', '$(sp 3)', 3),
+     ('$TP', '$TKB', '$(sp 4)', 4), ('$TP', '$TKB', '$(sp 5)', 5), ('$TP', '$TKB', '$(sp 6)', 6)" >/dev/null
+sc() { as "$1" "select coalesce(string_agg(player_id||'/'||name||'/'||team_code||'/'||season_number, ',' order by player_id), 'none') from app.same_person_candidates('$2', '$3')"; }
+[ "$(sc $GP $TKB ' RAMESH chudara ')|$(sc $A $TKB 'Ramesh Chudara')" = "$(sp 1)/Ramesh Chudara/FSW/1|$(sp 1)/Ramesh Chudara/FSW/1" ] || fail "same person: lookup for the manager or Organiser"
+[ "$(sc $GP $TKB 'Solo Same')|$(sc $GP $TKB 'Nobody New')|$(sc $GP $TKB 'Ramesh')|$(sc $GP $TKB 'Ramesh Chudar')" = "none|none|none|none" ] || fail "same person: same code, unknown or partial name matched"
+[ "$(sc $B $TKB 'Ramesh Chudara')|$(sc $GQ $TKB 'Ramesh Chudara')|$(sc $G1 $TKB 'Ramesh Chudara')|$(sc $GP $W 'Ramesh Chudara')|$(sc $A $W 'Ramesh Chudara')" = "none|none|none|none|none" ] || fail "leak: same_person_candidates across Tournaments or Teams"
+out=$(as anon "select * from app.same_person_candidates('$TKB', 'Ramesh Chudara')" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute same_person_candidates: $out"
+out=$(as $GP "select app.player_root('$(sp 4)')" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "client can execute player_root: $out"
+[ "$(q "select string_agg(a, ',' order by a) from (select unnest(proargnames) a from pg_proc where proname='same_person_candidates') x where a in ('photo_path','date_of_birth','given_by')")" = "" ] || fail "same person: lookup exposes personal columns"
+sg() { tc "$1" "suggest_same_person('$(cmd "$2")', '$3', '$4', $5)"; }
+# Forged: a candidate of another Tournament, another name, an alias target the lookup would not return, or a Player not in the Squad.
+[ "$(sg $GP 4401 $TKB "$(sp 4)" "'$(sp 7)'")|$(sg $GP 4402 $TKB "$(sp 4)" "'$(sp 2)'")|$(sg $GP 4403 $TKB "$(sp 6)" "'$(sp 1)'")|$(sg $GP 4404 $TKB "$(sp 1)" "'$(sp 2)'")" \
+  = "candidate_invalid|candidate_invalid|candidate_invalid|player_missing" ] || fail "same person: forged candidate"
+[ "$(sg $GQ 4405 $TKB "$(sp 4)" "'$(sp 1)'")|$(sg $B 4406 $TKB "$(sp 4)" "'$(sp 1)'")|$(sg $A 4407 $TKB "$(sp 4)" null)" = "not_authorized|not_authorized|ok" ] || fail "same person: another Tournament's grant or Organiser suggested"
+[ "$(q "select coalesce(same_as::text, '-') from app.player where id='$(sp 4)'")" = - ] || fail "same person: refused suggestion wrote"
+[ "$(sg $GP 4408 $TKB "$(sp 4)" "'$(sp 1)'")|$(q "select concat_ws('|', same_as, coalesce(merged_into::text, '-'), version) from app.player where id='$(sp 4)'")" = "ok|$(sp 1)|-|1" ] || fail "same person: suggestion not stored or merged early"
+[ "$(sg $GP 4408 $TKB "$(sp 4)" "'$(sp 1)'")|$(q "select count(*) from app.activity_log where command_id='$(cmd 4408)' and actor='$GP' and table_name='player' and op='update'")" = "ok|1" ] || fail "same person: repeat wrote again or not logged"
+[ "$(q "select (after->>'date_of_birth')||(after->>'same_as') from app.activity_log where command_id='$(cmd 4408)'")" = "date_of_birth$(sp 1)" ] || fail "same person: Activity log shows a personal value"
+# A manager can't answer; neither can another Tournament's Organiser or a stale version.
+an() { tc "$1" "answer_same_person('$(cmd "$2")', '$3', '$4', $5, $6)"; }
+[ "$(an $GP 4409 $TKB "$(sp 4)" true 1)|$(an $B 4410 $TKB "$(sp 4)" true 1)|$(an $A 4411 $TKB "$(sp 4)" true 5)|$(an $A 4412 $TKB "$(sp 6)" true 1)|$(an $A 4413 $TKB "$(sp 1)" true 1)" \
+  = "not_authorized|not_authorized|version_conflict|no_suggestion|player_missing" ] || fail "same person: answer checks"
+# Another Player pending, rejected; the first confirmed. Both rows kept.
+[ "$(sg $GP 4414 $TKB "$(sp 5)" "'$(sp 3)'")" = candidate_invalid ] || fail "same person: a same-code Player suggested"
+[ "$(an $A 4415 $TKB "$(sp 4)" false 1)|$(q "select concat_ws('|', coalesce(same_as::text, '-'), coalesce(merged_into::text, '-'), version) from app.player where id='$(sp 4)'")" = "ok|-|-|2" ] || fail "same person: Not the same"
+[ "$(an $A 4416 $TKB "$(sp 4)" true 2)" = no_suggestion ] || fail "same person: answered with no suggestion"
+[ "$(sg $GP 4417 $TKB "$(sp 4)" "'$(sp 1)'")|$(an $A 4418 $TKB "$(sp 4)" true 2)|$(q "select concat_ws('|', coalesce(same_as::text, '-'), merged_into, version) from app.player where id='$(sp 4)'")" = "ok|ok|-|$(sp 1)|3" ] || fail "same person: Confirm"
+[ "$(an $A 4418 $TKB "$(sp 4)" true 2)|$(q "select count(*) from app.player where id in ('$(sp 1)', '$(sp 4)')")|$(q "select count(*) from app.squad_entry where player_id in ('$(sp 1)', '$(sp 4)')")" = "ok|2|2" ] || fail "same person: repeat or rows lost"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 4418)' and actor='$A' and table_name='player' and op='update'")" = 1 ] || fail "same person: Confirm not logged"
+[ "$(sg $GP 4419 $TKB "$(sp 4)" "'$(sp 1)'")|$(an $A 4420 $TKB "$(sp 4)" true 3)" = "candidate_invalid|no_suggestion" ] || fail "same person: a merged Player merged again"
+# Answer-time checks, lookup through aliases, approval gate, remove and erase for a person. TKD (SP2) holds the Players below.
+TKD=47111111-0000-4000-8000-0000000004fb
+q "insert into app.team (id, tournament_id, season_id, name, code, status) values ('$TKD', '$TP', '$SP2', 'Dee FC', 'DEE', 'submitted');
+   insert into app.player (id, tournament_id, name, date_of_birth, merged_into, same_as) values
+     ('$(sp 8)', '$TP', 'Dup Name', '2000-02-01', null, null), ('$(sp 10)', '$TP', 'Twin Name', '2000-02-02', null, null), ('$(sp 13)', '$TP', 'Root Person', '2000-02-03', null, null);
+   insert into app.player (id, tournament_id, name, date_of_birth, merged_into, same_as) values
+     ('$(sp 9)', '$TP', 'dup name', '2001-02-01', null, '$(sp 8)'), ('$(sp 11)', '$TP', 'twin name', '2001-02-02', null, '$(sp 10)'),
+     ('$(sp 12)', '$TP', 'Twin Name', '2001-02-04', '$(sp 10)', null), ('$(sp 14)', '$TP', 'Root Alias', '2001-02-05', '$(sp 13)', null),
+     ('$(sp 15)', '$TP', 'Own Alias', '2001-02-06', null, null), ('$(sp 16)', '$TP', 'Own Alias', '2001-02-07', '$(sp 15)', null);
+   update app.player set same_as = '$(sp 16)' where id = '$(sp 15)';
+   insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$TP', '$TF', '$(sp 8)', 8), ('$TP', '$TF', '$(sp 10)', 10), ('$TP', '$TF', '$(sp 13)', 13),
+     ('$TP', '$TKD', '$(sp 9)', 9), ('$TP', '$TKD', '$(sp 11)', 11), ('$TP', '$TKD', '$(sp 15)', 15), ('$TP', '$TKD', '$(sp 13)', 12), ('$TP', '47111111-0000-4000-8000-0000000004fa', '$(sp 12)', 12)" >/dev/null
+[ "$(sc $A 47111111-0000-4000-8000-0000000004fa 'Twin Name')|$(sc $A $TKD 'Twin Name')" = "none|$(sp 10)/Twin Name/FSW/1" ] || fail "same person: lookup ignored an alias already in the Squad"
+# The candidate is merged elsewhere after the suggestion: confirming is refused, rejecting works.
+q "update app.player set merged_into = '$(sp 1)' where id = '$(sp 8)'" >/dev/null
+[ "$(an $A 4430 $TKD "$(sp 9)" true 1)|$(an $A 4431 $TKD "$(sp 9)" false 1)" = "candidate_invalid|ok" ] || fail "same person: confirmed a candidate no longer returned"
+# The candidate's person already has a Squad entry in this Season (through an alias): refused.
+[ "$(an $A 4432 $TKD "$(sp 11)" true 1)" = candidate_invalid ] || fail "same person: merged into a person already in this Season"
+# The suggestion names an alias of the Player itself.
+[ "$(an $A 4433 $TKD "$(sp 15)" true 1)" = candidate_invalid ] || fail "same person: merged into its own alias"
+# Approve waits for the questions.
+[ "$(tc $A "approve_team('$(cmd 4434)', '$TKD')")" = same_person_pending ] || fail "same person: approved with a question pending"
+q "update app.player set same_as = null where id in ('$(sp 11)', '$(sp 15)')" >/dev/null
+[ "$(tc $A "approve_team('$(cmd 4435)', '$TKD')")" != same_person_pending ] || fail "same person: approve still blocked"
+# Erase reaches the root and its aliases; remove keeps a root that has aliases.
+[ "$(an $B 4436 $TKD "$(sp 13)" true 1)" = not_authorized ] || fail "leak: another Organiser answered"
+[ "$(tc $A "erase_player_personal_data('$(cmd 4437)', '$TKD', '$(sp 13)', 1)")|$(q "select count(*) from app.player where id in ('$(sp 13)', '$(sp 14)') and date_of_birth is not null")" = "ok|0" ] || fail "same person: erase left a merged row's personal data"
+[ "$(tc $A "remove_player('$(cmd 4438)', '$TKD', '$(sp 13)', $(q "select version from app.player where id='$(sp 13)'"))")|$(q "select count(*) from app.player where id in ('$(sp 13)', '$(sp 14)')")" = "ok|2" ] || fail "same person: remove_player failed or dropped a root that has aliases"
+# Top scorers count the alias under the root; a replay with the alias id would find the row.
+SPM=54111111-0000-4000-8000-0000000004f7
+q "insert into app.match (id, tournament_id, season_id, stage, round, ord, home_team_id, away_team_id, status) values ('$SPM', '$TP', '$SP2', 'group', 'Group A', 1, '$TKB', '47111111-0000-4000-8000-0000000004fa', 'scheduled');
+   insert into app.match_event (id, tournament_id, season_id, match_id, kind, period, minute, entered_at, team_id, player_id, own_goal) values
+   (gen_random_uuid(), '$TP', '$SP2', '$SPM', 'goal', 1, 1, now(), '$TKB', '$(sp 4)', false), (gen_random_uuid(), '$TP', '$SP2', '$SPM', 'goal', 1, 2, now(), '$TKB', '$(sp 1)', false),
+   (gen_random_uuid(), '$TP', '$SP2', '$SPM', 'goal', 1, 3, now(), '$TKB', '$(sp 5)', false)" >/dev/null
+[ "$(as $A "select coalesce(string_agg(player_id||'='||goals, ',' order by goals desc), '-') from app.season_top_scorers('$SP2')")" = "$(sp 4)=2,$(sp 5)=1" ] || fail "same person: top scorers not counted per person, or not the Player in this Season's Squad"
+[ "$(as $B "select count(*) from app.season_top_scorers('$SP2')")" = 0 ] || fail "leak: top scorers"
+# The next Season uses the surviving Player: SP2 finished, SP3 gets KTM's Squad with the root id.
+SP3=21111111-0000-4000-8000-0000000001b2
+q "update app.season set status='started' where id='$SP2'; update app.season set status='finished' where id='$SP2';
+   insert into app.season (id, tournament_id, number, status) values ('$SP3', '$TP', 3, 'setup'); update app.season set status='registration' where id='$SP3'" >/dev/null
+r=$(as $A "select app.add_returning_teams('$(cmd 4421)', '$SP3', '[{\"from_team_id\":\"$TKB\",\"team_id\":\"47111111-0000-4000-8000-0000000004f8\",\"link_id\":\"67111111-0000-4000-8000-0000000004f9\",\"token_hash\":\"$(hash same-person-3)\"}]'::jsonb)")
+[ "$(q "select (r->>'ok') from (select '$r'::jsonb r) x")|$(q "select string_agg(player_id::text, ',' order by shirt_number) from app.squad_entry where team_id='47111111-0000-4000-8000-0000000004f8'")" = "true|$(sp 1),$(sp 5),$(sp 6)" ] || fail "same person: returning Team did not copy the root Player: $r"
+out=$(as anon "select app.suggest_same_person('$(cmd 4422)', '$TKB', '$(sp 4)', null)" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute suggest_same_person: $out"
+out=$(as anon "select app.answer_same_person('$(cmd 4423)', '$TKB', '$(sp 4)', true, 1)" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute answer_same_person: $out"
 
 echo ok

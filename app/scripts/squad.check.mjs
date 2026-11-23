@@ -49,7 +49,7 @@ async function fresh({ deadline = OPEN_DAY, players = [], staff = [], roles = ['
     team: { id: TEAM, name: 'Friends Sporting Wing', code: 'FSW', kit_colour: null, status: 'invited', version: 1 },
     form: { tournament_name: 'Gulmi Cup', season_number: 1, season_status: 'registration', registration_deadline: deadline },
     rules: { consent_statement: "Photos can be used on the Gulmi Cup's posts and stream.", starters: 2, max_bench: 1, staff_roles: roles },
-    players, staff, down: false, calls: [], answers: {},
+    players, staff, down: false, calls: [], answers: {}, candidates: [],
   }
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } })
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort())
@@ -79,6 +79,7 @@ async function fresh({ deadline = OPEN_DAY, players = [], staff = [], roles = ['
     }
     if (path === '/rest/v1/staff') return json(route, mock.staff.map((x) => ({ ...x, team_id: TEAM })))
     if (path === '/rest/v1/rpc/registration_eligibility') return json(route, [])
+    if (path === '/rest/v1/rpc/same_person_candidates') return (mock.calls.push({ ...JSON.parse(req.postData() ?? '{}'), cmd: 'same_person_candidates' }), json(route, mock.candidates))
     const a = JSON.parse(req.postData() ?? '{}')
     const cmd = path.replace('/rest/v1/rpc/', '')
     mock.calls.push({ ...a, cmd })
@@ -379,6 +380,41 @@ try {
     mock.down = false
     await page.evaluate(() => window.dispatchEvent(new Event('online')))
     await until(page, async () => mock.team.status === 'submitted' && mock.players.length === 2 && mock.staff.length === 2, 'queued changes not sent')
+    await context.close()
+  }
+
+  // --- Same person (Story 6.3): leaving the name field asks about an earlier Player of that name; Yes sends add_player then suggest_same_person with the same id,
+  // No (or ignoring) sends only add_player; no match shows no question.
+  for (const answer of ['Yes, same person', 'No, a different person', null]) {
+    const { context, mock, page } = await fresh()
+    mock.candidates = [{ player_id: '61111111-0000-4000-8000-000000000002', name: 'Ramesh Chudara', team_code: 'FSW', season_number: 7 }]
+    const f = addForm(page)
+    await fill(f, "Player's name", ' ramesh chudara ')
+    await text(f, 'Same person as Ramesh Chudara (FSW, Season 7)?').waitFor()
+    assert.equal(calls(mock, 'same_person_candidates').length, 1)
+    assert.deepEqual(calls(mock, 'same_person_candidates')[0].p_name, 'ramesh chudara')
+    if (answer) await button(f, answer).click()
+    await fill(f, 'Shirt number', '4')
+    await fill(f, 'Date of birth', ADULT)
+    await button(f, 'Add this Player').click()
+    await until(page, async () => calls(mock, 'add_player').length === 1, 'add_player not sent')
+    if (answer === 'Yes, same person') {
+      await until(page, async () => calls(mock, 'suggest_same_person').length === 1, 'suggest_same_person not sent')
+      const [s] = calls(mock, 'suggest_same_person')
+      assert.equal(s.player_id, calls(mock, 'add_player')[0].player_id)
+      assert.equal(s.candidate_id, '61111111-0000-4000-8000-000000000002')
+      assert.deepEqual(mock.calls.map((c) => c.cmd).filter((c) => c === 'add_player' || c === 'suggest_same_person'), ['add_player', 'suggest_same_person'])
+    } else {
+      await page.waitForTimeout(300)
+      assert.equal(calls(mock, 'suggest_same_person').length, 0)
+    }
+    await context.close()
+  }
+  {
+    const { context, mock, page } = await fresh()
+    await fill(addForm(page), "Player's name", 'Nobody Known')
+    await until(page, async () => calls(mock, 'same_person_candidates').length === 1, 'lookup not called')
+    assert.equal(await page.getByText(/^Same person as/).count(), 0)
     await context.close()
   }
 
