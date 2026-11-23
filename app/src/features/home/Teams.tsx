@@ -12,6 +12,7 @@ import { StatusPill } from '../../ui/StatusPill'
 import { blocked, useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
 import type { Head } from './Home'
+import { ReturningTeams } from './ReturningTeams'
 import { TeamImport } from './TeamImport'
 
 export const teamStatusLabel: Record<TeamStatus, string> = { invited: 'Invited', submitted: 'Submitted', approved: 'Approved', returned: 'Returned', withdrawn: 'Withdrawn' }
@@ -83,6 +84,7 @@ export function Teams({ tournamentId, head: h, openId, onSeasonChange }: { tourn
   const list = Array.isArray(teams) ? teams : []
   const suggestion = suggestCode(name, list.map((t) => t.code))
   const canAdd = h.season.status === 'setup' || h.season.status === 'registration'
+  const source = h.seasons.find((x) => x.number === h.season.number - 1)
   const openTeam = (t: Team) => navigate(`/t/${tournamentId}/teams/${t.id}`)
 
   const checkCode = (v: string) => {
@@ -167,6 +169,7 @@ export function Teams({ tournamentId, head: h, openId, onSeasonChange }: { tourn
                 <span className="team-name">
                   <span className="body-strong">{t.name}</span>
                   <span className="meta">{t.code}</span>
+                  {t.returningFrom && <span className="meta">Pre-filled from Season {h.season.number - 1}</span>}
                 </span>
                 <StatusPill state={t.status === 'approved' ? 'done' : 'pending'} label={teamStatusLabel[t.status]} />
               </button>
@@ -175,6 +178,7 @@ export function Teams({ tournamentId, head: h, openId, onSeasonChange }: { tourn
           ))}
         </ul>
       ) : <p className="body">Add your Teams to send each one its Registration link.</p>}
+      {canAdd && source && <ReturningTeams tournamentId={tournamentId} seasonId={h.season.id} seasonStatus={h.season.status} onSeasonChange={onSeasonChange} sourceId={source.id} sourceNumber={source.number} current={list} currentLoaded={Array.isArray(teams)} onSent={(n) => (setNotice(n), reload())} />}
       {canAdd && <TeamImport tournamentId={tournamentId} seasonId={h.season.id} seasonStatus={h.season.status} onSeasonChange={onSeasonChange} onSent={(n) => (setNotice(n), reload())} />}
       {canAdd ? (
         <section className="teams-add">

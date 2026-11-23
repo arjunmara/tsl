@@ -1,12 +1,14 @@
 import { appUrl } from './appUrl'
-import type { OutboxEntry } from './commands'
+import { forgetRefused, send, type OutboxEntry } from './commands'
+import { newLink } from './teamCode'
 import { supabase } from './supabase'
 
 export type TeamStatus = 'invited' | 'submitted' | 'approved' | 'returned' | 'withdrawn'
 /** A Team as its row and the Teams tab show it; linkId is its active Registration link, null when it has none. */
-export type Team = { id: string; name: string; code: string; kitColour: string | null; status: TeamStatus; linkId: string | null }
+export type Team = { id: string; name: string; code: string; kitColour: string | null; status: TeamStatus; linkId: string | null
+  /** The previous Season's Team this one was pre-filled from (Story 6.2), else null. */ returningFrom?: string | null }
 
-type Row = { id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; registration_link: { id: string; revoked_at: string | null }[] }
+type Row = { id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; returning_from: string | null; registration_link: { id: string; revoked_at: string | null }[] }
 
 // The last read per Season, kept on the device (names and codes only, no tokens): offline, the tab shows it.
 const teamsKey = (seasonId: string) => `tsl-teams:${seasonId}`
@@ -24,10 +26,10 @@ export async function seasonTeams(seasonId: string): Promise<{ teams: Team[] } |
   }
   try {
     const { data, error, status } = await supabase.schema('app').from('team')
-      .select('id, name, code, kit_colour, status, registration_link(id, revoked_at)').eq('season_id', seasonId).is('registration_link.revoked_at', null).order('created_at').order('id')
+      .select('id, name, code, kit_colour, status, returning_from, registration_link(id, revoked_at)').eq('season_id', seasonId).is('registration_link.revoked_at', null).order('created_at').order('id')
     if (error) return status === 0 || !navigator.onLine ? kept() : { code: 'unknown' }
     const teams = ((data ?? []) as Row[]).map((r) => ({
-      id: r.id, name: r.name, code: r.code, kitColour: r.kit_colour, status: r.status,
+      id: r.id, name: r.name, code: r.code, kitColour: r.kit_colour, status: r.status, returningFrom: r.returning_from ?? null,
       linkId: r.registration_link.find((l) => !l.revoked_at)?.id ?? null,
     }))
     try {
@@ -94,3 +96,22 @@ export function linkToken(linkId: string | null): string | null {
 
 /** The link a Team manager opens: the token in the fragment, so it never reaches server logs or Referer headers. */
 export const registrationUrl = (token: string) => `${appUrl()}/register#${token}`
+
+/**
+ * Adds the ticked previous-Season Teams to this Season in one command, each with a new link made here (as add_team). Returns the
+ * command's answer (code 'queued' offline); a refusal forgets the new tokens and drops the command from the queue.
+ */
+export async function addReturning(tournamentId: string, seasonId: string, fromTeamIds: string[]) {
+  const teams = await Promise.all(fromTeamIds.map(async (from_team_id) => {
+    const { token, hash } = await newLink()
+    const link_id = crypto.randomUUID()
+    rememberLink(link_id, token)
+    return { from_team_id, team_id: crypto.randomUUID(), link_id, token_hash: hash }
+  }))
+  const r = await send('add_returning_teams', { season_id: seasonId, teams }, { scope: tournamentId })
+  if (!r.ok && r.code !== 'queued') {
+    if (r.commandId) void forgetRefused(r.commandId)
+    for (const t of teams) rememberLink(t.link_id, null)
+  }
+  return r
+}

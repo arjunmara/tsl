@@ -1340,3 +1340,4 @@ html:has(.console) {
 .teams-import a {
   width: fit-content;
 }
+fieldset.returning-list { border: 0; padding: 0; margin: 0; min-width: 0; }

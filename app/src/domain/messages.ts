@@ -72,6 +72,8 @@ export const messages = {
   invite_expired: 'This invite has expired. Ask for a new invite.',
   activity_unknown: "Couldn't load the Activity log. Try loading it again.",
   organisers_unknown: "Couldn't load the organisers. Try loading them again.",
+  already_returned: 'That Team was already added to this Season. Reload to see it.',
+  returning_team_invalid: 'That Team is not in the previous Season. Reload and try again.',
   team_code_taken: 'That Team code is already used in this Season. Choose another code.',
   code_invalid: 'A Team code is 2 to 5 letters or digits.',
   token_invalid: "That link couldn't be made. Try making it again.",

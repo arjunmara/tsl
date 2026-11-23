@@ -3487,4 +3487,62 @@ cols="description, rules, photo_consent, venue, format_preset, periods, period_m
 out=$(as anon "select app.new_season('$(cmd 4206)', '$TN', '$SN3')" 2>&1 || true)
 [[ $out == *"permission denied for function"* ]] || fail "anon: can execute new_season: $out"
 
+# --- Returning Teams (Story 6.2): copy ticked Teams of the previous Season into the new one, all or nothing. SN1 (finished) has KTM (2 Players, Staff, consent,
+# eligibility with a scan), WDR (withdrawn) and CLS; SN2 is the new Season. A organises TN; B does not.
+RT1=47111111-0000-4000-8000-0000000002a1 RT2=47111111-0000-4000-8000-0000000002a2 RT3=47111111-0000-4000-8000-0000000002a3
+rp() { printf '61111111-0000-4000-8000-%08d%04d' 2900 "$1"; }
+q "insert into app.team (id, tournament_id, season_id, name, code, kit_colour, status) values
+  ('$RT1', '$TN', '$SN1', 'Kathmandu FC', 'KTM', '#aa0000', 'approved'), ('$RT2', '$TN', '$SN1', 'Withdrawn FC', 'WDR', null, 'withdrawn'), ('$RT3', '$TN', '$SN1', 'Close FC', 'CLS', '#0000aa', 'approved');
+  insert into app.player (id, tournament_id, name, date_of_birth) values ('$(rp 1)', '$TN', 'Ret One', '2001-01-01'), ('$(rp 2)', '$TN', 'Ret Two', '2002-02-02'), ('$(rp 3)', '$TN', 'Ret Three', '2003-03-03');
+  insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) values ('$TN', '$RT1', '$(rp 1)', 7), ('$TN', '$RT1', '$(rp 2)', 9), ('$TN', '$RT3', '$(rp 3)', 4);
+  insert into app.staff (id, tournament_id, team_id, name, role, photo_path, is_cutout) values ('47111111-0000-4000-8000-0000000002b1', '$TN', '$RT1', 'Coach Ram', 'coach', '$TN/$RT1/x/p.webp', true);
+  insert into app.photo_consent (tournament_id, player_id, season_id, consent_given, given_by) values ('$TN', '$(rp 1)', '$SN1', true, 'Ret One'), ('$TN', '$(rp 2)', '$SN1', false, null), ('$TN', '$(rp 3)', '$SN1', true, 'Ret Three');
+  insert into app.eligibility_record (id, tournament_id, player_id, season_id, document_type, document_number, scan_path, scan_name, scan_uploaded_at, verified_by, verified_at) values
+  ('47111111-0000-4000-8000-0000000002c1', '$TN', '$(rp 1)', '$SN1', 'citizenship', 'C-123', '$TN/$RT1/$(rp 1)/s.webp', 'scan.png', now(), '$A', now());
+  insert into app.registration_link (id, tournament_id, team_id, token_hash, created_by) values ('47111111-0000-4000-8000-0000000002d1', '$TN', '$RT1', '$(hash season-1-link)', '$A')" >/dev/null
+RN() { printf '47111111-0000-4000-8000-0000000003%02d' "$1"; }; RL() { printf '67111111-0000-4000-8000-0000000003%02d' "$1"; }
+rh() { hash "returning-$1"; }
+row() { printf '{"from_team_id":"%s","team_id":"%s","link_id":"%s","token_hash":"%s"}' "$1" "$(RN $2)" "$(RL $2)" "$(rh $2)"; }
+ar() { tc "$1" "add_returning_teams('$(cmd "$2")', '$3', '[$4]'::jsonb)"; }
+srcsnap() { q "select (select string_agg(id||':'||version, ',' order by id) from app.team where season_id='$SN1')||'|'||(select string_agg(id||':'||version, ',' order by id) from app.registration_link where team_id in ('$RT1','$RT2','$RT3'))||'|'||(select count(*) from app.squad_entry where team_id in ('$RT1','$RT2','$RT3'))||'|'||(select count(*) from app.player)||'|'||(select string_agg(id||':'||version||coalesce(scan_path,'-'), ',' order by id) from app.eligibility_record where season_id='$SN1')||'|'||(select count(*) from app.photo_consent where season_id='$SN1')"; }
+snap=$(srcsnap)
+q "update app.season set status='registration' where id='$SN2'" >/dev/null
+q "insert into app.team (id, tournament_id, season_id, name, code) values ('$(RN 90)', '$TN', '$SN2', 'Hand Made', 'CLS')" >/dev/null
+[ "$(ar $B 4300 $SN2 "$(row $RT1 1)")|$(as anon "select 1 from app.add_returning_teams('$(cmd 4300)', '$SN2', '[]')" 2>&1 | grep -c 'permission denied')|$(q "select count(*) from app.team where season_id='$SN2'")" = "not_authorized|1|1" ] || fail "returning: non-member or anon"
+# All or nothing: KTM is fine but CLS is taken by a hand-made Team; nothing is created.
+[ "$(ar $A 4301 $SN2 "$(row $RT1 1),$(row $RT3 3)")|$(q "select count(*) from app.team where season_id='$SN2'")|$(q "select count(*) from app.squad_entry where team_id='$(RN 1)'")" = "team_code_taken|1|0" ] || fail "returning: code clash did not refuse the whole command"
+[ "$(ar $A 4302 $SN2 "$(row $RT1 1),$(row 47111111-0000-4000-8000-0000000009ff 2)")|$(ar $A 4303 $SN2 "$(row $RT1 1 | sed 's/"token_hash":"[^"]*"/"token_hash":"x"/')")|$(ar $A 4304 $SN2 "")|$(q "select count(*) from app.team where season_id='$SN2'")" \
+  = "returning_team_invalid|token_invalid|returning_team_invalid|1" ] || fail "returning: unknown source Team, bad token or empty list"
+[ "$(ar $A 4305 $SN1 "$(row $RT1 1)")" != ok ] || fail "returning: allowed on a finished Season"
+r=$(as $A "select app.add_returning_teams('$(cmd 4306)', '$SN2', '[$(row $RT1 1),$(row $RT2 2)]'::jsonb)")
+[ "$(q "select (r->>'ok')||coalesce(r->>'version', 'none')||(r->>'message') from (select '$r'::jsonb r) x")" = "truenone2 Teams added." ] || fail "returning: result $r"
+[ "$(q "select concat_ws('|', name, code, coalesce(kit_colour, '-'), status, returning_from, version) from app.team where id='$(RN 1)'")" = "Kathmandu FC|KTM|#aa0000|invited|$RT1|1" ] || fail "returning: Team row"
+[ "$(q "select concat_ws('|', name, code, coalesce(kit_colour, '-'), status, returning_from) from app.team where id='$(RN 2)'")" = "Withdrawn FC|WDR|-|invited|$RT2" ] || fail "returning: withdrawn Team row"
+[ "$(q "select concat_ws('|', team_id, token_hash, created_by, coalesce(revoked_at::text, 'active')) from app.registration_link where id='$(RL 1)'")" = "$(RN 1)|$(rh 1)|$A|active" ] || fail "returning: new link row"
+[ "$(q "select count(*) from app.registration_link where team_id='$RT1' and revoked_at is null and version=1")|$(q "select count(*) from app.registration_link where team_id='$(RN 1)' and token_hash<>'$(hash season-1-link)'")" = "1|1" ] || fail "returning: link token reused from Season 1"
+[ "$(q "select string_agg(player_id||'@'||shirt_number, ',' order by shirt_number) from app.squad_entry where team_id='$(RN 1)'")" = "$(rp 1)@7,$(rp 2)@9" ] || fail "returning: Squad not copied"
+[ "$(q "select count(*) from app.player")" = "$(echo "$snap" | cut -d'|' -f4)" ] || fail "returning: a Player row was created"
+[ "$(q "select concat_ws('|', name, role, photo_path, is_cutout) from app.staff where team_id='$(RN 1)'")" = "Coach Ram|coach|$TN/$RT1/x/p.webp|t" ] || fail "returning: Staff not copied: $(q "select concat_ws(chr(124), name, role, photo_path, is_cutout) from app.staff where team_id='$(RN 1)'")"
+[ "$(q "select string_agg(player_id||coalesce(given_by, '-')||consent_given, ',' order by player_id) from app.photo_consent where season_id='$SN2'")" = "$(rp 1)Ret Onetrue,$(rp 2)-false" ] || fail "returning: Photo consent not copied"
+[ "$(q "select concat_ws('|', player_id, document_type, document_number, verified_by, (verified_at is not null), coalesce(scan_path, '-'), coalesce(scan_name, '-'), coalesce(scan_uploaded_at::text, '-')) from app.eligibility_record where season_id='$SN2'")" \
+  = "$(rp 1)|citizenship|C-123|$A|t|-|-|-" ] || fail "returning: Eligibility not copied without the scan"
+[ "$(srcsnap)" = "$snap" ] || fail "returning: the source Season changed"
+[ "$(ar $A 4306 $SN2 "$(row $RT1 1),$(row $RT2 2)")|$(q "select count(*) from app.team where season_id='$SN2'")" = "ok|3" ] || fail "returning: repeat command id wrote again"
+[ "$(ar $A 4307 $SN2 "$(row $RT1 5)")|$(ar $A 4308 $SN2 "$(row $RT3 7)")" = "already_returned|team_code_taken" ] || fail "returning: a Team returned twice, or the code clash"
+[ "$(q "select count(*) from app.activity_log where command_id='$(cmd 4306)' and actor='$A' and table_name='team' and op='insert'")" = 2 ] || fail "returning: not logged"
+# A manager removes a returning Player: only the new Season's rows go.
+r=$(as $A "select app.remove_player('$(cmd 4309)', '$(RN 1)', '$(rp 1)', $(q "select version from app.player where id='$(rp 1)'"))")
+[ "$(q "select (r->>'ok') from (select '$r'::jsonb r) x")" = true ] || fail "returning: remove_player refused: $r"
+[ "$(q "select concat((select count(*) from app.player where id='$(rp 1)'), (select count(*) from app.squad_entry where team_id='$RT1' and player_id='$(rp 1)'), (select count(*) from app.photo_consent where season_id='$SN1' and player_id='$(rp 1)'), (select count(*) from app.eligibility_record where season_id='$SN1' and player_id='$(rp 1)'))")" = 1111 ] || fail "returning: remove_player touched the Player or Season 1"
+[ "$(q "select concat((select count(*) from app.squad_entry where team_id='$(RN 1)' and player_id='$(rp 1)'), (select count(*) from app.photo_consent where season_id='$SN2' and player_id='$(rp 1)'), (select count(*) from app.eligibility_record where season_id='$SN2' and player_id='$(rp 1)'))")" = 000 ] || fail "returning: remove_player left the new Season's rows"
+# Consent is copied only under the same statement: SN1's differs from a changed SN2's, so a new Team gets none.
+q "update app.season set photo_consent='Something else' where id='$SN2'; delete from app.team where id='$(RN 90)'" >/dev/null
+[ "$(ar $A 4313 $SN2 "$(row $RT3 9)")|$(q "select count(*) from app.photo_consent where season_id='$SN2' and player_id='$(rp 3)'")|$(q "select count(*) from app.team where id='$(RN 9)'")" = "ok|0|1" ] || fail "returning: consent copied under another statement"
+q "update app.season set photo_consent=(select photo_consent from app.season where id='$SN1') where id='$SN2'" >/dev/null
+[ "$(ar $A 4314 $SN2 "$(printf '%s,' $(seq 65) | sed 's/[0-9]*,/{},/g; s/,$//')")" = returning_team_invalid ] || fail "returning: more than 64 rows"
+q "update app.season set status='started' where id='$SN2'" >/dev/null
+[ "$(ar $A 4310 $SN2 "$(row $RT2 8)")|$(q "select count(*) from app.team where season_id='$SN2' and returning_from='$RT3'")" = "season_started|1" ] || fail "returning: allowed after the Season started"
+out=$(as anon "select app.add_returning_teams('$(cmd 4312)', '$SN2', '[]')" 2>&1 || true)
+[[ $out == *"permission denied for function"* ]] || fail "anon: can execute add_returning_teams: $out"
+
 echo ok

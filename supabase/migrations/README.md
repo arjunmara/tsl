@@ -672,3 +672,11 @@ Tournament's latest Season is finished it inserts the next-numbered Season in se
 consent, venue, Format, Line-up rules, Structure), dates empty, and copies the Sponsors as new rows (the image files are shared). Teams, Squads, Fixtures, draw
 slots, scorer tokens and awards are not copied, and the old Season is untouched. A Season still running is `season_running`; a reused `season_id` is `already_exists`.
 Steps: paste `0041_new_season.sql` into the SQL Editor and run it. Check: `select proname from pg_proc where proname = 'new_season'` returns one row.
+
+## Apply 0042_returning_teams.sql (Story 6.2)
+
+Apply after 0041 and before the app deploy with "Add returning Teams" (test first, then live). It adds `app.team.returning_from` (the previous Season's Team) and the command
+`add_returning_teams` (Season in setup or registration): for each ticked Team of the previous Season it creates a new Team (same name, code and kit colour) with its own new
+Registration link, the same Players in its Squad with the same shirt numbers (no new Player rows), copies of its Staff, and the previous Season's Photo consent and Eligibility
+records as recorded, without scans. All or nothing: `returning_team_invalid`, `already_returned`, `team_code_taken` refuse the whole command. The previous Season is unchanged.
+Steps: paste `0042_returning_teams.sql` into the SQL Editor and run it. Check: `select proname from pg_proc where proname = 'add_returning_teams'` returns one row.

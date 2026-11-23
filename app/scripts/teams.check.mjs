@@ -31,6 +31,7 @@ const SUPA = 'https://fake.supabase.co'
 const ME = '00000000-0000-4000-8000-000000000001'
 const T = '22222222-0000-4000-8000-000000000001'
 const S = '22222222-0000-4000-8000-000000000009'
+const P = '22222222-0000-4000-8000-000000000008'
 const FSW = '55555555-0000-4000-8000-000000000001'
 const outDir = 'node_modules/.teams-dist'
 Object.assign(process.env, { VITE_SUPABASE_URL: SUPA, VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_fake' })
@@ -61,8 +62,8 @@ const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers
  * body (cmd: its name); mock.answers[cmd]: answers to give, in order; mock.down: Supabase unreachable; mock.teamsFail:
  * the next Team reads answer 500; mock.teamsDelay: ms before a Team read answers; mock.bodies: every request body.
  */
-async function fresh({ season = {}, teams = [], share = 'none' } = {}) {
-  const mock = { season: seasonRow(season), teams, answers: {}, calls: [], bodies: [], down: false, teamsFail: 0, teamsDelay: 0 }
+async function fresh({ season = {}, teams = [], share = 'none', prev = null } = {}) {
+  const mock = { season: seasonRow(season), teams, prev, answers: {}, calls: [], bodies: [], down: false, teamsFail: 0, teamsDelay: 0 }
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } })
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base })
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort())
@@ -76,10 +77,12 @@ async function fresh({ season = {}, teams = [], share = 'none' } = {}) {
     if (req.postData()) mock.bodies.push(req.postData())
     const path = new URL(req.url()).pathname
     if (path === '/rest/v1/tournament') {
-      return json(route, [{ id: T, name: 'Gulmi Cup', brand_primary: '#0a1a3f', brand_secondary: '#f58220', logo_path: null, version: 1, season: [mock.season] }])
+      return json(route, [{ id: T, name: 'Gulmi Cup', brand_primary: '#0a1a3f', brand_secondary: '#f58220', logo_path: null, version: 1, season: mock.prev ? [mock.season, seasonRow({ id: P, number: mock.season.number - 1, status: 'finished' })] : [mock.season] }])
     }
     if (path === '/rest/v1/team') {
-      assert.equal(new URL(req.url()).searchParams.get('season_id'), `eq.${S}`)
+      const wanted = new URL(req.url()).searchParams.get('season_id')
+      if (wanted === `eq.${P}`) return json(route, mock.prev)
+      assert.equal(wanted, `eq.${S}`)
       if (mock.teamsDelay) await new Promise((r) => setTimeout(r, mock.teamsDelay))
       if (mock.teamsFail) return (mock.teamsFail--, route.fulfill({ status: 500, headers: cors, contentType: 'application/json', body: '{"message":"boom"}' }))
       // The open Team's form read (Story 2.6) embeds its Season and Tournament.
@@ -102,6 +105,12 @@ async function fresh({ season = {}, teams = [], share = 'none' } = {}) {
       t.registration_link.push({ id: a.link_id, revoked_at: null })
     }
     if (cmd === 'revoke_registration_link') for (const x of mock.teams) for (const l of x.registration_link) if (l.id === a.link_id) l.revoked_at = 'now'
+    if (cmd === 'add_returning_teams') {
+      for (const r of a.teams) {
+        const f = mock.prev.find((x) => x.id === r.from_team_id)
+        mock.teams.push({ ...teamRow(r.team_id, f.name, f.code, [{ id: r.link_id, revoked_at: null }]), kit_colour: f.kit_colour, returning_from: f.id })
+      }
+    }
     if (cmd === 'open_registration') mock.season.status = 'registration'
     return json(route, { ok: true, code: null, message: 'Done.' })
   })
@@ -206,7 +215,7 @@ try {
     assert.ok(mock.bodies.every((b) => !b.includes(k.token)), 'token sent to the server')
     await until(page, async () => calls(mock, 'open_registration').length === 1, 'registration not opened')
     assert.equal(calls(mock, 'open_registration')[0].season_id, S)
-    await page.getByText(/Season 1 · Registration/).waitFor()
+    await page.getByText(/Season 1 · Registration ▾/).waitFor()
     // The code field is empty again and follows the next name; a second Team doesn't open registration again.
     assert.equal(await page.getByLabel('Team code').inputValue(), '')
     await page.getByLabel('Team name').fill('14 Star Youth Club')
@@ -222,6 +231,47 @@ try {
     assert.equal(shared.url, `${base}/register#${k.token}`)
     assert.match(shared.text, /^Register Friends Sporting Wing for Gulmi Cup Season 1\. Open this link to add your Players and Staff\. /)
     assert.match(shared.text, deadlineWords)
+    await noScroll(page)
+    await context.close()
+  }
+
+  // --- Returning Teams (Story 6.2): a sheet of the previous Season's Teams, withdrawn unticked, taken codes and added Teams disabled with the
+  // reason; one command with a row per ticked Team and a new link each; registration opens after it (setup); the row says where it came from.
+  {
+    const prev = [
+      { ...teamRow('55555555-0000-4000-8000-0000000000a1', 'Alpha FC', 'ALP'), kit_colour: '#ff0000', status: 'approved' },
+      { ...teamRow('55555555-0000-4000-8000-0000000000a2', 'Beta FC', 'BET'), status: 'approved' },
+      { ...teamRow('55555555-0000-4000-8000-0000000000a3', 'Gone FC', 'GON'), status: 'withdrawn' },
+      { ...teamRow('55555555-0000-4000-8000-0000000000a4', 'Clash FC', 'CLS'), status: 'approved' },
+    ]
+    const { context, mock, page } = await fresh({ season: { number: 2 }, prev, teams: [teamRow('55555555-0000-4000-8000-0000000000b1', 'Hand Made', 'CLS')] })
+    await teamsTab(page)
+    await button(page, 'Add returning Teams').click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByText('Alpha FC', { exact: true }).waitFor()
+    const box = (n) => dialog.getByRole('checkbox', { name: n })
+    assert.equal(await box(/Alpha FC/).isChecked(), true)
+    assert.equal(await box(/Gone FC/).isChecked(), false, 'withdrawn ticked')
+    assert.equal(await box(/Clash FC/).isDisabled(), true)
+    await dialog.getByText('Code CLS is already used in this Season', { exact: true }).waitFor()
+    await box(/Gone FC/).check()
+    await button(page, 'Add 3 returning Teams').waitFor()
+    await box(/Beta FC/).uncheck()
+    await button(page, 'Add 2 returning Teams').click()
+    await page.locator('.team-row', { hasText: 'Alpha FC' }).getByText('Pre-filled from Season 1', { exact: true }).waitFor()
+    const [sent] = calls(mock, 'add_returning_teams')
+    assert.deepEqual(sent.teams.map((t) => t.from_team_id), ['55555555-0000-4000-8000-0000000000a1', '55555555-0000-4000-8000-0000000000a3'])
+    assert.equal(new Set(sent.teams.map((t) => t.link_id)).size, 2)
+    for (const t of sent.teams) {
+      const k = await kept(page, t.link_id)
+      assert.equal(sha(k.token), t.token_hash, 'hash is not the kept token')
+    }
+    assert.equal(calls(mock, 'open_registration').length, 1, 'registration not opened once')
+    // Reopened: the added Teams are disabled as already added; the rest can still be ticked.
+    await button(page, 'Add returning Teams').click()
+    await page.getByRole('dialog').getByText('Already added').first().waitFor()
+    assert.equal(await page.getByRole('dialog').getByRole('checkbox', { name: /Alpha FC/ }).isDisabled(), true)
+    assert.equal(await page.getByRole('dialog').getByRole('checkbox', { name: /Beta FC/ }).isChecked(), true)
     await noScroll(page)
     await context.close()
   }
