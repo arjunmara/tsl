@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { queuedFor } from '../../domain/commands'
 import { messages } from '../../domain/messages'
 import { logoUrl, tournamentSetup, type SeasonAnswers, type SeasonSummary, type Structure } from '../../domain/tournaments'
@@ -24,18 +24,29 @@ export type Head = {
 
 // The last server read per Tournament, so the home opens offline after one visit in this page load.
 const lastHead = new Map<string, Head>()
-/** Forgets the last read of the Tournament (a new Season makes it stale). */
-export const forgetHead = (id: string) => void lastHead.delete(id)
+const headKey = (id: string, seasonId?: string) => `${id}:${seasonId ?? ''}`
+/** Forgets the last reads of the Tournament (a new Season makes them stale). */
+export const forgetHead = (id: string) => void [...lastHead.keys()].forEach((k) => k.startsWith(`${id}:`) && lastHead.delete(k))
+/** The query string that keeps a past Season open on a link ('' for the current Season). */
+export const seasonQs = (h: Head) => (h.seasons[0]?.id === h.season.id ? '' : `?season=${h.season.id}`)
 
-/** The Tournament's name and logo (with this device's pending changes laid over) and its latest Season. */
-export async function readHead(id: string): Promise<Head | 'missing' | 'offline' | 'unknown'> {
-  const r = await tournamentSetup(id)
+/** The Tournament's name and logo (with this device's pending changes laid over) and its latest Season, or seasonId's. */
+export async function readHead(id: string, seasonId?: string): Promise<Head | 'missing' | 'offline' | 'unknown'> {
+  const r = await tournamentSetup(id, seasonId)
   let head: Head | undefined
-  if ('code' in r) head = r.code === 'offline' ? lastHead.get(id) : undefined
-  else if (r.tournament?.season) {
+  if ('code' in r) {
+    if (r.code === 'offline') {
+      head = lastHead.get(headKey(id, seasonId))
+      const cur = lastHead.get(headKey(id))
+      if (!head && cur && (!seasonId || cur.season.id === seasonId)) head = cur
+    }
+  } else if (r.tournament?.season) {
     const t = r.tournament
+    // A Season that isn't this Tournament's is not the latest in disguise.
+    if (seasonId && t.season!.id !== seasonId) return 'missing'
     head = { name: t.name, logoPath: t.logoPath, logoBlob: null, season: t.season!, seasons: t.seasons }
-    lastHead.set(id, head)
+    lastHead.set(headKey(id, seasonId), head)
+    if (t.seasons[0]?.id === t.season!.id) lastHead.set(headKey(id), head)
   } else return 'missing'
   if (!head) return 'code' in r ? r.code : 'unknown'
   const queued = await queuedFor(id)
@@ -84,12 +95,14 @@ const gearIcon = (
 /** /t/:tournamentId: the Tournament home. App bar (logo, name, Season switcher, Settings) and the three tabs. */
 export function Home() {
   const { tournamentId = '' } = useParams()
+  const season = useSearchParams()[0].get('season') ?? ''
   if (!UUID.test(tournamentId)) return <><SaveStatusBar /><Unavailable /></>
-  return <LoadHome key={tournamentId} tournamentId={tournamentId} />
+  return <LoadHome key={`${tournamentId}:${season}`} tournamentId={tournamentId} />
 }
 
 function LoadHome({ tournamentId }: { tournamentId: string }) {
   const navigate = useNavigate()
+  const seasonParam = useSearchParams()[0].get('season') ?? undefined
   // An open Team (/t/:id/teams/:teamId) shows inside the Teams tab.
   const { teamId } = useParams()
   const [head, setHead] = useState<Head | 'missing' | 'offline' | 'unknown' | null>(null)
@@ -111,17 +124,18 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
       // Only remembering the tab is lost.
     }
     // Used once: a reload keeps history.state, and must not override the tab picked since.
-    navigate(location.pathname, { replace: true, state: null })
-  }, [asked, asking, tournamentId, navigate, location.pathname])
+    navigate(location.pathname + location.search, { replace: true, state: null })
+  }, [asked, asking, tournamentId, navigate, location.pathname, location.search])
   const ids = useId()
   useEffect(() => {
     let live = true
-    void readHead(tournamentId).then((h) => live && setHead(h))
+    void readHead(tournamentId, seasonParam).then((h) => live && setHead(h))
     return () => {
       live = false
     }
-  }, [tournamentId, attempt])
+  }, [tournamentId, seasonParam, attempt])
   const h = head && typeof head === 'object' ? head : null
+  const qs = h ? seasonQs(h) : ''
   // ponytail: one object URL per pending logo shown, not revoked.
   const blob = h?.logoBlob ?? null
   const blobUrl = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob])
@@ -130,7 +144,7 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
 
   function choose(k: Tab, focus = false) {
     setTab(k)
-    if (teamId && k !== 'teams') navigate(`/t/${tournamentId}`)
+    if (teamId && k !== 'teams') navigate(`/t/${tournamentId}${qs}`)
     try {
       localStorage.setItem(tabKey(tournamentId), k)
     } catch {
@@ -158,15 +172,15 @@ function LoadHome({ tournamentId }: { tournamentId: string }) {
             <div>
               <h1 className="body-strong">{h.name}</h1>
               <details className="season-switch">
-                <summary className="meta">Season {h.season.number} · {statusLabel[h.season.status]} <span aria-hidden="true">▾</span></summary>
+                <summary className="meta">Season {h.season.number} · {statusLabel[h.season.status]}{qs && ' · read-only'} <span aria-hidden="true">▾</span></summary>
                 <div className="account-panel">
-                  <Seasons tournamentId={tournamentId} seasons={h.seasons} />
+                  <Seasons tournamentId={tournamentId} seasons={h.seasons} viewing={h.season.id} />
                 </div>
               </details>
             </div>
           </div>
         ) : <div className="home-title" />}
-        <IconButton label="Open settings" onClick={() => navigate(`/t/${tournamentId}/settings`)}>{gearIcon}</IconButton>
+        <IconButton label="Open settings" onClick={() => navigate(`/t/${tournamentId}/settings${qs}`)}>{gearIcon}</IconButton>
         <SaveStatusBar />
       </header>
       {!h ? (

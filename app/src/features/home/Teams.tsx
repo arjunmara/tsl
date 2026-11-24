@@ -11,7 +11,7 @@ import { KitDot } from '../../ui/KitDot'
 import { StatusPill } from '../../ui/StatusPill'
 import { blocked, useForm } from '../auth/form'
 import { Problem } from '../auth/Screen'
-import type { Head } from './Home'
+import { seasonQs, type Head } from './Home'
 import { ReturningTeams } from './ReturningTeams'
 import { TeamImport } from './TeamImport'
 
@@ -85,7 +85,7 @@ export function Teams({ tournamentId, head: h, openId, onSeasonChange }: { tourn
   const suggestion = suggestCode(name, list.map((t) => t.code))
   const canAdd = h.season.status === 'setup' || h.season.status === 'registration'
   const source = h.seasons.find((x) => x.number === h.season.number - 1)
-  const openTeam = (t: Team) => navigate(`/t/${tournamentId}/teams/${t.id}`)
+  const openTeam = (t: Team) => navigate(`/t/${tournamentId}/teams/${t.id}${seasonQs(h)}`)
 
   const checkCode = (v: string) => {
     const c = v.toUpperCase()
@@ -136,7 +136,7 @@ export function Teams({ tournamentId, head: h, openId, onSeasonChange }: { tourn
     setNotice(await shareLink(t, token, h))
   }
 
-  if (missing) {
+  if (missing && h.season.status !== 'finished') {
     return (
       <>
         <p className="body">Finish setup before adding Teams: add the photo-consent statement and the Season dates.</p>
@@ -173,7 +173,7 @@ export function Teams({ tournamentId, head: h, openId, onSeasonChange }: { tourn
                 </span>
                 <StatusPill state={t.status === 'approved' ? 'done' : 'pending'} label={teamStatusLabel[t.status]} />
               </button>
-              <button type="button" className="ui-button ui-secondary" aria-label={`Share link for ${t.name}`} onClick={() => void share(t)}>Share link</button>
+              {h.season.status !== 'finished' && <button type="button" className="ui-button ui-secondary" aria-label={`Share link for ${t.name}`} onClick={() => void share(t)}>Share link</button>}
             </li>
           ))}
         </ul>

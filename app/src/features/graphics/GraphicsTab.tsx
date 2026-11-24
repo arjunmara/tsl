@@ -12,6 +12,7 @@ import { useStandings } from '../home/Standings'
 import { useTeams } from '../home/Teams'
 import { ListCard, PlayerCard, type CardState } from './GraphicCard'
 import { PackList } from './Pack'
+import { seasonQs } from '../home/Home'
 import { SeasonAwards, useSeasonAwards } from './SeasonAwards'
 
 /** A card that can't be made yet says what it needs. */
@@ -41,7 +42,7 @@ export function GraphicsTab({ tournamentId, head: h }: { tournamentId: string; h
     }
   }, [tournamentId, seasonId, attempt])
 
-  const packs = <><h2 className="body-strong">Post-match packs</h2><PackList tournamentId={tournamentId} seasonId={seasonId} /></>
+  const packs = <><h2 className="body-strong">Post-match packs</h2><PackList tournamentId={tournamentId} seasonId={seasonId} qs={seasonQs(h)} /></>
   if (brand && 'code' in brand) {
     return <><Problem text={brand.code === 'offline' ? messages.offline : messages.graphic_failed} /><SecondaryButton label="Try loading the Graphics again" onClick={() => (setBrand(null), setAttempt((n) => n + 1))} />{packs}</>
   }

@@ -14,7 +14,7 @@ import { blocked } from '../auth/form'
 import { Problem } from '../auth/Screen'
 import { ClosedTeam, TeamEditor } from '../register/Register'
 import { UUID } from '../setup/Setup'
-import type { Head } from './Home'
+import { seasonQs, type Head } from './Home'
 import { shareLink, teamStatusLabel, useTeams } from './Teams'
 
 /**
@@ -34,7 +34,7 @@ function OneTeam({ tournamentId, teamId, h }: { tournamentId: string; teamId: st
   const [busy, setBusy] = useState(false)
   const team = Array.isArray(teams) ? teams.find((t) => t.id === teamId) : undefined
   const canReissue = h.season.status === 'setup' || h.season.status === 'registration'
-  const back = () => navigate(`/t/${tournamentId}`, { state: { tab: 'teams' } })
+  const back = () => navigate(`/t/${tournamentId}${seasonQs(h)}`, { state: { tab: 'teams' } })
 
 
   async function run(name: string, args: Record<string, unknown>, onRefused?: () => void) {

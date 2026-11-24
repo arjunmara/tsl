@@ -16,7 +16,7 @@ import { statusLabel } from '../tournaments/MyTournaments'
  * The Tournament's Seasons, newest first: the current one, each past one opening its settings read-only, and "Start new season"
  * (only while the latest Season is finished) behind a Confirm sheet. The server decides too (app.new_season).
  */
-export function Seasons({ tournamentId, seasons }: { tournamentId: string; seasons: SeasonSummary[] }) {
+export function Seasons({ tournamentId, seasons, viewing }: { tournamentId: string; seasons: SeasonSummary[]; viewing?: string }) {
   const navigate = useNavigate()
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -48,6 +48,7 @@ export function Seasons({ tournamentId, seasons }: { tournamentId: string; seaso
         {seasons.map((s, i) => (
           <li key={s.id} className="card">
             <h2 className="body-strong">Season {s.number} · {statusLabel[s.status]}{i === 0 ? ' · current' : ''}</h2>
+            {s.id !== (viewing ?? cur.id) && <SecondaryButton label={`Open Season ${s.number}`} onClick={() => navigate(i === 0 ? `/t/${tournamentId}` : `/t/${tournamentId}?season=${s.id}`)} />}
             {i > 0 && <SecondaryButton label={`Open Season ${s.number} settings`} onClick={() => navigate(`/t/${tournamentId}/settings?season=${s.id}`)} />}
           </li>
         ))}

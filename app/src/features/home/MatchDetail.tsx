@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { forgetRefused, queuedFor, send, useOutbox } from '../../domain/commands'
 import { formatDay, formatDate, inZone, toBs } from '../../domain/format'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { matchMeta, overlayMatches, seasonMatches, type Match } from '../../domain/matches'
 import { messageFor, messages } from '../../domain/messages'
 import { backIcon, IconButton, PrimaryButton } from '../../ui/Button'
@@ -24,6 +24,8 @@ export function MatchDetail() {
 
 function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string }) {
   const navigate = useNavigate()
+  const seasonParam = useSearchParams()[0].get('season') ?? undefined
+  const qs = seasonParam ? `?season=${seasonParam}` : ''
   const [seasonId, setSeasonId] = useState<string | null>(null)
   const [season, setSeason] = useState<{ editable: boolean; started: boolean; finished: boolean; starts: string; ends: string }>({ editable: false, started: false, finished: false, starts: '', ends: '' })
   const pending = useOutbox().entries.length
@@ -33,7 +35,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
   useEffect(() => {
     let live = true
     void (async () => {
-      const h = await readHead(tournamentId)
+      const h = await readHead(tournamentId, seasonParam)
       if (!live) return
       if (typeof h === 'string') return setMatch(h === 'missing' ? 'missing' : h)
       setSeasonId(h.season.id)
@@ -45,7 +47,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
     return () => {
       live = false
     }
-  }, [tournamentId, matchId, pending, attempt])
+  }, [tournamentId, matchId, seasonParam, pending, attempt])
   const { teams } = useTeams(tournamentId, seasonId ?? '')
   const byId = new Map(Array.isArray(teams) ? teams.map((t) => [t.id, t]) : [])
   if (match === 'missing') return <Unavailable />
@@ -58,7 +60,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
   return (
     <main className="home">
       <header className="home-bar">
-        <IconButton label="Back to the Matches" onClick={() => navigate(`/t/${tournamentId}`)}>{backIcon}</IconButton>
+        <IconButton label="Back to the Matches" onClick={() => navigate(`/t/${tournamentId}${qs}`)}>{backIcon}</IconButton>
         <h1 className="title home-title">Match</h1>
       </header>
       <div className="home-panel">
@@ -76,7 +78,7 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
           </div>
         )}
         {typeof match === 'object' && match && seasonId && season.started && <Result seasonId={seasonId} match={match} onChanged={() => setAttempt((n) => n + 1)} />}
-        {typeof match === 'object' && match && match.status === 'finished' && <PackLink tournamentId={tournamentId} matchId={match.id} />}
+        {typeof match === 'object' && match && match.status === 'finished' && <PackLink tournamentId={tournamentId} matchId={match.id} qs={qs} />}
         {typeof match === 'object' && match && season.finished && <p className="meta">{messages.season_finished}</p>}
         {typeof match === 'object' && match && season.editable && seasonId && (
           <KickOffForm key={match.version} notice={notice} setNotice={setNotice} tournamentId={tournamentId} seasonId={seasonId} match={match} starts={season.starts} ends={season.ends}

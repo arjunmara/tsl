@@ -59,6 +59,7 @@ async function fresh({ viewport = { width: 390, height: 844 }, setupStep = 3, bl
     const path = new URL(req.url()).pathname
     if (path === '/rest/v1/tournament') return json(route, mock.rows)
     if (path === '/rest/v1/format_preset') return json(route, [FUTSAL])
+    if (mock.read?.[path]) return json(route, mock.read[path](new URL(req.url()).searchParams.get('season_id') ?? ''))
     if (path === '/rest/v1/sponsor' || path === '/rest/v1/team' || path === '/rest/v1/draw_slot') return json(route, [])
     if (path === '/rest/v1/rpc/server_now') return json(route, new Date().toISOString())
     // Any other read (match, season) has no rows here.
@@ -373,6 +374,78 @@ try {
     assert.equal(await page.getByLabel('Description').inputValue(), 'Last year')
     await button(page, 'Back to settings').click()
     await page.waitForURL((u) => u.search.includes('season='))
+    await context.close()
+  }
+
+  // --- Past Seasons open read-only (Story 6.4b): Season 1 (finished) beside Season 2 (registration); ?season= shows Season 1's data and
+  // keeps the param on every link; no command is sent; unknown id is unavailable; the latest id is the plain view; offline after one visit.
+  {
+    const { context, page, mock } = await fresh()
+    const S1 = `${T.slice(0, -1)}9`
+    const S2 = '22222222-0000-4000-8000-0000000000a2'
+    const MA = '33333333-0000-4000-8000-00000000000a'
+    const TA = '44444444-0000-4000-8000-00000000000a'
+    const TB = '44444444-0000-4000-8000-00000000000b'
+    const t = mock.rows[0]
+    Object.assign(t.season[0], { status: 'finished', setup_step: 7, format_preset: 'futsal', description: 'Last year' })
+    t.season.push({ ...t.season[0], id: S2, number: 2, status: 'registration', description: 'This year', version: 1 })
+    const team = (id, name, code, sid) => ({ id, name, code, kit_colour: '#ff0000', status: 'approved', returning_from: null, registration_link: [], season_id: sid })
+    mock.read = {
+      '/rest/v1/team': (sid) => (sid === `eq.${S1}` ? [team(TA, 'Old Reds', 'ORD', S1), team(TB, 'Old Blues', 'OBL', S1)] : [team('44444444-0000-4000-8000-00000000000c', 'New Greens', 'NGR', S2)]),
+      '/rest/v1/match': (sid) => (sid === `eq.${S1}` ? [{ id: MA, stage: 'league', round: 'Round 1', label: null, ord: 1, home_team_id: TA, away_team_id: TB, home_src: null, away_src: null,
+        kick_off: '2026-01-10T10:00:00Z', version: 1, status: 'finished', hg: 2, ag: 1, home_pens: null, away_pens: null }] : []),
+    }
+    await page.goto(base + `/t/${T}?season=${S1}`)
+    const bar = page.locator('header.home-bar')
+    await bar.locator('summary').filter({ hasText: 'Season 1 · Finished · read-only' }).waitFor()
+    await page.locator('.match-card').first().waitFor()
+    assert.equal(await page.getByText('New Greens').count(), 0, "Season 2's Team shown in Season 1")
+    for (const name of ['Start the Season', 'Arrange fixtures', 'Suggest fixtures', 'Score this match', 'Add Team']) assert.equal(await page.getByRole('button', { name: new RegExp(name) }).count(), 0, `${name} shown in a past Season`)
+    await bar.locator('summary').click()
+    await button(page, 'Open Season 2').waitFor()
+    assert.equal(await button(page, 'Open Season 1').count(), 0, 'Open offered for the Season being viewed')
+    // Match card and detail keep the param; no kick-off form or Result editing.
+    await page.locator('.match-card').first().click()
+    await page.waitForURL((u) => u.pathname === `/t/${T}/m/${MA}` && u.search === `?season=${S1}`)
+    await page.getByRole('link', { name: 'Open the post-match pack' }).waitFor()
+    assert.ok((await page.getByRole('link', { name: 'Open the post-match pack' }).getAttribute('href')).endsWith(`/pack?season=${S1}`))
+    assert.equal(await page.getByRole('button', { name: /kick|result|score/i }).count(), 0, 'edit controls on a past Match')
+    await page.getByRole('link', { name: 'Open the post-match pack' }).click()
+    await page.waitForURL((u) => u.pathname.endsWith('/pack') && u.search === `?season=${S1}`)
+    await button(page, 'Back to the Match').click()
+    await page.waitForURL((u) => u.pathname === `/t/${T}/m/${MA}` && u.search === `?season=${S1}`)
+    await button(page, 'Back to the Matches').click()
+    await page.waitForURL((u) => u.pathname === `/t/${T}` && u.search === `?season=${S1}`)
+    // Teams: open and back keep the param.
+    await tab(page, 'Teams').click()
+    assert.equal(await page.getByRole('button', { name: /Share link/ }).count(), 0, 'Share link shown in a past Season')
+    await button(page, 'Open Old Blues').click()
+    await page.waitForURL((u) => u.pathname === `/t/${T}/teams/${TB}` && u.search === `?season=${S1}`)
+    assert.equal(await page.getByRole('button', { name: /link/i }).count(), 0, 'link controls on a past Team')
+    await button(page, 'Open settings').click()
+    await page.waitForURL((u) => u.pathname === `/t/${T}/settings` && u.search === `?season=${S1}`)
+    // Back to the current Season: plain URL, Season 2 as before.
+    await page.goto(base + `/t/${T}?season=${S1}`)
+    await bar.locator('summary').click()
+    await button(page, 'Open Season 2').click()
+    await page.waitForURL((u) => u.pathname === `/t/${T}` && u.search === '')
+    await bar.locator('summary').filter({ hasText: /^Season 2 · Registration ▾$/ }).waitFor()
+    // Latest id behaves as no param; unknown or foreign id is unavailable.
+    await page.goto(base + `/t/${T}?season=${S2}`)
+    await bar.locator('summary').filter({ hasText: /^Season 2 · Registration ▾$/ }).waitFor()
+    await page.goto(base + `/t/${T}?season=garbage`)
+    await page.getByText("This tournament isn't available.", { exact: true }).waitFor()
+    await page.goto(base + `/t/${T}?season=55555555-0000-4000-8000-000000000001`)
+    await page.getByText("This tournament isn't available.", { exact: true }).waitFor()
+    // Offline after one visit in this page load (client-side navigation keeps the cache).
+    await page.goto(base + `/t/${T}?season=${S1}`)
+    await bar.locator('summary').filter({ hasText: 'read-only' }).waitFor()
+    await button(page, 'Back to My tournaments').click()
+    mock.down = true
+    await context.setOffline(true)
+    await page.goBack()
+    await bar.locator('summary').filter({ hasText: 'Season 1 · Finished · read-only' }).waitFor()
+    assert.deepEqual(mock.calls.map((c) => c.cmd).filter((c) => !['standings', 'match_sides', 'console_match'].includes(c)), [], 'a command was sent from a past Season')
     await context.close()
   }
 

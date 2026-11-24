@@ -14,7 +14,7 @@ import { Problem } from '../auth/Screen'
 import { useOnline } from '../app/online'
 import { PackLink } from '../graphics/Pack'
 import { Draw, useDraw } from './Draw'
-import type { Head } from './Home'
+import { seasonQs, type Head } from './Home'
 import { Standings, useStandings } from './Standings'
 import { useTeams } from './Teams'
 
@@ -223,12 +223,12 @@ export function Fixtures({ tournamentId, head: h, fallback, onOpenGraphics }: { 
     )
     if (!arranging) return (
       <li key={m.id}>
-        <button type="button" className="card match-card" onClick={() => navigate(`/t/${tournamentId}/m/${m.id}`)}>
+        <button type="button" className="card match-card" onClick={() => navigate(`/t/${tournamentId}/m/${m.id}${seasonQs(h)}`)}>
           {body}
           <svg className="match-chevron" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"
             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
         </button>
-        {m.status === 'finished' && <PackLink tournamentId={tournamentId} matchId={m.id} />}
+        {m.status === 'finished' && <PackLink tournamentId={tournamentId} matchId={m.id} qs={seasonQs(h)} />}
         {scorable(m) && <PrimaryButton label="Score this match" onClick={() => navigate(`/t/${tournamentId}/score/${m.id}`)} />}
       </li>
     )

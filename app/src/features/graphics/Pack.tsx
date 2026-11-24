@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { combinedCaption, emptyReason, graphicFile, packData, type Kind, type Pack as PackT } from '../../domain/graphics'
 import { matchMeta, seasonMatches, type Match } from '../../domain/matches'
 import { messages } from '../../domain/messages'
@@ -22,12 +22,14 @@ export function PackPage() {
 
 function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string }) {
   const navigate = useNavigate()
+  const seasonParam = useSearchParams()[0].get('season') ?? undefined
+  const qs = seasonParam ? `?season=${seasonParam}` : ''
   const [found, setFound] = useState<{ seasonId: string; match: Match } | 'missing' | 'offline' | 'unknown' | null>(null)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let live = true
     void (async () => {
-      const h = await readHead(tournamentId)
+      const h = await readHead(tournamentId, seasonParam)
       if (!live) return
       if (typeof h === 'string') return setFound(h)
       const r = await seasonMatches(h.season.id)
@@ -38,12 +40,12 @@ function Load({ tournamentId, matchId }: { tournamentId: string; matchId: string
     return () => {
       live = false
     }
-  }, [tournamentId, matchId, attempt])
+  }, [tournamentId, matchId, seasonParam, attempt])
   if (found === 'missing') return <Unavailable />
   return (
     <main className="home">
       <header className="home-bar">
-        <IconButton label="Back to the Match" onClick={() => navigate(`/t/${tournamentId}/m/${matchId}`)}>{backIcon}</IconButton>
+        <IconButton label="Back to the Match" onClick={() => navigate(`/t/${tournamentId}/m/${matchId}${qs}`)}>{backIcon}</IconButton>
         <h1 className="title home-title">Post-match pack</h1>
       </header>
       <div className="home-panel">
@@ -169,12 +171,12 @@ function PackBody({ tournamentId, seasonId, match }: { tournamentId: string; sea
 }
 
 /** "Open the post-match pack" for a finished Match. */
-export function PackLink({ tournamentId, matchId }: { tournamentId: string; matchId: string }) {
-  return <p className="body"><Link to={`/t/${tournamentId}/m/${matchId}/pack`}>Open the post-match pack</Link></p>
+export function PackLink({ tournamentId, matchId, qs = '' }: { tournamentId: string; matchId: string; qs?: string }) {
+  return <p className="body"><Link to={`/t/${tournamentId}/m/${matchId}/pack${qs}`}>Open the post-match pack</Link></p>
 }
 
 /** The Graphics tab: one entry per finished Match of the Season, newest first. */
-export function PackList({ tournamentId, seasonId }: { tournamentId: string; seasonId: string }) {
+export function PackList({ tournamentId, seasonId, qs = '' }: { tournamentId: string; seasonId: string; qs?: string }) {
   const { matches } = useMatches(tournamentId, seasonId)
   const { teams } = useTeams(tournamentId, seasonId)
   if (matches === null || teams === null) return <div aria-busy="true"><p className="ui-visually-hidden">Loading</p><div className="skeleton-card" /></div>
@@ -186,7 +188,7 @@ export function PackList({ tournamentId, seasonId }: { tournamentId: string; sea
     <ul className="cards">
       {done.map((m) => (
         <li key={m.id}>
-          <Link className="card match-card" to={`/t/${tournamentId}/m/${m.id}/pack`}>
+          <Link className="card match-card" to={`/t/${tournamentId}/m/${m.id}/pack${qs}`}>
             {`${sideText(m.homeTeamId, m.homeSrc, byId)} ${m.hg ?? 0}–${m.ag ?? 0} ${sideText(m.awayTeamId, m.awaySrc, byId)} · ${m.round}`}
           </Link>
         </li>
