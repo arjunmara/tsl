@@ -38,7 +38,7 @@ export const photoBucket = 'player-photos'
 export type Photo = { path: string; cutout: boolean; url: string | null }
 /** A Player in this Team's Squad with their Photo consent and Eligibility proof for its Season. version: the Player card's (edit_player). */
 export type SquadPlayer = {
-  id: string; name: string; shirtNumber: number; dateOfBirth: string; consent: boolean; givenBy: string | null; version: number
+  id: string; name: string; shirtNumber: number | null; dateOfBirth: string; consent: boolean; givenBy: string | null; version: number
   eligibility: Eligibility | null; photo: Photo | null
   /** A pending "same person as an earlier Player" suggestion (the earlier Player's id); the Organiser answers it at review (Story 6.3). */
   sameAs?: string | null
@@ -235,7 +235,7 @@ async function signPhotos(people: { photo: Photo | null }[]) {
     // Unreachable: no pictures this time.
   }
 }
-type EntryRow = { team_id: string; shirt_number: number; player: { id: string; name: string; date_of_birth: string | null; version: number
+type EntryRow = { team_id: string; shirt_number: number | null; player: { id: string; name: string; date_of_birth: string | null; version: number
   photo_path: string | null; is_cutout: boolean | null; same_as?: string | null
   photo_consent: { consent_given: boolean; given_by: string | null }[] } | null }
 const playerFrom = (e: EntryRow): SquadPlayer[] => e.player ? [{
@@ -354,7 +354,7 @@ export async function importBase(seasonId: string, queued: OutboxEntry[]): Promi
     const rows = (t.data ?? []) as { id: string; name: string; code: string; kit_colour: string | null; status: TeamStatus; version: number }[]
     const sq = rows.length ? await app.from('squad_entry').select('team_id, shirt_number, player(id, name, date_of_birth, version)').in('team_id', rows.map((r) => r.id)) : null
     if (sq?.error) return { code: sq.status === 0 || !navigator.onLine ? 'offline' : 'unknown' }
-    const entries = ((sq?.data ?? []) as unknown as { team_id: string; shirt_number: number; player: { id: string; name: string; date_of_birth: string | null; version: number } | null }[])
+    const entries = ((sq?.data ?? []) as unknown as { team_id: string; shirt_number: number | null; player: { id: string; name: string; date_of_birth: string | null; version: number } | null }[])
     const teams: ExistingTeam[] = rows.map((r) => ({ id: r.id, name: r.name, code: r.code, kitColour: r.kit_colour, version: r.version, withdrawn: r.status === 'withdrawn',
       players: entries.filter((e) => e.team_id === r.id && e.player).map((e) => ({ id: e.player!.id, name: e.player!.name, shirtNumber: e.shirt_number,
         dateOfBirth: e.player!.date_of_birth ?? '', version: e.player!.version })) }))

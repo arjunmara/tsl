@@ -69,7 +69,7 @@ export function PreMatch({ c, teams, drafts, setDrafts, readOnly, confirmed, bus
             <ul className="prematch-squad">
               {t.squad.map((p) => (
                 <li key={p.playerId} className="prematch-player">
-                  <span className="prematch-shirt body-strong">{p.shirt}</span>
+                  {p.shirt !== null && <span className="prematch-shirt body-strong">{p.shirt}</span>}
                   <span className="body prematch-name">{p.name}</span>
                   <label className="prematch-tick">
                     <input type="checkbox" disabled={readOnly} checked={d.picks[p.playerId] === 'start'} aria-label={`Start ${p.name}`}

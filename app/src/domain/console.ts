@@ -5,7 +5,7 @@ import { supabase } from './supabase'
 
 // The scoring console's pre-match (Story 4.2, FR-22): who holds scoring, the line-ups and the kit colours of the day.
 
-export type SquadPlayer = { playerId: string; name: string; shirt: number }
+export type SquadPlayer = { playerId: string; name: string; shirt: number | null }
 export type Lineup = { starters: string[]; bench: string[]; kitColour: string; version: number }
 export type ConsoleTeam = { teamId: string; name: string; code: string; registeredKit: string | null; side: 'home' | 'away'; squad: SquadPlayer[]; lineup: Lineup | null }
 /** The Match clock (Story 4.3): elapsedMs plus, while running, the time since anchorAt. period 0: not started; interval: between periods. */
@@ -48,7 +48,7 @@ type Row = {
     team_id?: string | null; player_id?: string | null; assist_id?: string | null; own_goal?: boolean; version?: number
     card?: 'yellow' | 'red' | null; player_on_id?: string | null; clock_ms?: number | null }[]
   holder: boolean; held: boolean; on_air: boolean
-  teams: { team_id: string; name: string; code: string; registered_kit: string | null; side: 'home' | 'away'; squad: { player_id: string; name: string; shirt: number }[]
+  teams: { team_id: string; name: string; code: string; registered_kit: string | null; side: 'home' | 'away'; squad: { player_id: string; name: string; shirt: number | null }[]
     lineup: { starters: string[]; bench: string[]; kit_colour: string; version: number } | null }[]
 }
 

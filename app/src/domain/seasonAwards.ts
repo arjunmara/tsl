@@ -9,7 +9,7 @@ import type { Team } from './teams'
 export type AwardKey = 'best_goalkeeper' | 'player_of_tournament'
 export const AWARDS: Record<AwardKey, string> = { best_goalkeeper: 'Best Goalkeeper', player_of_tournament: 'Player of the Tournament' }
 export type Scorer = { playerId: string; teamId: string; goals: number }
-export type SeasonPlayer = { playerId: string; name: string; shirt: number; teamId: string }
+export type SeasonPlayer = { playerId: string; name: string; shirt: number | null; teamId: string }
 export type AwardRow = { id: string; award: AwardKey; playerId: string; version: number }
 export type SeasonAwardsData = { scorers: Scorer[]; players: SeasonPlayer[]; awards: AwardRow[] }
 
@@ -40,7 +40,7 @@ export async function readSeasonAwards(seasonId: string, teamIds: string[]): Pro
     const scorers = list(sc.data).map((r): Scorer => ({ playerId: r.player_id as string, teamId: r.team_id as string, goals: r.goals as number }))
     const players = list(sq.data).flatMap((r) => {
       const p = (Array.isArray(r.player) ? r.player[0] : r.player) as { id: string; name: string } | undefined
-      return p ? [{ playerId: p.id, name: p.name, shirt: r.shirt_number as number, teamId: r.team_id as string }] : []
+      return p ? [{ playerId: p.id, name: p.name, shirt: r.shirt_number as number | null, teamId: r.team_id as string }] : []
     })
     const awards = list(aw.data).map((r): AwardRow => ({ id: r.id as string, award: r.award as AwardKey, playerId: r.player_id as string, version: r.version as number }))
     const out = { scorers, players, awards }

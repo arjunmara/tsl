@@ -82,7 +82,7 @@ export function SeasonAwards({ seasonId, data, byId, onSaved }: { seasonId: stri
     else void save(award, who)
   }
   const groups: PickGroup[] = [...byId.values()].map((t) => ({ heading: t.name,
-    players: data.players.filter((p) => p.teamId === t.id).sort((a, b) => a.shirt - b.shirt).map(({ playerId, name: n, shirt }) => ({ playerId, name: n, shirt })) })).filter((g) => g.players.length > 0)
+    players: data.players.filter((p) => p.teamId === t.id).sort((a, b) => (a.shirt ?? 100) - (b.shirt ?? 100)).map(({ playerId, name: n, shirt }) => ({ playerId, name: n, shirt })) })).filter((g) => g.players.length > 0)
 
   return (
     <div className="card graphic-card">

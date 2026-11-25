@@ -38,7 +38,7 @@ const changeAsk = (who: string, parts: Part[]): Ask => parts.length === 1
     actionLabel: `Save ${who}'s changes` }
 const playerAsk = (p: SquadPlayer, args: Record<string, unknown>) => changeAsk(p.name, [
   ...('name' in args ? [['name', p.name, String(args.name)] as Part] : []),
-  ...('shirt_number' in args ? [['shirt number', String(p.shirtNumber), String(args.shirt_number)] as Part] : []),
+  ...('shirt_number' in args ? [['shirt number', p.shirtNumber === null ? 'none' : String(p.shirtNumber), String(args.shirt_number)] as Part] : []),
   ...('date_of_birth' in args ? [['date of birth', p.dateOfBirth ? formatDay(p.dateOfBirth) : 'none', formatDay(String(args.date_of_birth))] as Part] : []),
   ...('consent' in args ? [['photo consent', p.consent ? 'given' : 'not given', args.consent ? 'given' : 'not given'] as Part]
     : 'given_by' in args ? [['consent name', p.givenBy ?? 'none', String(args.given_by)] as Part] : []),
@@ -259,13 +259,13 @@ function PlayerCard({ player: p, form, run }: { player: SquadPlayer; form: Regis
   return (
     <details className="squad-card">
       <summary>
-        <span className="body-strong">{p.name} · #{p.shirtNumber}</span>
+        <span className="body-strong">{p.name}{p.shirtNumber !== null && ` · #${p.shirtNumber}`}</span>
         <span className="meta"> {consentLine(p)} · {documentLine(p)}</span>
         {p.sameAs && <span className="meta"> · Suggested: same as {p.name}</span>}
       </summary>
       <Field key={`name${rev}`} label="Player's name" value={p.name} onSave={(name) => void save({ name })} required requiredMessage={messages.player_name_required}
         validate={checkName} autoComplete="off" />
-      <Field key={`shirt${rev}`} label="Shirt number" value={String(p.shirtNumber)} onSave={(v) => void save({ shirt_number: Number(v) })} required
+      <Field key={`shirt${rev}`} label="Shirt number" value={p.shirtNumber === null ? '' : String(p.shirtNumber)} onSave={(v) => void save({ shirt_number: Number(v) })} required
         requiredMessage={messages.shirt_required} validate={shirtCheck(form.players, p.id)} inputMode="numeric" autoComplete="off" />
       <Field key={`dob${rev}`} label="Date of birth" type="date" value={p.dateOfBirth} onSave={saveDob} required
         requiredMessage={messages.dob_required} validate={checkDob} min="1940-01-01" max={today()} hint={formatDay} />
@@ -728,7 +728,7 @@ export function ClosedSquad({ form }: { form: RegistrationForm }) {
         <h2 className="body-strong">Players · {form.players.length}</h2>
         <ul className="squad-list">
           {form.players.map((p) => <li key={p.id} className="body">
-            <span>{p.name} · #{p.shirtNumber} · {documentLabel(p.eligibility?.documentType ?? null) || 'no document'} · {consentLine(p)}</span>
+            <span>{p.name}{p.shirtNumber !== null && ` · #${p.shirtNumber}`} · {documentLabel(p.eligibility?.documentType ?? null) || 'no document'} · {consentLine(p)}</span>
             <PlayerHistory playerId={p.id} name={p.name} />
           </li>)}
         </ul>

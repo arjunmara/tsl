@@ -52,7 +52,7 @@ export function parseCsv(text: string): { line: number; cells: string[]; open?: 
 }
 
 /** A Team (or Player) as the Season has it now, with the versions their edits are based on. */
-export type ExistingPlayer = { id: string; name: string; shirtNumber: number; dateOfBirth: string; version: number }
+export type ExistingPlayer = { id: string; name: string; shirtNumber: number | null; dateOfBirth: string; version: number }
 export type ExistingTeam = { id: string; name: string; code: string; kitColour: string | null; version: number; withdrawn?: boolean; players: ExistingPlayer[] }
 
 export type PlanPlayer = { row: number; name: string; shirt: number; dob: string; id: string | null; shirtChanged: boolean; dobChanged: boolean }
@@ -130,7 +130,7 @@ export function planImport(text: string, existing: ExistingTeam[], today: string
   for (const t of plan.teams) {
     const old = existing.find((x) => x.code === t.code)
     const used = new Map<number, string>()
-    for (const p of old?.players ?? []) if (!t.players.some((q) => key(q.name) === key(p.name))) used.set(p.shirtNumber, p.name)
+    for (const p of old?.players ?? []) if (!t.players.some((q) => key(q.name) === key(p.name))) if (p.shirtNumber !== null) used.set(p.shirtNumber, p.name)
     for (const p of t.players) {
       const other = used.get(p.shirt)
       if (other !== undefined) err(p.row, `shirt number ${p.shirt} is already used by ${other}.`)

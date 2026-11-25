@@ -56,7 +56,23 @@ create function cron.schedule(job_name text, schedule text, command text) return
   insert into cron.job (jobname, schedule, command) values (job_name, schedule, command)
   on conflict (jobname) do update set schedule = excluded.schedule, command = excluded.command returning jobid $$;
 create schema net;
+-- Story 6.5: 0045 needs the extensions schema; the legacy files need the realtime publication; the founder's account is a stand-in.
+create schema extensions;
+set client_min_messages = error;
+create publication supabase_realtime;
+reset client_min_messages;
+insert into auth.users (id, email) values ('f0f0f0f0-0000-4000-8000-000000000001', 'founder@example.test');
+drop table public.live;
 SQL
+# The legacy TSL tables as the founder builds them on tsl-test (Season 1 import included). Their own `live` replaces the stand-in; the mirror checks expect it empty.
+for f in schema.sql season1.sql 002_console.sql 003_group_order.sql; do psql < "$dir/../$f" || fail "legacy $f did not load"; done
+psql -c "update public.live set state = '{}'" >/dev/null
+legacy_sums() {  # row count and checksum of every legacy table except `live`, which the legacy-mirror checks write on purpose
+  for t in $(psql -c "select tablename from pg_tables where schemaname = 'public' and tablename <> 'live' order by 1"); do
+    echo "$t $(psql -c "select count(*) || ' ' || coalesce(md5(string_agg(x::text, '|' order by x::text)), '') from public.$t x")"
+  done
+}
+legacy_before=$(legacy_sums)
 before=$(docker exec "$name" pg_dump -h 127.0.0.1 -U postgres -n public --restrict-key=check)
 # Default ACLs are invisible to pg_dump -n; snapshot them separately.
 acl_sql="select defaclrole::regrole, defaclnamespace::regnamespace, defaclobjtype, defaclacl
@@ -64,9 +80,17 @@ acl_sql="select defaclrole::regrole, defaclnamespace::regnamespace, defaclobjtyp
          order by 1,2,3"
 acl_before=$(psql -c "$acl_sql")
 
+# 0045 (Story 6.5) has the founder's email as a placeholder; the check stands in for the SQL Editor edit.
+copy_sql() { sed "s/PUT-YOUR-EMAIL-HERE/${1:-founder@example.test}/" "$dir/0045_copy_tsl_season_1.sql"; }
+noticing() { docker exec -i -e PGOPTIONS=-cclient_min_messages=notice "$name" psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -qAt; }
+tsl_count() { psql -c "select count(*) from app.tournament where name = 'Tamghas Super League'"; }
+tsl_rows() { psql -c "select concat_ws(' ', (select count(*) from app.activity_log where tournament_id = t.id), (select count(*) from app.team where tournament_id = t.id),
+  (select count(*) from app.player where tournament_id = t.id), (select count(*) from app.squad_entry where tournament_id = t.id), (select count(*) from app.staff where tournament_id = t.id),
+  (select count(*) from app.draw_slot where tournament_id = t.id), (select count(*) from app.match where tournament_id = t.id), (select count(*) from app.match_event where tournament_id = t.id),
+  (select count(*) from app.season where tournament_id = t.id)) from app.tournament t where t.name = 'Tamghas Super League'"; }
 for pass in 1 2; do
   for f in "$dir"/*.sql; do
-    psql < "$f" || fail "pass $pass: $(basename "$f") did not apply"
+    [[ $f == */0045_* ]] || psql < "$f" || fail "pass $pass: $(basename "$f") did not apply"
   done
 done
 
@@ -3668,5 +3692,72 @@ q "insert into auth.users (id, is_anonymous) values ('$GR', true);
 out=$(as anon "select * from app.player_history('$(sp 1)')" 2>&1 || true)
 [[ $out == *"permission denied for function"* ]] || fail "anon: can execute player_history: $out"
 [ "$(q "select string_agg(a, ',' order by a) from (select unnest(proargnames) a from pg_proc where proname='player_history') x where a in ('photo_path','date_of_birth','given_by','name','document_number','player_id')")" = "" ] || fail "history: exposes personal columns"
+
+# 0045 goes last, twice, after every other check (those count rows across all Tournaments, and the earlier files narrow match_event.kind again on a second
+# pass, which copied missed penalties would violate).
+all_rows() { psql -c "select (select count(*) from app.tournament) + (select count(*) from app.team) + (select count(*) from app.match) + (select count(*) from app.match_event) + (select count(*) from app.player) + (select count(*) from app.activity_log)"; }
+rows_before=$(all_rows)
+for pass in 1 2; do
+  f=$dir/0045_copy_tsl_season_1.sql
+  if [ $pass = 1 ]; then  # Story 6.5 refusals: nothing is inserted
+    out=$({ echo "begin; alter table public.matches rename to matches_hold;"; copy_sql; echo "rollback;"; } | noticing 2>&1) || fail "copy: no legacy tables is an error: $out"
+    [[ $out == *"No legacy tables"* ]] || fail "copy: no legacy tables is not said: $out"
+    out=$(copy_sql PUT-YOUR-EMAIL-HERE | noticing 2>&1) && fail "copy: the placeholder email ran"
+    [[ $out == *"Set tsl.owner_email"* ]] || fail "copy: placeholder message: $out"
+    out=$(copy_sql nobody@example.test | noticing 2>&1) && fail "copy: an unknown email ran"
+    [[ $out == *"No account with that email"* ]] || fail "copy: unknown email message: $out"
+    [ "$(tsl_count)" = 0 ] || fail "copy: a refused run inserted a Tournament"
+    [ "$(all_rows)" = "$rows_before" ] || fail "copy: a refused run inserted rows"
+  else
+    copy_before=$(tsl_rows)
+  fi
+  copy_sql | psql >/dev/null || fail "pass $pass: $(basename "$f") did not apply"
+  [ $pass = 1 ] || [ "$(tsl_rows)" = "$copy_before" ] || fail "copy: running it again changed rows: $copy_before -> $(tsl_rows)"
+done
+
+# --- TSL Season 1 copy (Story 6.5): 0045 ran in both passes above (rerun and refusals are asserted in the loop). The founder stand-in organises it.
+FOUNDER=f0f0f0f0-0000-4000-8000-000000000001
+TSLT=$(q "select id from app.tournament where name = 'Tamghas Super League'")
+TSLS=$(q "select id from app.season where tournament_id = '$TSLT' and number = 1")
+[ "$(q "select count(*) from app.tournament where name = 'Tamghas Super League'")" = 1 ] || fail "copy: one Tournament"
+[ "$(as $FOUNDER "select t.name || '|' || s.number || '|' || s.status || '|' || s.setup_step || '|' || s.format_preset || '|' || s.structure || '|' || s.group_count || s.teams_per_group || s.qualifiers_per_group || '|' || s.points_win || s.points_draw || s.points_loss from app.tournament t join app.season s on s.tournament_id = t.id")" \
+  = 'Tamghas Super League|1|finished|7|futsal|groups_knockout|442|310' ] || fail "copy: Tournament and Season"
+[ "$(as $B "select count(*) from app.tournament where id = '$TSLT'")" = 0 ] || fail "leak: another Organiser sees the copy"
+[ "$(q "select count(*) from app.team where season_id = '$TSLS' and status = 'approved'")|$(q "select count(*) from app.match where season_id = '$TSLS' and status = 'finished'")|$(q "select count(*) from app.draw_slot where season_id = '$TSLS'")" = '13|22|13' ] \
+  || fail "copy: 13 Teams, 22 finished Matches, 13 draw slots"
+# Every Match score is the legacy score, and comes from goal events only.
+[ "$(q "select count(*) from app.match a join public.matches l on l.n = a.ord and l.season = 1 where a.season_id = '$TSLS' and a.hg = l.hg and a.ag = l.ag and a.home_pens is not distinct from l.hp and a.away_pens is not distinct from l.ap")" = 22 ] \
+  || fail "copy: a Match score differs from the legacy one"
+[ "$(q "select count(*) from app.match a where a.season_id = '$TSLS' and (a.hg, a.ag) <> (select count(*) filter (where e.team_id = a.home_team_id), count(*) filter (where e.team_id = a.away_team_id) from app.match_event e where e.match_id = a.id and e.kind = 'goal')")" = 0 ] \
+  || fail "copy: a score is not its goal events"
+[ "$(q "select count(*) from app.match where season_id = '$TSLS' and (home_src is not null or away_src is not null or home_team_id is null or away_team_id is null)")" = 0 ] || fail "copy: source labels"
+[ "$(q "select string_agg(label, ' ' order by ord) from app.match where season_id = '$TSLS' and stage = 'knockout'")" = 'QF1 QF2 QF3 QF4 SF1 SF2 Final' ] || fail "copy: knockout labels"
+[ "$(q "select count(*) from app.match where season_id = '$TSLS' and stage = 'group' and round !~ '^Group [A-D]$'")" = 0 ] || fail "copy: group rounds"
+# Final: only Dilson Sunar 2' recorded; the rest are unknown scorers. Four Star Warriors win it 4-1.
+FIN="select id from app.match where season_id = '$TSLS' and round = 'Final'"
+[ "$(q "select t.code || ' ' || m.hg || '-' || m.ag from app.match m join app.team t on t.id = case when m.hg > m.ag then m.home_team_id else m.away_team_id end where m.id = ($FIN)")" = 'FSW 4-1' ] || fail "copy: champion is not Four Star Warriors 4-1"
+[ "$(q "select string_agg(t.code || ':' || coalesce(p.name || '@' || e.minute, 'unknown'), ' ' order by t.code, p.name nulls last) from app.match_event e join app.team t on t.id = e.team_id left join app.player p on p.id = e.player_id where e.match_id = ($FIN) and e.kind = 'goal'")" \
+  = 'FSW:Dilson Sunar@2 FSW:unknown FSW:unknown FSW:unknown RE8:unknown' ] || fail "copy: Final goals"
+# Squads, Staff, cards and goals line up with the legacy rows.
+[ "$(q "select count(*) from app.squad_entry e join app.team t on t.id = e.team_id where t.season_id = '$TSLS' and e.shirt_number is null")|$(q "select count(*) from app.squad_entry where tournament_id = '$TSLT'")|$(q "select count(*) from app.staff where tournament_id = '$TSLT'")" \
+  = "$(q "select count(*) from public.squad where season = 1 and coalesce(role, '') not in ('Coach', 'Manager')")|$(q "select count(*) from public.squad where season = 1 and coalesce(role, '') not in ('Coach', 'Manager')")|$(q "select count(*) from public.squad where season = 1 and role in ('Coach', 'Manager')")" ] \
+  || fail "copy: Squad and Staff counts"
+[ "$(q "select count(*) from app.player where tournament_id = '$TSLT' and (photo_path is not null or date_of_birth is not null or merged_into is not null or same_as is not null)")" = 0 ] || fail "copy: Player personal columns"
+[ "$(q "select (select count(*) from app.photo_consent where tournament_id = '$TSLT') + (select count(*) from app.eligibility_record where tournament_id = '$TSLT') + (select count(*) from app.registration_link where tournament_id = '$TSLT') + (select count(*) from app.registration_grant where tournament_id = '$TSLT') + (select count(*) from app.sponsor where tournament_id = '$TSLT') + (select count(*) from app.season_awards where tournament_id = '$TSLT')")" = 0 ] \
+  || fail "copy: consent, Eligibility, links, Sponsors or awards were created"
+[ "$(q "select count(*) from app.match where season_id = '$TSLS' and (kick_off is not null or mom_player_id is not null or fair_player_id is not null)")" = 0 ] || fail "copy: dates or Man of the Match"
+[ "$(q "select count(*) filter (where card = 'yellow') || '/' || count(*) filter (where card = 'red') || '/' || count(*) filter (where kind = 'missed_penalty') from app.match_event where tournament_id = '$TSLT'")" \
+  = "$(q "select count(*) filter (where kind = 'Yellow Card') || '/' || count(*) filter (where kind in ('Red Card', 'Second Yellow')) || '/' || count(*) filter (where kind = 'Penalty Missed') from public.events")" ] || fail "copy: cards and missed penalties"
+[ "$(q "select count(*) from app.match_event where tournament_id = '$TSLT' and kind = 'goal' and own_goal")" = "$(q "select count(*) from public.goals where og")" ] || fail "copy: own goals"
+# Activity log: every row is the "Season 1 copy" actor from one command.
+[ "$(q "select count(distinct command_id) || '/' || count(distinct actor) || '/' || (count(*) > 0) from app.activity_log where tournament_id = '$TSLT'")" = '1/1/true' ] || fail "copy: Activity rows are not one command and one actor"
+[ "$(as $FOUNDER "select string_agg(distinct who, ',') from app.activity_view where tournament_id = '$TSLT'")" = 'Season 1 copy' ] || fail "copy: Activity actor is not named Season 1 copy: $(as $FOUNDER "select string_agg(distinct who, ',') from app.activity_view where tournament_id = '$TSLT'")"
+# Shirt numbers are optional for copied Squads only.
+out=$(q "insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) select tournament_id, team_id, player_id, 100 from app.squad_entry where tournament_id = '$TSLT' limit 1" 2>&1 || true)
+[[ $out == *squad_entry_shirt_number_check* ]] || fail "copy: shirt number range check is gone: $out"
+# Table order equals league.js on the legacy data.
+PG_CONTAINER=$name COPY_SEASON=$TSLS node "$dir/copy.parity.mjs" >/dev/null || fail "copy: standings differ from matchday/league.js on the legacy data"
+# The legacy tables were only read.
+[ "$(legacy_sums)" = "$legacy_before" ] || fail "copy: a legacy table changed"
 
 echo ok

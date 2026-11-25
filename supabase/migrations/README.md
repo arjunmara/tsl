@@ -696,3 +696,21 @@ Player and every alias merged into the same root), newest first, with Team code 
 awards. Own goals, unknown-scorer goals and deleted events count for nobody. Only an Organiser of the Player's Tournament, or a Registration link whose Team is in the Tournament's latest Season and has the person in its Squad, gets rows;
 no personal columns come back. Nothing is stored or changed. Steps: paste `0044_player_history.sql` into the SQL Editor and run it.
 Check: `select proname from pg_proc where proname = 'player_history'` returns one row.
+
+## Apply 0045_copy_tsl_season_1.sql (Story 6.5)
+
+Apply after 0044 and before the app deploy that shows no shirt numbers (test first, then live). It copies TSL Season 1 from the legacy `public` tables into the new app as the Tournament
+"Tamghas Super League", Season 1 (finished): 13 Teams (approved, with kit colours), the draw slots, Squads (Coach and Manager become Staff, the others Players with no shirt number), 22 finished
+Matches and their goal, card and missed-penalty events. The score comes only from the goal events; a side with fewer legacy goals than its legacy score gets unknown-scorer goals (the Final is 4-1 with
+Dilson Sunar 2' and three unknown FSW goals). It also makes `app.squad_entry.shirt_number` optional (new Players still need one) and lets the Activity log name the actor "Season 1 copy".
+Not copied: Sponsors (add them in Settings), dates, Season awards, Man of the Match, photos, consent and Eligibility. The legacy tables are only read, every id is a UUID v5 of the legacy id and every insert
+is `on conflict do nothing`, so running it again adds nothing.
+
+Steps, as `postgres` in the SQL Editor:
+1. On tsl-test only: first paste `supabase/schema.sql`, `season1.sql`, `002_console.sql` and `003_group_order.sql` (in that order). On live they already exist. Without `public.matches` the copy is skipped with a notice.
+2. Sign in to the new app once with your organiser account.
+3. Copy `0045_copy_tsl_season_1.sql` into the SQL Editor and replace `PUT-YOUR-EMAIL-HERE` on its first line with that email. Do not commit it. A placeholder left in, or an email with no account, stops the run with a message and inserts nothing. The two schema changes (optional shirt number, `actor_name`) always apply and are safe to repeat; only the copy is skipped or refused.
+4. Run it. Check: My tournaments shows "Tamghas Super League" with Season 1 · Finished, Four Star Warriors win the Final 4-1, and Activity shows "Season 1 copy".
+
+`check.sh` loads the legacy files and the Season 1 import, runs 0045 twice, and checks the counts, every Match score against the legacy score, the Final, the Activity rows, the absence of consent, Eligibility and photos,
+the table order against `matchday/league.js` (`copy.parity.mjs`) and that every legacy table (except `live`, which the mirror checks write) has the same row count and checksum before and after.

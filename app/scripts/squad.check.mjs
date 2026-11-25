@@ -482,6 +482,19 @@ try {
     await context.close()
   }
 
+  // --- Story 6.5: a copied Player has no shirt number; the Squad shows the name alone (no "#", no "null") and the number field is empty.
+  {
+    const { context, mock, page } = await fresh({ players: [player('p-copy', 'Dilson Sunar', null, ADULT), player('p-num', 'Sita KC', 7, ADULT)] })
+    await text(page, 'Players · 2').waitFor()
+    const body = await page.locator('main').innerText()
+    assert.ok(body.includes('Dilson Sunar') && body.includes('Sita KC · #7'), 'both Players are listed')
+    assert.ok(!/Dilson Sunar\s*·\s*#/.test(body) && !body.includes('null') && !body.includes('NaN'), `a null shirt number is shown: ${body}`)
+    await card(page, 'Dilson Sunar').locator('summary').click()
+    assert.equal(await card(page, 'Dilson Sunar').getByLabel('Shirt number', { exact: true }).inputValue(), '')
+    assert.equal(calls(mock, 'edit_player').length, 0)
+    await context.close()
+  }
+
   console.log('ok')
 } finally {
   await browser.close()

@@ -74,7 +74,7 @@ export function EditGoal({ event, team, players, onSave, onAssist, onDelete, onC
       {({ close }) => (
         <>
           <ul className="picker-tiles">
-            {players.map((p) => <li key={p.playerId}>{choice(p.playerId, `${p.name} ${p.shirt}`)}</li>)}
+            {players.map((p) => <li key={p.playerId}>{choice(p.playerId, p.shirt === null ? p.name : `${p.name} ${p.shirt}`)}</li>)}
           </ul>
           <div className="ui-sheet-actions">{choice('own', 'Own goal')}{choice('unknown', 'Unknown scorer')}</div>
           <label className="body" htmlFor="goal-minute">Minute of the goal</label>
@@ -109,7 +109,7 @@ export function EditEvent({ event, team, players, onSave, onDelete, onClose }: {
             <ul className="picker-tiles">
               {players.filter((p) => p.playerId !== event.playerOnId).map((p) => (
                 <li key={p.playerId}>
-                  <button type="button" className="ui-button ui-secondary picker-tile" aria-pressed={who === p.playerId} onClick={() => setWho(p.playerId)}>{p.name} {p.shirt}</button>
+                  <button type="button" className="ui-button ui-secondary picker-tile" aria-pressed={who === p.playerId} onClick={() => setWho(p.playerId)}>{p.shirt === null ? p.name : `${p.name} ${p.shirt}`}</button>
                 </li>
               ))}
             </ul>

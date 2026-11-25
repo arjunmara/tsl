@@ -28,7 +28,7 @@ export function Picker({ title, players, groups, extras, chosen, onPick, onClose
             {list.map((p) => (
               <li key={p.playerId}>
                 <button type="button" className="ui-button ui-secondary picker-tile" disabled={off} aria-pressed={chosen === undefined ? undefined : chosen === p.playerId} onClick={pick(p.playerId)}>
-                  <span>{p.name}</span> <span className="meta">{p.shirt}{p.note ? ` · ${p.note}` : ''}</span>
+                  <span>{p.name}</span> <span className="meta">{[p.shirt, p.note].filter((x) => x != null && x !== '').join(' · ')}</span>
                 </button>
               </li>
             ))}
