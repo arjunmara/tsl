@@ -449,6 +449,43 @@ try {
     await context.close()
   }
 
+  // --- The copied TSL Season 1 (Story 6.6): group Matches with no labels, knockout Matches with labels, null shirt numbers, a Final 4-1 to the champion.
+  {
+    const { context, page, mock } = await fresh()
+    const S1 = `${T.slice(0, -1)}9`
+    const S2 = '22222222-0000-4000-8000-0000000000a2'
+    const id = (n) => `44444444-0000-4000-8000-0000000000${n}`
+    const teams = [[id(11), 'Four Star Warriors', 'FSW'], [id(12), 'Resunga Eight', 'RE8'], [id(13), 'Da Boys', 'DAB'], [id(14), 'PTB Guys', 'PTB']]
+    const mk = (n, stage, round, label, h, a, hg, ag) => ({ id: `33333333-0000-4000-8000-0000000000${n}`, stage, round, label, ord: n - 20, home_team_id: id(h), away_team_id: id(a), home_src: null, away_src: null,
+      kick_off: null, version: 1, status: 'finished', hg, ag, home_pens: null, away_pens: null })
+    const ms = [mk(21, 'group', 'Group A', null, 11, 13, 2, 0), mk(22, 'group', 'Group B', null, 12, 14, 1, 0), mk(23, 'knockout', 'SF', 'SF1', 11, 14, 3, 1),
+      mk(24, 'knockout', 'SF', 'SF2', 12, 13, 2, 0), mk(25, 'knockout', 'Final', 'Final', 11, 12, 4, 1)]
+    const t = mock.rows[0]
+    Object.assign(t.season[0], { status: 'finished', setup_step: 7, format_preset: 'futsal', structure: 'groups_knockout' })
+    t.season.push({ ...t.season[0], id: S2, number: 2, status: 'registration', version: 1 })
+    const row = (r, _i, grp, pos, p, w, d, l, gf, ga, pts) => ({ grp, pos, team_id: id(r), p, w, d, l, gf, ga, gd: gf - ga, pts, group_done: true, provisional: false, shootout_with: null })
+    mock.read = {
+      '/rest/v1/team': (sid) => (sid === `eq.${S1}` ? teams.map(([i, name, code]) => ({ id: i, name, code, kit_colour: '#ff0000', status: 'approved', returning_from: null, registration_link: [], season_id: S1 })) : []),
+      '/rest/v1/match': (sid) => (sid === `eq.${S1}` ? ms : []),
+      '/rest/v1/season': () => [{ fixtures_published_at: '2026-01-01T00:00:00Z' }],
+      '/rest/v1/squad_entry': () => [{ team_id: id(11), shirt_number: null, player: { id: id(31), name: 'Dilson Sunar' } }],
+      '/rest/v1/rpc/standings': () => [row(11, 0, 1, 1, 1, 1, 0, 0, 2, 0, 3), row(13, 0, 1, 2, 1, 0, 0, 1, 0, 2, 0), row(12, 0, 2, 1, 1, 1, 0, 0, 1, 0, 3), row(14, 0, 2, 2, 1, 0, 0, 1, 0, 1, 0)],
+      '/rest/v1/rpc/match_sides': () => ms.map((m) => ({ match_id: m.id, home_team_id: m.home_team_id, away_team_id: m.away_team_id })),
+      '/rest/v1/rpc/season_top_scorers': () => [{ player_id: id(31), team_id: id(11), goals: 1 }],
+    }
+    await page.goto(base + `/t/${T}?season=${S1}`)
+    await page.locator('header.home-bar summary').filter({ hasText: 'Season 1 · Finished · read-only' }).waitFor()
+    const final = page.locator('.match-card').filter({ hasText: 'Final' })
+    await final.waitFor()
+    const text = await final.first().innerText()
+    assert.ok(/FSW/.test(text) && /RE8/.test(text) && text.includes('4–1'), `Final card: ${text}`)
+    assert.equal(await page.locator('.match-card').filter({ hasText: 'Group A' }).first().innerText().then((x) => x.includes('2–0') && !/null|undefined/.test(x)), true, 'group Match card')
+    await tab(page, 'Graphics').click()
+    await page.locator('.graphics-grid [aria-label="Champions, Gulmi Cup Season 1: Four Star Warriors."]').waitFor()
+    assert.equal(await page.getByText(/null|undefined/).count(), 0, 'null shown for a copied Season')
+    await context.close()
+  }
+
   // --- Widths: tablet lists in two columns; laptop content at most 960px, centred; no horizontal scroll anywhere.
   {
     const { context, page } = await fresh({ viewport: { width: 800, height: 900 } })

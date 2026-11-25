@@ -3755,9 +3755,64 @@ FIN="select id from app.match where season_id = '$TSLS' and round = 'Final'"
 # Shirt numbers are optional for copied Squads only.
 out=$(q "insert into app.squad_entry (tournament_id, team_id, player_id, shirt_number) select tournament_id, team_id, player_id, 100 from app.squad_entry where tournament_id = '$TSLT' limit 1" 2>&1 || true)
 [[ $out == *squad_entry_shirt_number_check* ]] || fail "copy: shirt number range check is gone: $out"
-# Table order equals league.js on the legacy data.
-PG_CONTAINER=$name COPY_SEASON=$TSLS node "$dir/copy.parity.mjs" >/dev/null || fail "copy: standings differ from matchday/league.js on the legacy data"
 # The legacy tables were only read.
 [ "$(legacy_sums)" = "$legacy_before" ] || fail "copy: a legacy table changed"
+
+# --- Season 1 verified (Story 6.6): supabase/verify_season1.mjs compares the copy with the legacy tables (tables included, as league.js orders them).
+# It runs from a throwaway postgres container on this container's network. The alterations go to clones of the database, so the real copy is never touched.
+all_sums() { { legacy_sums; for t in $(psql -c "select tablename from pg_tables where schemaname = 'app' order by 1"); do
+  echo "app.$t $(psql -c "select count(*) || ' ' || coalesce(md5(string_agg(x::text, '|' order by x::text)), '') from app.$t x")"; done; }; }
+sums_before=$(all_sums)
+verify() {  # verify <database> -> output and exit code in $vout / $vcode
+  vcode=0
+  vout=$(TSL_DB_URL=postgresql://postgres@127.0.0.1/$1 TSL_DOCKER_ARGS="--network container:$name" TSL_PSQL_IMAGE=postgres:17-alpine node "$dir/../verify_season1.mjs" 2>&1) || vcode=$?
+}
+clone() { psql -c "create database $1 template postgres" >/dev/null; }  # alter it with: docker exec -i ... psql -d $1
+cpsql() { local d=$1; shift; docker exec -i -e PGOPTIONS=-cclient_min_messages=warning "$name" psql -h 127.0.0.1 -U postgres -d "$d" -v ON_ERROR_STOP=1 -qAt "$@"; }
+verify postgres
+[ $vcode = 0 ] && [[ $vout == *$'\nok' ]] || fail "verify: clean run (exit $vcode): $vout"
+[[ $vout == *"no recorded scorer"* && $vout == *"kick-off is not compared"* ]] || fail "verify: expected notes missing: $vout"
+# A goal minute changed: the exact line, exit 1.
+clone tslalt
+pick=$(q "select m.ord || '|' || h.code || '|' || a.code || '|' || e.minute || '|' || e.id from app.match_event e join app.match m on m.id = e.match_id join app.team h on h.id = m.home_team_id
+  join app.team a on a.id = m.away_team_id where m.season_id = '$TSLS' and e.kind = 'goal' and e.player_id is not null and e.minute <> 2 order by e.id limit 1")
+IFS='|' read -r pn ph pa pmin pid <<<"$pick"
+cpsql tslalt -c "set session_replication_role = replica; update app.match_event set minute = 2 where id = '$pid'" >/dev/null
+verify tslalt
+[ $vcode = 1 ] || fail "verify: changed minute did not exit 1 (exit $vcode): $vout"
+[[ $vout == *"Match $pn ($ph v $pa): goal minute: legacy $pmin, app 2"* ]] || fail "verify: changed minute line missing: $vout"
+[[ $vout != *$'\nok' ]] || fail "verify: changed minute printed ok"
+psql -c "drop database tslalt with (force)" >/dev/null
+# An extra goal (the trigger moves the score): goal and score lines.
+clone tslalt
+cpsql tslalt -c "select set_config('app.actor', '5ea50001-0000-4000-8000-000000000001', false), set_config('app.command_id', gen_random_uuid()::text, false);
+  insert into app.match_event (id, tournament_id, season_id, match_id, kind, period, minute, entered_at, team_id, player_id, own_goal)
+  select gen_random_uuid(), tournament_id, season_id, match_id, kind, period, 59, now(), team_id, player_id, own_goal from app.match_event where season_id = '$TSLS' and kind = 'goal' and player_id is not null order by id limit 1" >/dev/null
+verify tslalt
+[ $vcode = 1 ] || fail "verify: extra goal did not exit 1 (exit $vcode): $vout"
+[[ $vout == *": goal: legacy none, app "* && $vout == *": score: legacy "* ]] || fail "verify: extra goal lines missing: $vout"
+psql -c "drop database tslalt with (force)" >/dev/null
+# A group Match result changed: table rows differ.
+clone tslalt
+cpsql tslalt -c "set session_replication_role = replica; update app.match set hg = hg + 3 where id = (select id from app.match where season_id = '$TSLS' and stage = 'group' order by ord limit 1)" >/dev/null
+verify tslalt
+[ $vcode = 1 ] || fail "verify: changed result did not exit 1 (exit $vcode): $vout"
+[[ $vout == *"Group "*", "*": GF: legacy "* && $vout == *": GA: legacy "* ]] || fail "verify: table row lines missing: $vout"
+psql -c "drop database tslalt with (force)" >/dev/null
+# No copy in the database.
+clone tslalt
+cpsql tslalt -c "set session_replication_role = replica; delete from app.season where id = '$TSLS'" >/dev/null
+verify tslalt
+[ $vcode = 1 ] && [[ $vout == *"Season 1 copy not found"* ]] || fail "verify: not copied (exit $vcode): $vout"
+psql -c "drop database tslalt with (force)" >/dev/null
+# A bad connection string: exit 2, and the string is not printed.
+vcode=0
+vout=$(TSL_DB_URL=postgresql://postgres:secretpw@127.0.0.1/nodb TSL_DOCKER_ARGS="--network container:$name" TSL_PSQL_IMAGE=postgres:17-alpine node "$dir/../verify_season1.mjs" 2>&1) || vcode=$?
+[ $vcode = 2 ] && [[ $vout != *secretpw* ]] || fail "verify: bad URL (exit $vcode): $vout"
+vcode=0
+vout=$(env -u TSL_DB_URL node "$dir/../verify_season1.mjs" 2>&1) || vcode=$?
+[ $vcode = 2 ] || fail "verify: missing URL (exit $vcode): $vout"
+# Nothing was written: legacy and app row counts and checksums are unchanged.
+[ "$(all_sums)" = "$sums_before" ] || fail "verify: a row changed while verifying"
 
 echo ok

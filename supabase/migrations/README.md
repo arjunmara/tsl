@@ -713,4 +713,16 @@ Steps, as `postgres` in the SQL Editor:
 4. Run it. Check: My tournaments shows "Tamghas Super League" with Season 1 · Finished, Four Star Warriors win the Final 4-1, and Activity shows "Season 1 copy".
 
 `check.sh` loads the legacy files and the Season 1 import, runs 0045 twice, and checks the counts, every Match score against the legacy score, the Final, the Activity rows, the absence of consent, Eligibility and photos,
-the table order against `matchday/league.js` (`copy.parity.mjs`) and that every legacy table (except `live`, which the mirror checks write) has the same row count and checksum before and after.
+and that every legacy table (except `live`, which the mirror checks write) has the same row count and checksum before and after.
+
+## Verify Season 1 (Story 6.6)
+
+`supabase/verify_season1.mjs` proves that the Season 1 made by 0045 matches the legacy tables. Run it on tsl-test after 0045, and again on live, before the legacy tables are retired. It only reads: every query runs in one read-only transaction (rolled back at the end), and nothing is written.
+
+1. In Supabase, open the project, then Connect, then Session pooler, and copy the connection string (fill in the database password in it).
+2. Docker must be running. From the repo root, set the string without it landing in your shell history: run `read -rs TSL_DB_URL && export TSL_DB_URL`, paste the string, press Enter, then run `node supabase/verify_season1.mjs`. The script runs `psql` inside a throwaway `postgres:17` container, finds the copy by its 0045 ids (never by name) and never prints the string.
+3. Read the result. `ok` (exit 0) means that every Match (id, Teams, round, status, score, shootout), every goal (including unknown-scorer ones, by Team and minute) (Team, scorer, own goal, minute), every card and missed penalty, the Season awards (none), the Team, Match, goal and card counts, no other events in the copied Season, and every group table row (position, P, W, D, L, GF, GA, Pts, from `app.standings_calc` against `matchday/league.js` on the legacy rows) are equal. Any other line is one difference, such as `Match 7 (FSW v RE8): goal minute: legacy 2, app 7`, with exit 1.
+4. Two notes always print and are expected: goals with no recorded scorer (the Final's four unrecorded goals) are compared by Team and minute only, and kick-off is not compared (legacy has a time and no date, and 0045 left it empty).
+
+Exit codes: 0 all equal; 1 differences, or "Season 1 copy not found" (run 0045 first); 2 it could not connect (missing or wrong `TSL_DB_URL`, or Docker not running).
+`check.sh` runs it against its local container: clean, then with a changed goal minute, an extra goal, a changed Match result, no copy and a bad connection string (on clones of the database), and asserts that every legacy and app table has the same row count and checksum before and after.
